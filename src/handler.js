@@ -1,12 +1,13 @@
 'use strict';
 
-const { approxTokens, MODEL_NAME, sha, uuid } = require('./config');
+const { MODEL_NAME, sha, uuid } = require('./config');
 const { blocksOf, sessionKey, renderMessage, truncateReplay } = require('./content');
 const { buildFullPrompt, buildResumePrompt, parseToolChoice, applyForcedTool, synthesizeToolCall } = require('./prompts');
 const { ensurePage, ensureTogglesOn, resumeUrl, gotoNewChat, runTurn, currentUrl, locked } = require('./browser');
 const { getSession, setSession } = require('./session-store');
 const { StreamSink } = require('./sse-sink');
 const { jsonError } = require('./http-utils');
+const { estimateInputTokens, estimateOutputTokens } = require('./anthropic-contract');
 
 function detectToolLoop(messages, threshold = 3) {
   if (messages.length < threshold * 2 + 1) return false;
@@ -59,7 +60,7 @@ async function handleMessages(req, res, body) {
   await ensurePage();
 
   let answer, thinking, toolCalls;
-  const sink = wantStream ? new StreamSink(res, model, approxTokens(JSON.stringify(messages))) : null;
+  const sink = wantStream ? new StreamSink(res, model, estimateInputTokens(body)) : null;
 
   await locked(async () => {
     await ensurePage();
@@ -177,8 +178,8 @@ async function handleMessages(req, res, body) {
     stop_reason: stopReason,
     stop_sequence: null,
     usage: {
-      input_tokens: approxTokens(JSON.stringify(messages)),
-      output_tokens: approxTokens(answer || JSON.stringify(toolCalls)),
+      input_tokens: estimateInputTokens(body),
+      output_tokens: estimateOutputTokens(answer, thinking, toolCalls),
     },
   };
 
