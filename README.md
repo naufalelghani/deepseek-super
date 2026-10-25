@@ -57,6 +57,36 @@ Jika autentikasi server diaktifkan, atur `ANTHROPIC_AUTH_TOKEN` sama dengan `DEE
 
 `POST /v1/messages` mendukung respons streaming SSE dan non-streaming JSON, serta pemetaan `tool_use`/`tool_result` ke format prompt yang digunakan gateway.
 
+## Audit kompatibilitas DeepSeek / Anthropic
+
+Gateway ini meniru sebagian kontrak Anthropic Messages API agar client seperti Claude Code dapat berbicara dengan antarmuka web DeepSeek. Ini bukan koneksi langsung ke `https://api.deepseek.com/anthropic`: prompt, tool call, streaming, dan token usage diproses oleh adapter lokal dan otomasi browser.
+
+### Tool use dan round trip
+
+- Permintaan dengan `tools` menyertakan nama tool, deskripsi, dan `input_schema` dalam instruksi prompt lokal.
+- Tool call yang dikenali dikembalikan sebagai blok Anthropic `tool_use`; gateway tidak menjalankan tool client-side. Claude Code atau client terkait yang menjalankan tool.
+- Client harus mengirim hasilnya kembali sebagai `tool_result` yang merujuk ke `tool_use_id`. Setelah menerima hasil, gateway meminta model menyusun jawaban akhir tanpa mengeluarkan tool call baru untuk giliran hasil itu.
+- Payload tool yang dihasilkan model tetap perlu diperiksa: validasi nama tool dan bentuk input di parser/client, jangan menganggap JSON model tepercaya.
+- `tool_choice` dipetakan secara lokal. Semantik khusus Anthropic seperti `disable_parallel_tool_use` tidak otomatis tersedia di gateway ini; beberapa opsi kompatibilitas dapat berbeda dari API resmi.
+
+### Context caching
+
+DeepSeek API resmi mengaktifkan disk context caching otomatis dan mencocokkan prefix input yang identik. Prefix yang sama dapat digunakan ulang pada permintaan berikutnya, tetapi cache hit bersifat best-effort dan tidak dijamin. API resmi melaporkan `prompt_cache_hit_tokens` dan `prompt_cache_miss_tokens` di `usage`.
+
+Gateway Playwright ini berinteraksi dengan `chat.deepseek.com`, bukan endpoint API resmi. Karena itu, kode gateway tidak dapat mengatur atau memastikan cache API resmi, dan angka `usage` lokal merupakan estimasi, bukan pengukuran token/cache DeepSeek. Jangan menafsirkan `cache_control` Anthropic sebagai pengaturan cache yang aktif di gateway.
+
+Untuk menjaga konteks konsisten dan menghindari pemotongan riwayat yang tidak perlu, instruksi dan schema tool dibuat dari request yang diterima; percakapan yang dilanjutkan menggunakan tool schema pada prompt giliran tersebut. UI DeepSeek atau perubahan isi prompt dapat tetap memengaruhi perilaku dan efisiensi caching internal situs.
+
+### Field Anthropic dan batas kompatibilitas
+
+Adapter mendukung bentuk umum `system`, `messages`, `tools`, `tool_choice`, `stream`, serta blok `text`, `tool_use`, dan `tool_result` yang diperlukan client. Ini bukan implementasi penuh Anthropic API. Field atau blok yang tidak dipetakan secara eksplisit dapat diabaikan atau dinormalisasi oleh adapter. Khususnya, `cache_control` tidak mengaktifkan cache terkontrol pada adapter ini.
+
+Referensi resmi:
+
+- [DeepSeek Context Caching](https://api-docs.deepseek.com/guides/kv_cache)
+- [Using the Anthropic API](https://api-docs.deepseek.com/guides/anthropic_api)
+- [Tool Calls](https://api-docs.deepseek.com/guides/tool_calls)
+
 ## Struktur proyek
 
 ```text
