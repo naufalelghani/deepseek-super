@@ -31,3 +31,10 @@ test('truncateReplay caps very long replay prompts and token estimate is positiv
   assert.match(replay, /WARNING: conversation replay was truncated/);
   assert.equal(approxTokens('hello'), 2);
 });
+
+test('sessionKey hashes the full first user message instead of a truncated prefix', () => {
+  const prefix = 'x'.repeat(900);
+  const a = [{ role: 'user', content: prefix + 'A' }];
+  const b = [{ role: 'user', content: prefix + 'B' }];
+  assert.notEqual(sessionKey('', a), sessionKey('', b));
+});
