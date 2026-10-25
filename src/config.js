@@ -11,7 +11,11 @@ const AUTH_TOKEN_FILE = path.join(__dirname, '..', '.deepseek-super-token');
 
 function readExistingToken() {
     const saved = fs.readFileSync(AUTH_TOKEN_FILE, 'utf8').trim();
-    if (!saved) throw new Error('Local API token file is empty: ' + AUTH_TOKEN_FILE);
+    if (!saved) {
+        const error = new Error('Local API token file is empty: ' + AUTH_TOKEN_FILE);
+        error.code = 'EMPTY_LOCAL_TOKEN';
+        throw error;
+    }
     return saved;
 }
 
@@ -24,7 +28,15 @@ function loadAuthToken() {
     try {
         return { token: readExistingToken(), source: 'local token file' };
     } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
+        if (error.code === 'EMPTY_LOCAL_TOKEN') {
+            // Recover from an empty file left by an interrupted upgrade from an
+            // older non-atomic token writer. Concurrent removals are harmless.
+            try { fs.unlinkSync(AUTH_TOKEN_FILE); } catch (unlinkError) {
+                if (unlinkError.code !== 'ENOENT') throw unlinkError;
+            }
+        } else if (error.code !== 'ENOENT') {
+            throw error;
+        }
     }
 
     // Create a complete temporary file first, then hard-link it to the final
