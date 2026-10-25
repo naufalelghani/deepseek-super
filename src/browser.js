@@ -173,16 +173,70 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
      return !!(await currentUrl());
  }
 
+ async function stopGenerationBestEffort() {
+     try {
+         const clicked = await page.evaluate(() => {
+             const selectors = [
+                 'button[aria-label*="stop" i]',
+                 'button[title*="stop" i]',
+                 'button[data-testid*="stop" i]',
+                 '[role="button"][aria-label*="stop" i]',
+                 'button[aria-label*="cancel" i]',
+                 'button[title*="cancel" i]',
+                 'button[aria-label*="停止"]',
+                 'button[title*="停止"]',
+                 '[role="button"][aria-label*="停止"]',
+                 '[role="button"][aria-label*="取消"]'
+             ].join(',');
+             const visible = (element) => {
+                 if (!element || element.getAttribute('aria-hidden') === 'true') return false;
+                 const style = window.getComputedStyle(element);
+                 const rect = element.getBoundingClientRect();
+                 return style.display !== 'none' && style.visibility !== 'hidden' &&
+                     Number(style.opacity || 1) !== 0 && rect.width > 0 && rect.height > 0;
+             };
+             const stopButton = Array.from(document.querySelectorAll(selectors)).find(visible);
+             if (stopButton) {
+                 stopButton.click();
+                 return true;
+             }
+
+             const primary = document.querySelector('.bf38813a .ds-button--primary');
+             if (!visible(primary)) return false;
+             const label = [
+                 primary.getAttribute('aria-label') || '',
+                 primary.getAttribute('title') || '',
+                 primary.innerText || '',
+                 typeof primary.className === 'string' ? primary.className : '',
+                 Array.from(primary.querySelectorAll('[aria-label],[title],svg,[class]'))
+                     .map((element) => [
+                         element.getAttribute('aria-label') || '',
+                         element.getAttribute('title') || '',
+                         typeof element.className === 'string' ? element.className : ''
+                     ].join(' '))
+                     .join(' ')
+             ].join(' ');
+             if (!/stop|cancel|停止|取消/i.test(label)) return false;
+             primary.click();
+             return true;
+         });
+         if (clicked) await page.waitForTimeout(350);
+     } catch (error) {
+         console.warn('[turn-cancel] best-effort stop action failed: ' + (error.message || String(error)));
+     }
+ }
+
  async function runTurn(prompt, sink, bufferText, isCancelled = () => false) {
-     const abortIfCancelled = () => {
+     const abortIfCancelled = async () => {
          if (!isCancelled()) return;
+         await stopGenerationBestEffort();
          const error = new Error('The client disconnected before the DeepSeek turn completed.');
          error.name = 'AbortError';
          throw error;
      };
-     abortIfCancelled();
+     await abortIfCancelled();
      const before = await readState();
-     abortIfCancelled();
+     await abortIfCancelled();
      await textarea.click();
      await textarea.fill(prompt);
      await page.waitForTimeout(250);
@@ -221,14 +275,14 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
      };
 
      for (;;) {
-         abortIfCancelled();
+         await abortIfCancelled();
          await page.waitForTimeout(POLL_MS);
-         abortIfCancelled();
+         await abortIfCancelled();
          let st;
          try {
              st = await readState();
          } catch (error) {
-             if (isCancelled()) abortIfCancelled();
+             if (isCancelled()) await abortIfCancelled();
              throw new Error('Could not read the DeepSeek UI state: ' + (error.message || String(error)));
          }
          if (st.isGenerating) sawGeneratingSignal = true;
@@ -294,7 +348,7 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
          }
      }
 
-     abortIfCancelled();
+     await abortIfCancelled();
      if (timedOut) {
          throw new Error('DeepSeek did not signal completion before MAX_TURN_MS. The turn was not treated as complete.');
      }
