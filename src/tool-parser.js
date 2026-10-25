@@ -154,6 +154,7 @@
          this.mode = 'text';
          this.toolBuf = '';
          this.toolBlocks = [];
+         this.parseErrors = [];
          this.textOut = '';
          this.sawToolMarkup = false;
          this.incompleteToolBlock = false;
@@ -221,14 +222,23 @@
          const out = [];
          const seen = {};
          for (const raw of this.toolBlocks) {
-             const parsed = tryParseJSON(raw.trim());
-             if (!parsed) continue;
+             const payload = raw.trim();
+             const parsed = tryParseJSON(payload);
+             if (parsed === null) {
+                 let reason = 'JSON parser tidak dapat memulihkan payload';
+                 try { JSON.parse(payload); reason = 'JSON valid, tetapi bukan payload tool yang didukung'; }
+                 catch (e) { reason = e.message || reason; }
+                 this.parseErrors.push({ chars: raw.length, reason });
+                 continue;
+             }
              const arr = Array.isArray(parsed) ? parsed : [parsed];
+             let foundToolName = false;
              for (const x of arr) {
-                 if (!x) continue;
+                 if (!x || typeof x !== 'object') continue;
                  const name = x.tool || x.name;
                  const input = x.arguments || x.input || {};
                  if (typeof name === 'string' && name) {
+                     foundToolName = true;
                      const sanitized = sanitizeToolCall({ name, input });
                      if (sanitized) {
                          // Dedupe: hindari block duplikat dari model
@@ -237,8 +247,13 @@
                              seen[sig] = true;
                              out.push(sanitized);
                          }
+                     } else {
+                         this.parseErrors.push({ chars: raw.length, reason: 'tool input ditolak oleh sanitizer' });
                      }
                  }
+             }
+             if (!foundToolName) {
+                 this.parseErrors.push({ chars: raw.length, reason: 'JSON tidak memiliki field tool atau name berupa string' });
              }
          }
          return out;
