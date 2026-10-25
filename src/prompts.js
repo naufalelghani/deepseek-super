@@ -100,7 +100,21 @@ const TOOL_RESULT_INSTRUCTIONS = [
              'JANGAN memanggil tool apa pun.',
          ].join('\n');
      }
-     return renderMessage(last);
+     const parts = [];
+     const toolPrompt = toolsToPrompt(tools);
+     if (toolPrompt) {
+         parts.push('=== TOOLS AVAILABLE FOR THIS REQUEST ===\\n' + toolPrompt);
+     }
+     parts.push('=== NEW USER REQUEST ===\\n' + renderMessage(last));
+     parts.push([
+         '=== INSTRUKSI UNTUK GILIRAN INI ===',
+         'Evaluasi permintaan terbaru berdasarkan daftar tool yang disertakan tepat di atas.',
+         'Jika permintaan memerlukan file, shell, pencarian, atau aksi yang dapat dilakukan oleh salah satu tool, WAJIB panggil tool yang paling sesuai sekarang.',
+         'Jangan mengklaim tool tidak tersedia dan jangan memberi langkah manual sebagai pengganti jika tool yang sesuai ada di daftar.',
+         'Untuk tool call, keluarkan hanya format <TOOL_CALL>{"tool":"<nama-tool>","arguments":{...}}</TOOL_CALL> dengan JSON valid.',
+         'Jangan menjawab hasil pembacaan atau eksekusi sebelum tool benar-benar dipanggil dan hasilnya diterima.'
+     ].join('\\n'));
+     return parts.join('\\n\\n');
  }
  function parseToolChoice(toolChoice) {
      if (!toolChoice) return { mode: 'auto' };
