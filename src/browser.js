@@ -241,7 +241,7 @@ const { StreamParser, extractToolCallsFromText } = require('./tool-parser');
              ' incomplete=' + parser.incompleteToolBlock +
              (detail ? ' chars=' + detail.chars + ' reason=' + detail.reason : ''));
          if (process.env.DEBUG_TOOL_PARSER === '1' && parser.toolBlocks[0]) {
-             console.warn('[tool-parser] payload preview=' + parser.toolBlocks[0].slice(0, 240).replace(/\\s+/g, ' '));
+             console.warn('[tool-parser] payload preview=' + parser.toolBlocks[0].slice(0, 240).replace(/\s+/g, ' '));
          }
      }
 
