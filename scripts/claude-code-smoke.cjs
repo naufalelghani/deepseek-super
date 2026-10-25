@@ -14,7 +14,7 @@ const {
   DEFAULT_GATEWAY_URL,
   normalizeClaudeCodeBaseUrl,
   isDefaultLocalGateway,
-} = require('./claude-code-base-url');
+} = require('./claude-code-base-url.cjs');
 
 const BASE_URL = normalizeClaudeCodeBaseUrl(
   process.env.DEEPSEEK_SUPER_BASE_URL || DEFAULT_GATEWAY_URL
