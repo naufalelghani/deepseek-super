@@ -4,7 +4,18 @@ const http = require('node:http');
 const { MODEL_NAME } = require('./config');
 const { handleMessages } = require('./handler');
 const { jsonError, readBody, checkAuth } = require('./http-utils');
-const { validateMessagesRequest, estimateInputTokens } = require('./anthropic-contract');
+const { validateMessagesRequest, estimateInputTokens, normalizeAnthropicMessagesRequest } = require('./anthropic-contract');
+
+// Compatibility shim for Claude Code versions that put system instructions
+// inside messages[]. Log counts only; never log prompt content.
+function normalizeRequest(body) {
+  const result = normalizeAnthropicMessagesRequest(body);
+  if (result.normalizedInstructionMessages > 0) {
+    console.warn('[compat] moved ' + result.normalizedInstructionMessages +
+      ' system/developer message(s) from messages[] to top-level system');
+  }
+  return result.body;
+}
 
 function createServer() {
   return http.createServer(async (req, res) => {
@@ -49,6 +60,8 @@ function createServer() {
         return jsonError(res, 400, 'invalid_request_error', 'JSON tidak valid: ' + e.message);
       }
 
+      body = normalizeRequest(body);
+
       const validationError = validateMessagesRequest(body, { countTokens: true });
       if (validationError) {
         return jsonError(res, 400, validationError.type, validationError.message);
@@ -65,6 +78,8 @@ function createServer() {
       } catch (e) {
         return jsonError(res, 400, 'invalid_request_error', 'JSON tidak valid: ' + e.message);
       }
+
+      body = normalizeRequest(body);
 
       const validationError = validateMessagesRequest(body);
       if (validationError) {
