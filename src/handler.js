@@ -98,7 +98,7 @@ async function handleMessages(req, res, body) {
     thinking = out.thinking;
     toolCalls = out.toolCalls;
 
-    const hasRawToolCall = /<\s*TOOL_CALL\s*>/i.test(answer || '');
+    const hasRawToolCall = out.invalidToolCall || /<\s*TOOL_CALL\s*>/i.test(answer || '');
     if (hasRawToolCall && toolCalls.length === 0 && tools.length > 0) {
       console.warn('[retry] tool call invalid JSON — retry sekali dengan instruksi lebih tegas');
       const retryPrompt = [
@@ -119,12 +119,15 @@ async function handleMessages(req, res, body) {
       const retry = await runTurn(retryPrompt, sink || dummySink, useBuffer);
       if (retry.toolCalls.length > 0) {
         console.log('[retry] berhasil — ' + retry.toolCalls.length + ' tool call valid');
-        answer = retry.text;
-        thinking = retry.thinking;
-        toolCalls = retry.toolCalls;
       } else {
         console.warn('[retry] gagal juga — fallback ke teks');
+        // The malformed tool payload was withheld from the stream; emit readable text once.
+        if (sink && retry.text) sink.emitText(retry.text);
       }
+      // Use the retry response consistently in JSON and SSE modes.
+      answer = retry.text;
+      thinking = retry.thinking;
+      toolCalls = retry.toolCalls;
     }
 
     if (force.mode !== 'auto' && force.mode !== 'none' && toolCalls.length === 0) {
@@ -141,6 +144,7 @@ async function handleMessages(req, res, body) {
   });
 
   const stopReason = toolCalls.length ? 'tool_use' : 'end_turn';
+  console.log('[response] stop_reason=' + stopReason + ' tool_calls=' + toolCalls.length + ' stream=' + wantStream);
   if (wantStream) {
     sink.finish(stopReason);
     return res.end();
