@@ -32,7 +32,8 @@ test('full prompt requests raw tool output without Markdown wrappers', () => {
   }], []);
   assert.ok(prompt.includes('keluarkan baris hasil itu saja'));
   assert.ok(prompt.includes('Jangan bungkus output mentah dengan Markdown code fence'));
-  assert.ok(prompt.includes('Jangan menulis <TOOL_CALL>') || prompt.includes('JANGAN menulis <TOOL_CALL>'));
+  assert.ok(prompt.includes('Jika tugas masih memerlukan tindakan'));
+  assert.ok(!prompt.includes('JANGAN menulis <TOOL_CALL>'));
 });
 
 test('resume prompt requests raw tool output without Markdown wrappers', () => {
@@ -42,7 +43,8 @@ test('resume prompt requests raw tool output without Markdown wrappers', () => {
   }], [], true);
   assert.ok(prompt.includes('keluarkan baris hasil itu saja'));
   assert.ok(prompt.includes('Jangan bungkus output mentah dengan Markdown code fence'));
-  assert.ok(prompt.includes('JANGAN memanggil tool apa pun.'));
+  assert.ok(prompt.includes('Jika tugas belum selesai, gunakan tool berikutnya yang diperlukan'));
+  assert.ok(!prompt.includes('JANGAN memanggil tool apa pun.'));
 });
 
 test('resumed request includes current tool schemas and requires tool use when relevant', () => {
@@ -63,4 +65,28 @@ test('resumed request includes current tool schemas and requires tool use when r
   assert.ok(prompt.includes('NEW USER REQUEST'));
   assert.ok(prompt.includes('WAJIB panggil tool yang paling sesuai sekarang'));
   assert.ok(prompt.includes('<TOOL_CALL>'));
+});
+
+test('tool-result resume prompt includes schemas and allows the next tool step', () => {
+  const prompt = buildResumePrompt('', [{
+    role: 'user',
+    content: [{
+      type: 'tool_result',
+      tool_use_id: 'toolu_test',
+      content: '/project',
+    }],
+  }], [{
+    name: 'Read',
+    description: 'Read a file',
+    input_schema: {
+      type: 'object',
+      properties: { file_path: { type: 'string' } },
+      required: ['file_path'],
+    },
+  }], true);
+
+  assert.ok(prompt.includes('TOOLS AVAILABLE FOR THE NEXT STEP'));
+  assert.ok(prompt.includes('Read(file_path*: string'));
+  assert.ok(prompt.includes('Jika tugas belum selesai, gunakan tool berikutnya'));
+  assert.ok(!prompt.includes('JANGAN memanggil tool apa pun.'));
 });
