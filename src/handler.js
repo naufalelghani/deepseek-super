@@ -116,7 +116,7 @@ async function handleMessages(req, res, body) {
           attempt === 1
             ? 'Perbaiki format saja; pertahankan maksud dan argumen tugas asli.'
             : 'Pemulihan terakhir: jangan menyalin output sebelumnya. Bangun ulang argumen paling sederhana yang tetap menyelesaikan tugas asli.'
-        ].join('\\n');
+        ].join('\n');
         // Gunakan dummy sink agar output percobaan gagal tidak bocor atau terduplikasi pada SSE.
         const retry = await runTurn(retryPrompt, dummySink, useBuffer);
         answer = retry.text;
