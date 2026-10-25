@@ -235,7 +235,14 @@ const { StreamParser, extractToolCallsFromText } = require('./tool-parser');
      if (finalTools.length > 0) {
          console.log('[tool-parser] parsed tool call(s): ' + finalTools.map((t) => t.name).join(', '));
      } else if (invalidToolCall) {
-         console.warn('[tool-parser] TOOL_CALL markup detected, but no valid tool input parsed');
+         const detail = parser.parseErrors[0];
+         console.warn('[tool-parser] TOOL_CALL markup detected, but no valid tool input parsed' +
+             ' payloads=' + parser.toolBlocks.length +
+             ' incomplete=' + parser.incompleteToolBlock +
+             (detail ? ' chars=' + detail.chars + ' reason=' + detail.reason : ''));
+         if (process.env.DEBUG_TOOL_PARSER === '1' && parser.toolBlocks[0]) {
+             console.warn('[tool-parser] payload preview=' + parser.toolBlocks[0].slice(0, 240).replace(/\\s+/g, ' '));
+         }
      }
 
      return { text: finalText, thinking: emittedThink, toolCalls: finalTools, invalidToolCall };
