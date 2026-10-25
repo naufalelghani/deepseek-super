@@ -24,3 +24,22 @@ test('extractToolCallsFromText removes tool-call markup and returns normalized c
   assert.equal(result.text, 'Before  After');
   assert.deepEqual(result.calls, [{ name: 'Grep', input: { pattern: 'abc' } }]);
 });
+
+
+test('parser exposes invalid tool-call markup so the handler can retry instead of silently dropping it', () => {
+  const parser = new StreamParser(() => {});
+  parser.feed('Before <TOOL_CALL>{"tool":"Bash","arguments":{"command":}}</TOOL_CALL> After');
+  parser.finish();
+  assert.equal(parser.sawToolMarkup, true);
+  assert.equal(parser.incompleteToolBlock, false);
+  assert.deepEqual(parser.toolCalls(), []);
+});
+
+test('parser can recover a valid JSON tool payload even if the closing marker is missing', () => {
+  const parser = new StreamParser(() => {});
+  parser.feed('Before <TOOL_CALL>{"tool":"Bash","arguments":{"command":"pwd"}}');
+  parser.finish();
+  assert.equal(parser.sawToolMarkup, true);
+  assert.equal(parser.incompleteToolBlock, true);
+  assert.deepEqual(parser.toolCalls(), [{ name: 'Bash', input: { command: 'pwd' } }]);
+});
