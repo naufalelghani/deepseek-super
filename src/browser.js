@@ -119,8 +119,6 @@ const { hasNewAssistantResponse } = require('./turn-state');
 
  async function runTurn(prompt, sink, bufferText) {
      const before = await readState();
-     const baselineAnswer = before.answer;
-
      await textarea.click();
      await textarea.fill(prompt);
      await page.waitForTimeout(250);
