@@ -10,14 +10,42 @@ Gateway lokal yang menyediakan endpoint **Anthropic Messages API-compatible** di
 - Google Chrome terpasang
 - Akun DeepSeek yang dapat login di browser
 
-## Instalasi dan menjalankan
+## Instalasi, login Google, dan menjalankan
+
+Install dependency terlebih dahulu:
 
 ```bash
 npm install
+```
+
+### 1. Login ke DeepSeek menggunakan Google
+
+Jalankan helper login sebelum menjalankan server:
+
+```bash
+node deepseek-login.js
+```
+
+Skrip akan membuka Chrome dengan profil persisten `deepseek-profile/`. Login dilakukan **manual oleh pengguna**:
+
+1. Pada halaman DeepSeek, klik **Log in / Sign in**.
+2. Pilih **Sign in with Google**.
+3. Selesaikan proses Google, consent, CAPTCHA, atau 2FA sendiri di jendela browser.
+4. Tunggu sampai kotak chat DeepSeek tampil. Skrip akan mendeteksinya, menyimpan backup sesi lokal opsional ke `deepseek-auth.json`, lalu menutup browser agar profil tidak terkunci.
+
+Sesi utama disimpan di `deepseek-profile/`; folder ini dan backup `deepseek-auth.json` masuk `.gitignore` karena berisi data autentikasi. Jangan commit atau membagikan keduanya.
+
+Kalau sudah login dan sesi masih berlaku, helper akan mendeteksi kotak chat dan selesai tanpa perlu login ulang. Kalau sesi habis, jalankan kembali `node deepseek-login.js` dan lakukan login manual lagi. Timeout login default 10 menit; ubah melalui environment variable `DEEPSEEK_LOGIN_TIMEOUT_MS` jika diperlukan.
+
+### 2. Jalankan gateway
+
+Setelah skrip login selesai dan browsernya tertutup, jalankan:
+
+```bash
 npm start
 ```
 
-Saat pertama kali dijalankan, Playwright membuka Chrome menggunakan profil di folder `deepseek-profile/`. Login ke DeepSeek melalui jendela tersebut jika diperlukan. Folder profil tidak di-commit karena berisi data sesi lokal.
+Server membuka profil `deepseek-profile/` yang sama. Jangan menjalankan `node deepseek-login.js` dan `npm start` bersamaan karena keduanya memakai profil Chrome yang sama dan bisa bertabrakan.
 
 Default endpoint: `http://127.0.0.1:8787`
 
