@@ -3,6 +3,7 @@
 // Open DeepSeek in a persistent Chrome profile so the user can complete
 // Google OAuth manually. The same profile is used by the gateway server.
 
+const fs = require('node:fs');
 const path = require('node:path');
 const readline = require('node:readline/promises');
 const { chromium } = require('playwright');
@@ -22,6 +23,11 @@ async function main() {
     console.log('DeepSeek web login (manual Google OAuth)');
     console.log('Profile:', PROFILE_DIR);
     console.log('A Chrome window will open. Complete login yourself in that window.');
+
+    // Create the persistent profile directory explicitly so its presence is
+    // predictable before Chrome starts. Playwright will populate it with the
+    // browser profile and authentication data.
+    fs.mkdirSync(PROFILE_DIR, { recursive: true });
 
     context = await chromium.launchPersistentContext(PROFILE_DIR, {
       headless: false,
@@ -61,12 +67,24 @@ async function main() {
 
     // Wait briefly for cookies/local storage to settle before saving the backup.
     await page.waitForTimeout(1000);
-    try {
-      await context.storageState({ path: STORAGE_STATE_PATH });
-      console.log('Session backup saved locally:', STORAGE_STATE_PATH);
-    } catch (error) {
-      console.warn('Could not write storage-state backup:', error.message);
+    fs.mkdirSync(path.dirname(STORAGE_STATE_PATH), { recursive: true });
+    await context.storageState({ path: STORAGE_STATE_PATH });
+
+    const profileExists = fs.existsSync(PROFILE_DIR) && fs.statSync(PROFILE_DIR).isDirectory();
+    const authFileExists = fs.existsSync(STORAGE_STATE_PATH) &&
+      fs.statSync(STORAGE_STATE_PATH).isFile() &&
+      fs.statSync(STORAGE_STATE_PATH).size > 0;
+
+    if (!profileExists) {
+      throw new Error('The persistent profile directory was not created: ' + PROFILE_DIR);
     }
+    if (!authFileExists) {
+      throw new Error('The session backup was not created: ' + STORAGE_STATE_PATH);
+    }
+
+    console.log('Session backup saved locally:', STORAGE_STATE_PATH);
+    console.log('Persistent profile directory verified:', PROFILE_DIR);
+    console.log('Session backup file verified:', STORAGE_STATE_PATH);
 
     console.log('');
     console.log('Login step completed. Persistent session is stored in:');
