@@ -175,7 +175,7 @@ Gateway ini meniru sebagian kontrak Anthropic Messages API agar client seperti C
 
 - Permintaan dengan `tools` menyertakan nama tool, deskripsi, dan `input_schema` dalam instruksi prompt lokal.
 - Tool call yang dikenali dikembalikan sebagai blok Anthropic `tool_use`; gateway tidak menjalankan tool client-side. Claude Code atau client terkait yang menjalankan tool.
-- Client harus mengirim hasilnya kembali sebagai `tool_result` yang merujuk ke `tool_use_id`. Setelah menerima hasil, gateway meminta model menyusun jawaban akhir tanpa mengeluarkan tool call baru untuk giliran hasil itu.
+- Client harus mengirim hasilnya kembali sebagai `tool_result` yang merujuk ke `tool_use_id`. Gateway melanjutkan URL chat DeepSeek yang sama dan dapat meminta tool berikutnya jika tugas belum selesai; model memberi jawaban akhir setelah hasil yang tersedia cukup atau batas pengaman percakapan tercapai.
 - Payload tool yang dihasilkan model tetap perlu diperiksa: validasi nama tool dan bentuk input di parser/client, jangan menganggap JSON model tepercaya.
 - `tool_choice` dipetakan secara lokal. Semantik khusus Anthropic seperti `disable_parallel_tool_use` tidak otomatis tersedia di gateway ini; beberapa opsi kompatibilitas dapat berbeda dari API resmi.
 
