@@ -103,13 +103,13 @@ Requests with unexpected `Host` headers are rejected to reduce DNS-rebinding exp
 
 ### Client base URL
 
-For Claude Code CLI, the local base URL is:
+For Claude Code CLI, set the base URL to the gateway root **without `/v1`**:
 
 ```text
-http://127.0.0.1:8787/v1
+http://127.0.0.1:8787
 ```
 
-The official Anthropic SDK's `baseURL` is the server root without `/v1`, for example `http://127.0.0.1:8787`; the SDK appends the API path itself.
+Claude Code appends `/v1/messages` itself. Giving it a base URL that already ends in `/v1` can create a duplicated `/v1/v1/messages` path and return HTTP 404. The Claude Code smoke test accepts a trailing `/v1` in `DEEPSEEK_SUPER_BASE_URL` for convenience and strips it before starting the CLI. The Anthropic SDK also uses the server root, for example `http://127.0.0.1:8787`.
 
 ## Using the Anthropic SDK
 
@@ -206,7 +206,7 @@ npm run check
 
 By default, `npm run test:claude-code` tests **this repository's local gateway**, not a separate router:
 
-- Base URL: `http://127.0.0.1:8787/v1`
+- Base URL: `http://127.0.0.1:8787` (provider root; no `/v1`)
 - Model: `deepseek-super`
 - Token: read automatically from the ignored `.deepseek-super-token` file when using the default local endpoint
 
@@ -237,7 +237,7 @@ try {
 } finally {
   [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
 }
-$env:DEEPSEEK_SUPER_BASE_URL = "http://localhost:20128/v1"
+$env:DEEPSEEK_SUPER_BASE_URL = "http://localhost:20128"
 $env:ANTHROPIC_MODEL = "byv-flash-2410"
 npm run test:claude-code
 Remove-Item Env:ANTHROPIC_AUTH_TOKEN
