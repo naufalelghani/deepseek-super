@@ -106,6 +106,31 @@ Kontrak request memvalidasi `model`, `messages`, `max_tokens`, role/content, sch
 
 SDK compatibility pada lapisan HTTP tidak berarti semua fitur model Anthropic tersedia secara semantik. Gateway ini mengotomatisasi situs web DeepSeek; misalnya, `max_tokens`, parameter sampling, fitur prompt caching, citra/dokumen, dan opsi khusus Anthropic yang tidak dipetakan ke UI belum tentu bekerja seperti API Anthropic resmi. Jangan mengandalkan opsi yang belum didokumentasikan sebagai fitur yang didukung.
 
+## Integration test dengan Anthropic SDK
+
+Dependency test `@anthropic-ai/sdk` sudah dipasang sebagai devDependency. Untuk menguji server lokal menggunakan SDK sungguhan, jalankan server terlebih dahulu:
+
+```bash
+npm install
+npm start
+```
+
+Login ke akun DeepSeek di jendela Chrome yang dibuka oleh Playwright, lalu buka terminal kedua di folder repo dan jalankan:
+
+```bash
+npm run test:sdk
+```
+
+Smoke test ini menguji request non-streaming, event streaming SSE yang dibaca oleh SDK, pemanggilan tool, dan request lanjutan dengan `tool_result`. Tes memerlukan server yang aktif dan sesi browser DeepSeek yang sudah login. Jika server memakai `DEEPSEEK_SUPER_TOKEN`, atur `ANTHROPIC_AUTH_TOKEN` dengan nilai yang sama. Endpoint bisa diganti lewat `DEEPSEEK_SUPER_BASE_URL`, dan nama model lewat `ANTHROPIC_MODEL`.
+
+Tool call pada tes hanya memeriksa payload: perintah yang dihasilkan tidak dieksekusi. Respons tool pada putaran selanjutnya adalah hasil sintetis. Perintah ini mengirim beberapa request ke DeepSeek, jadi perlu waktu dan akses ke akun web DeepSeek.
+
+```bash
+# Tes unit/sintaks yang tidak membutuhkan server DeepSeek aktif
+npm test
+npm run check
+```
+
 ## Endpoint
 
 - `GET /v1/models`
