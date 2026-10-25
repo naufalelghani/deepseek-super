@@ -1,72 +1,72 @@
 # deepseek-super
 
-Gateway lokal yang menyediakan endpoint **Anthropic Messages API-compatible** di atas `chat.deepseek.com` menggunakan Playwright. Implementasi dipecah menjadi modul CommonJS agar prompt, parsing tool, browser automation, SSE, dan HTTP handler dapat dirawat secara terpisah.
+A local gateway that exposes an **Anthropic Messages API-compatible** interface on top of the DeepSeek web app at `chat.deepseek.com` using Playwright. The codebase is split into CommonJS modules for prompt construction, tool parsing, browser automation, SSE streaming, and HTTP request handling.
 
-> Catatan: gateway ini mengotomatiskan antarmuka web DeepSeek, bukan API resmi. Perubahan UI situs dapat memerlukan penyesuaian selector di `src/browser.js`. Pastikan penggunaan sesuai dengan ketentuan layanan dan akun Anda.
+> **Important:** This project automates the DeepSeek website; it is not an official DeepSeek API integration. Website UI changes may require updates to selectors in `src/browser.js`. Use this project in accordance with DeepSeek's terms of service and your account requirements.
 
-## Persyaratan
+## Requirements
 
-- Node.js 18 atau lebih baru
-- Google Chrome terpasang
-- Akun DeepSeek yang dapat login di browser
+- Node.js 18 or later
+- Google Chrome installed
+- A DeepSeek account that can sign in through a browser
 
-## Instalasi, login Google, dan menjalankan
+## Installation, Google login, and startup
 
-Install dependency terlebih dahulu:
+Install the dependencies first:
 
 ```bash
 npm install
 ```
 
-### 1. Login ke DeepSeek menggunakan Google
+### 1. Sign in to DeepSeek with Google
 
-Jalankan helper login sebelum menjalankan server:
+Run the login helper before starting the gateway server:
 
 ```bash
 node deepseek-login.js
 ```
 
-Skrip akan membuka Chrome dengan profil persisten `deepseek-profile/`. Login dilakukan **manual oleh pengguna**:
+The script opens Chrome with the persistent profile in `deepseek-profile/`. Authentication is **manual**:
 
-1. Pada halaman DeepSeek, klik **Log in / Sign in**.
-2. Pilih **Sign in with Google**.
-3. Selesaikan proses Google, consent, CAPTCHA, atau 2FA sendiri di jendela browser.
-4. Pastikan kotak chat DeepSeek sudah tampil dan siap digunakan, lalu tekan Enter di terminal. Skrip memverifikasi kotak chat, menyimpan backup sesi lokal opsional ke `deepseek-auth.json`, lalu menutup browser agar profil tidak terkunci.
+1. On the DeepSeek page, click **Log in / Sign in**.
+2. Choose **Sign in with Google**.
+3. Complete Google's sign-in, consent, CAPTCHA, or two-factor authentication in the browser yourself.
+4. Once the DeepSeek chat composer is visible and ready, return to the terminal and press **Enter**. The script verifies the composer, saves an optional local session backup to `deepseek-auth.json`, and closes Chrome so the profile is not left locked.
 
-Sesi utama disimpan di `deepseek-profile/`; folder ini dan backup `deepseek-auth.json` masuk `.gitignore` karena berisi data autentikasi. Jangan commit atau membagikan keduanya.
+The persistent session is stored in `deepseek-profile/`. Both this directory and the `deepseek-auth.json` backup are listed in `.gitignore` because they contain authentication data. **Never commit or share these files.**
 
-Kalau profil masih login, kamu tidak perlu melakukan login ulang—cukup pastikan halaman chat sudah siap lalu tekan Enter di terminal. Kalau sesi habis, jalankan kembali `node deepseek-login.js` dan lakukan login manual lagi. Setelah kamu menekan Enter, pengecekan kotak chat memiliki timeout default 10 menit; ubah melalui environment variable `DEEPSEEK_LOGIN_TIMEOUT_MS` jika diperlukan.
+If the profile is already signed in, you do not need to authenticate again: make sure the chat page is ready and press Enter in the terminal. If the session has expired, rerun `node deepseek-login.js` and sign in manually. After you press Enter, the chat-composer check has a default timeout of 10 minutes; change it with the `DEEPSEEK_LOGIN_TIMEOUT_MS` environment variable if needed.
 
-### 2. Jalankan gateway
+### 2. Start the gateway
 
-Setelah skrip login selesai dan browsernya tertutup, jalankan:
+After the login helper exits and Chrome has closed, start the server:
 
 ```bash
 npm start
 ```
 
-Server membuka profil `deepseek-profile/` yang sama. Jangan menjalankan `node deepseek-login.js` dan `npm start` bersamaan karena keduanya memakai profil Chrome yang sama dan bisa bertabrakan.
+The server uses the same `deepseek-profile/` directory. Do not run `node deepseek-login.js` and `npm start` at the same time: both use the same Chrome profile and may conflict.
 
 Default endpoint: `http://127.0.0.1:8787`
 
-## Konfigurasi
+## Configuration
 
-Semua konfigurasi dibaca dari environment variables:
+Configuration is read from environment variables:
 
-| Variabel | Default | Keterangan |
-|---|---|---|
-| `PORT` | `8787` | Port server lokal |
-| `MODEL_NAME` | `deepseek-super` | Nama model virtual yang dilaporkan API |
-| `PROFILE_DIR` | `./deepseek-profile` | Folder profil Chrome persisten |
-| `DEEPSEEK_SUPER_TOKEN` | kosong | Token opsional untuk autentikasi |
-| `POLL_MS` | `200` | Interval polling UI dalam milidetik |
-| `STABLE_MS` | `4000` | Waktu tanpa perubahan sebelum turn dianggap selesai |
-| `MAX_TURN_MS` | `300000` | Batas waktu satu turn |
-| `MAX_REPLAY` | `60000` | Batas karakter replay riwayat percakapan |
+| Variable | Default | Description |
+|---|---:|---|
+| `PORT` | `8787` | Local HTTP server port |
+| `MODEL_NAME` | `deepseek-super` | Virtual model name reported by the API |
+| `PROFILE_DIR` | `./deepseek-profile` | Persistent Chrome profile directory |
+| `DEEPSEEK_SUPER_TOKEN` | Empty | Optional API authentication token |
+| `POLL_MS` | `200` | UI polling interval in milliseconds |
+| `STABLE_MS` | `4000` | Required no-change period before a turn is considered complete |
+| `MAX_TURN_MS` | `300000` | Maximum duration of one turn |
+| `MAX_REPLAY` | `60000` | Maximum number of characters replayed from conversation history |
 
-Jika `DEEPSEEK_SUPER_TOKEN` diisi, kirim token dengan header `x-api-key` atau `Authorization: Bearer <token>`. Tanpa token, server tetap hanya bind ke `127.0.0.1`.
+When `DEEPSEEK_SUPER_TOKEN` is set, send it using the `x-api-key` header or `Authorization: Bearer <token>`. Without a token, the server binds only to `127.0.0.1`.
 
-Contoh konfigurasi client:
+Example client environment:
 
 ```bash
 ANTHROPIC_BASE_URL=http://127.0.0.1:8787
@@ -74,17 +74,17 @@ ANTHROPIC_AUTH_TOKEN=any
 ANTHROPIC_MODEL=deepseek-super
 ```
 
-Jika autentikasi server diaktifkan, atur `ANTHROPIC_AUTH_TOKEN` sama dengan `DEEPSEEK_SUPER_TOKEN`.
+If server authentication is enabled, set `ANTHROPIC_AUTH_TOKEN` to the same value as `DEEPSEEK_SUPER_TOKEN`.
 
-## Menggunakan Anthropic TypeScript SDK
+## Using the Anthropic SDK
 
-Gateway ini dapat dipanggil melalui SDK resmi Anthropic dengan mengarahkan `baseURL` ke server lokal:
+You can call the gateway with the official Anthropic SDK by pointing its `baseURL` at the local server:
 
 ```bash
 npm install @anthropic-ai/sdk
 ```
 
-Contoh request non-streaming:
+Example non-streaming request:
 
 ```js
 const Anthropic = require('@anthropic-ai/sdk');
@@ -98,7 +98,7 @@ async function main() {
   const message = await client.messages.create({
     model: 'deepseek-super',
     max_tokens: 1024,
-    messages: [{ role: 'user', content: 'Jelaskan fungsi folder src/.' }],
+    messages: [{ role: 'user', content: 'Explain the purpose of the src/ directory.' }],
   });
 
   for (const block of message.content) {
@@ -109,16 +109,16 @@ async function main() {
 main().catch(console.error);
 ```
 
-SDK mengirim request ke `/v1/messages`; jangan menambahkan path tersebut ke `baseURL`. Jika `DEEPSEEK_SUPER_TOKEN` tidak diatur, nilai `apiKey` hanya perlu string nonkosong. Jika token server diaktifkan, `apiKey` harus sama dengan token itu.
+The SDK sends requests to `/v1/messages`; do not append that path to `baseURL`. If `DEEPSEEK_SUPER_TOKEN` is unset, `apiKey` only needs to be a non-empty string. If server authentication is enabled, `apiKey` must match that token.
 
-Contoh streaming:
+Example streaming request:
 
 ```js
 const stream = await client.messages.create({
   model: 'deepseek-super',
   max_tokens: 1024,
   stream: true,
-  messages: [{ role: 'user', content: 'Halo!' }],
+  messages: [{ role: 'user', content: 'Hello!' }],
 });
 
 for await (const event of stream) {
@@ -128,56 +128,47 @@ for await (const event of stream) {
 }
 ```
 
-### Batas kompatibilitas saat ini
+### Compatibility limitations
 
-Kontrak request memvalidasi `model`, `messages`, `max_tokens`, role/content, schema tools, `tool_choice`, dan `stream`. Endpoint `count_tokens` juga memakai `system`, `messages`, dan schema tools pada perkiraan input. Angka token tersebut adalah estimasi berbasis panjang karakter, bukan hitungan tokenizer DeepSeek yang sebenarnya.
+The request contract validates `model`, `messages`, `max_tokens`, message roles and content, tool schemas, `tool_choice`, and `stream`. The `count_tokens` endpoint estimates input based on `system`, `messages`, and tool schemas. This is a character-length-based estimate, not a count from DeepSeek's actual tokenizer.
 
-SDK compatibility pada lapisan HTTP tidak berarti semua fitur model Anthropic tersedia secara semantik. Gateway ini mengotomatisasi situs web DeepSeek; misalnya, `max_tokens`, parameter sampling, fitur prompt caching, citra/dokumen, dan opsi khusus Anthropic yang tidak dipetakan ke UI belum tentu bekerja seperti API Anthropic resmi. Jangan mengandalkan opsi yang belum didokumentasikan sebagai fitur yang didukung.
+HTTP compatibility with the Anthropic SDK does not imply full semantic support for Anthropic model features. This gateway automates the DeepSeek website. For example, `max_tokens`, sampling parameters, prompt caching, images/documents, and Anthropic-specific options that are not mapped to the web UI may not behave like the official Anthropic API. Do not rely on undocumented options as supported features.
 
-## Integration test dengan Anthropic SDK
+## Anthropic SDK integration test
 
-Dependency test `@anthropic-ai/sdk` sudah dipasang sebagai devDependency. Untuk menguji server lokal menggunakan SDK sungguhan, jalankan server terlebih dahulu:
+The `@anthropic-ai/sdk` test dependency is included as a dev dependency. To test the local gateway with the real SDK, start the server first:
 
 ```bash
 npm install
 npm start
 ```
 
-Login ke akun DeepSeek di jendela Chrome yang dibuka oleh Playwright, lalu buka terminal kedua di folder repo dan jalankan:
+Sign in to DeepSeek in the Chrome window opened by Playwright. Then open a second terminal in the repository root and run:
 
 ```bash
 npm run test:sdk
 ```
 
-Smoke test ini menguji request non-streaming, event streaming SSE yang dibaca oleh SDK, pemanggilan tool, dan request lanjutan dengan `tool_result`. Tes memerlukan server yang aktif dan sesi browser DeepSeek yang sudah login. Jika server memakai `DEEPSEEK_SUPER_TOKEN`, atur `ANTHROPIC_AUTH_TOKEN` dengan nilai yang sama. Endpoint bisa diganti lewat `DEEPSEEK_SUPER_BASE_URL`, dan nama model lewat `ANTHROPIC_MODEL`.
+The smoke test checks non-streaming requests, SSE streaming events consumed by the SDK, tool calls, and a follow-up request with `tool_result`. The test requires the server to be running and the DeepSeek browser session to be signed in. If `DEEPSEEK_SUPER_TOKEN` is configured, set `ANTHROPIC_AUTH_TOKEN` to the same value. The endpoint can be changed with `DEEPSEEK_SUPER_BASE_URL`, and the model name with `ANTHROPIC_MODEL`.
 
-Tool call pada tes hanya memeriksa payload: perintah yang dihasilkan tidak dieksekusi. Respons tool pada putaran selanjutnya adalah hasil sintetis. Perintah ini mengirim beberapa request ke DeepSeek, jadi perlu waktu dan akses ke akun web DeepSeek.
+The tool-use part of this test checks the payload only; it does not execute the generated command. Tool results in the follow-up request are synthetic. The test sends several requests to DeepSeek and therefore requires access to your signed-in DeepSeek web account.
+
+Run unit tests and syntax checks without a running DeepSeek server:
 
 ```bash
-# Tes unit/sintaks yang tidak membutuhkan server DeepSeek aktif
 npm test
 npm run check
 ```
 
-## Reuse percakapan DeepSeek
+## Claude Code CLI integration test
 
-Gateway menggunakan satu tab Chrome Playwright dan berusaha melanjutkan URL chat DeepSeek yang tersimpan untuk request berikutnya. Hasil tool (`tool_result`) juga harus melanjutkan chat yang sama; gateway tidak semestinya membuat percakapan baru hanya karena client mengirim hasil tool.
-
-Gateway membuat percakapan baru bila belum ada sesi tersimpan, sesi lama sudah tidak valid, atau server perlu memulai ulang setelah sesi cache hilang. Pemetaan URL percakapan disimpan di memori proses selama maksimal 30 menit, sehingga restart server akan menghapus cache tersebut. Log `[session]` menjelaskan kapan chat lama berhasil dilanjutkan atau gateway terpaksa membuat chat baru.
-
-### Kompatibilitas pesan system dari Claude Code
-
-Beberapa versi Claude Code dapat mengirim pesan dengan `role: "system"` di dalam array `messages`, padahal kontrak Anthropic mengharuskan instruksi sistem berada di field tingkat atas `system`. Gateway memindahkan pesan `system`/`developer` yang valid ke field tersebut sebelum validasi dan mencatat jumlah pesan yang dinormalisasi tanpa mencetak isi prompt.
-
-## Integration test langsung dengan Claude Code
-
-Tes ini menggunakan Claude Code CLI asli melalui 9Router lokal, dengan default berikut:
+This test uses the real Claude Code CLI through a local 9Router instance. The defaults are:
 
 - Base URL: `http://localhost:20128/v1`
-- Model combo: `byv-flash-2410`
-- API key: dibaca dari variabel lingkungan `ANTHROPIC_AUTH_TOKEN` atau `ANTHROPIC_API_KEY`
+- Model: `byv-flash-2410`
+- API key: read from `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY`
 
-Jalankan dari root repo. Pilih instruksi sesuai terminal yang digunakan. API key tidak ditampilkan saat diketik dan tidak disimpan ke repo.
+Run the following commands from the repository root. Choose the instructions for your terminal. The API key is not displayed while entering it and should never be committed to the repository.
 
 **Windows PowerShell:**
 
@@ -202,75 +193,79 @@ npm run test:claude-code
 unset ANTHROPIC_AUTH_TOKEN
 ```
 
-Tes mewajibkan enam tool dipanggil secara berurutan dan menerima hasil masing-masing: `Read`, `Glob`, `Grep`, `Edit`, `Write`, dan `Bash(pwd)`. Ini juga menguji rangkaian multi-step tool calling. Operasi tulis/edit hanya dilakukan di workspace sementara di folder temp, bukan di repo. Perintah Bash yang diizinkan hanya `pwd`; tool lain tidak tersedia. Workspace pengujian dihapus setelah selesai.
+The test requires six tools to be called sequentially and each to return a result: `Read`, `Glob`, `Grep`, `Edit`, `Write`, and `Bash(pwd)`. It also exercises multi-step tool calling. File edits and writes are restricted to a temporary workspace, not the repository. The only allowed Bash command is `pwd`; other tools are not available to the test. The temporary workspace is deleted when the test finishes.
 
-Endpoint dapat diubah melalui `DEEPSEEK_SUPER_BASE_URL`, dan model melalui `ANTHROPIC_MODEL`. Jika kamu menggunakan endpoint 9Router di atas, server `npm start` dari gateway DeepSeek lokal tidak diperlukan; 9Router saja yang harus aktif. Simpan API key hanya di lingkungan lokal, jangan commit ke repo publik.
+Override the endpoint with `DEEPSEEK_SUPER_BASE_URL` and the model with `ANTHROPIC_MODEL`. When using the 9Router endpoint above, you do not need to run `npm start` for this repository; only 9Router needs to be running. Keep API keys in local environment variables and never commit them to a public repository.
 
-## Endpoint
+## Endpoints
 
 - `GET /v1/models`
 - `POST /v1/messages`
 - `POST /v1/messages/count_tokens`
 - `HEAD /api/hello`
 
-`POST /v1/messages` mendukung respons streaming SSE dan non-streaming JSON, serta pemetaan `tool_use`/`tool_result` ke format prompt yang digunakan gateway.
+`POST /v1/messages` supports both SSE streaming responses and non-streaming JSON responses, as well as mapping `tool_use` and `tool_result` blocks to the prompt format used by the gateway.
 
-## Audit kompatibilitas DeepSeek / Anthropic
+## DeepSeek / Anthropic compatibility notes
 
-Gateway ini meniru sebagian kontrak Anthropic Messages API agar client seperti Claude Code dapat berbicara dengan antarmuka web DeepSeek. Ini bukan koneksi langsung ke `https://api.deepseek.com/anthropic`: prompt, tool call, streaming, dan token usage diproses oleh adapter lokal dan otomasi browser.
+This gateway implements part of the Anthropic Messages API contract so clients such as Claude Code can communicate with the DeepSeek web interface. It does not connect directly to `https://api.deepseek.com/anthropic`: prompts, tool calls, streaming, and token usage are handled by the local adapter and browser automation.
 
-### Tool use dan round trip
+### Tool use and round trips
 
-- Permintaan dengan `tools` menyertakan nama tool, deskripsi, dan `input_schema` dalam instruksi prompt lokal.
-- Tool call yang dikenali dikembalikan sebagai blok Anthropic `tool_use`; gateway tidak menjalankan tool client-side. Claude Code atau client terkait yang menjalankan tool.
-- Client harus mengirim hasilnya kembali sebagai `tool_result` yang merujuk ke `tool_use_id`. Gateway melanjutkan URL chat DeepSeek yang sama dan dapat meminta tool berikutnya jika tugas belum selesai; model memberi jawaban akhir setelah hasil yang tersedia cukup atau batas pengaman percakapan tercapai.
-- Payload tool yang dihasilkan model tetap perlu diperiksa: validasi nama tool dan bentuk input di parser/client, jangan menganggap JSON model tepercaya.
-- `tool_choice` dipetakan secara lokal. Semantik khusus Anthropic seperti `disable_parallel_tool_use` tidak otomatis tersedia di gateway ini; beberapa opsi kompatibilitas dapat berbeda dari API resmi.
+- Requests containing `tools` include tool names, descriptions, and `input_schema` definitions in local prompt instructions.
+- Recognized tool calls are returned as Anthropic `tool_use` blocks; the gateway does not execute client-side tools. Claude Code or the client is responsible for executing them.
+- The client must send tool results back as `tool_result` blocks referencing the original `tool_use_id`. The gateway continues the same DeepSeek chat URL and can request another tool if the task is not complete. The model returns a final answer when the available results are sufficient or a safety limit is reached.
+- Model-generated tool payloads must still be checked. Validate tool names and input shapes in the parser/client; do not trust generated JSON blindly.
+- `tool_choice` is mapped locally. Anthropic-specific semantics such as `disable_parallel_tool_use` are not automatically available, and some compatibility behavior may differ from the official API.
 
 ### Context caching
 
-DeepSeek API resmi mengaktifkan disk context caching otomatis dan mencocokkan prefix input yang identik. Prefix yang sama dapat digunakan ulang pada permintaan berikutnya, tetapi cache hit bersifat best-effort dan tidak dijamin. API resmi melaporkan `prompt_cache_hit_tokens` dan `prompt_cache_miss_tokens` di `usage`.
+The official DeepSeek API automatically uses disk-based context caching and can reuse identical input prefixes across requests. Cache hits are best-effort, not guaranteed. The official API reports `prompt_cache_hit_tokens` and `prompt_cache_miss_tokens` in `usage`.
 
-Gateway Playwright ini berinteraksi dengan `chat.deepseek.com`, bukan endpoint API resmi. Karena itu, kode gateway tidak dapat mengatur atau memastikan cache API resmi, dan angka `usage` lokal merupakan estimasi, bukan pengukuran token/cache DeepSeek. Jangan menafsirkan `cache_control` Anthropic sebagai pengaturan cache yang aktif di gateway.
+This Playwright gateway interacts with `chat.deepseek.com`, not the official API endpoint. Its code therefore cannot control or guarantee the official API's cache behavior. Local `usage` values are estimates, not measurements of DeepSeek token or cache usage. Anthropic's `cache_control` field does not configure an active cache in this adapter.
 
-Untuk menjaga konteks konsisten dan menghindari pemotongan riwayat yang tidak perlu, instruksi dan schema tool dibuat dari request yang diterima; percakapan yang dilanjutkan menggunakan tool schema pada prompt giliran tersebut. UI DeepSeek atau perubahan isi prompt dapat tetap memengaruhi perilaku dan efisiensi caching internal situs.
+To keep context consistent and avoid unnecessary history truncation, instructions and tool schemas are built from each request. Continued conversations use the tool schema supplied for that turn. Changes in the DeepSeek UI or prompt content may still affect the website's internal behavior and caching efficiency.
 
-### Field Anthropic dan batas kompatibilitas
+### Anthropic fields and compatibility limits
 
-Adapter mendukung bentuk umum `system`, `messages`, `tools`, `tool_choice`, `stream`, serta blok `text`, `tool_use`, dan `tool_result` yang diperlukan client. Ini bukan implementasi penuh Anthropic API. Field atau blok yang tidak dipetakan secara eksplisit dapat diabaikan atau dinormalisasi oleh adapter. Khususnya, `cache_control` tidak mengaktifkan cache terkontrol pada adapter ini.
+The adapter supports common forms of `system`, `messages`, `tools`, `tool_choice`, and `stream`, along with the `text`, `tool_use`, and `tool_result` blocks required for common client workflows. This is not a full implementation of the Anthropic API. Fields or blocks that are not explicitly mapped may be ignored or normalized by the adapter. In particular, `cache_control` does not enable controlled caching in this gateway.
 
-Referensi resmi:
+Official references:
 
 - [DeepSeek Context Caching](https://api-docs.deepseek.com/guides/kv_cache)
 - [Using the Anthropic API](https://api-docs.deepseek.com/guides/anthropic_api)
 - [Tool Calls](https://api-docs.deepseek.com/guides/tool_calls)
 
-## Struktur proyek
+## Project structure
 
 ```text
 deepseek-super/
-├── deepseek-super-server.js   # Entry point kompatibel dengan cara menjalankan lama
+├── deepseek-login.js          # Manual Google sign-in helper
+├── deepseek-super-server.js   # Backward-compatible entry point
 ├── package.json
 ├── README.md
 ├── .gitignore
+├── scripts/
+│   ├── anthropic-sdk-smoke.cjs # Anthropic SDK integration test
+│   └── claude-code-smoke.cjs   # Claude Code CLI integration test
 ├── src/
-│   ├── index.js               # Public API dan lifecycle server
-│   ├── config.js              # Environment variables dan helper dasar
-│   ├── content.js             # Normalisasi blok pesan dan session key
-│   ├── prompts.js             # Prompt, tool_choice, dan tool schema
-│   ├── tool-parser.js         # Parser streaming dan parser TOOL_CALL
-│   ├── session-store.js       # Cache URL percakapan
-│   ├── browser.js             # Playwright, polling, dan runner turn
-│   ├── sse-sink.js            # Serialisasi Anthropic SSE
-│   ├── handler.js             # Handler endpoint Messages
-│   ├── http-utils.js          # Parsing body, auth, dan error response
-│   └── server.js              # Routing HTTP
-└── test/
-    ├── content.test.js
-    └── tool-parser.test.js
+│   ├── index.js               # Public API and lifecycle
+│   ├── config.js              # Environment variables and defaults
+│   ├── content.js             # Message-block normalization and session keys
+│   ├── prompts.js             # Prompt building, tool_choice, and tool schemas
+│   ├── tool-parser.js         # Streaming and TOOL_CALL parsing
+│   ├── session-store.js       # Conversation URL cache
+│   ├── browser.js             # Playwright, polling, and browser turn runner
+│   ├── turn-state.js          # Turn state detection
+│   ├── sse-sink.js            # Anthropic SSE serialization
+│   ├── handler.js             # Messages endpoint handler
+│   ├── http-utils.js          # HTTP parsing and authentication helpers
+│   ├── anthropic-contract.js  # Request validation and token estimates
+│   └── server.js              # HTTP routing
+└── test/                      # Unit and behavior tests
 ```
 
-## Menggunakan sebagai library
+## Using the project as a library
 
 ```js
 const { createServer, config } = require('deepseek-super');
@@ -279,15 +274,15 @@ const server = createServer();
 server.listen(config.PORT, '127.0.0.1');
 ```
 
-Untuk shutdown normal saat menggunakan `createServer()` secara langsung, tutup HTTP server dan panggil `shutdownBrowser()` dari `deepseek-super/src/browser` agar konteks Chrome ikut ditutup. Untuk penggunaan CLI biasa, gunakan `npm start` sehingga handler shutdown bawaan aktif.
+For normal shutdown when using `createServer()` directly, close the HTTP server and call `shutdownBrowser()` from `deepseek-super/src/browser` to close the Chrome context as well. For regular CLI usage, run `npm start` so the built-in shutdown handlers are enabled.
 
-## Troubleshooting tool call
+## Troubleshooting tool calls
 
-Jika DeepSeek menghasilkan blok `<TOOL_CALL>` dengan JSON yang tidak valid, gateway mengirim sampai dua prompt koreksi di percakapan yang sama. Parser hanya memproses jawaban assistant yang baru, bukan baris user yang baru saja ditambahkan ke UI. Log akan mencatat jumlah payload, status blok yang terpotong, dan alasan parse gagal.
+If DeepSeek generates an invalid JSON block inside `<TOOL_CALL>`, the gateway sends up to two correction prompts in the same conversation. The parser processes only the newest assistant response, not the user message that was just added to the UI. Logs record the payload length, whether the block was truncated, and the parsing failure reason.
 
-Untuk satu sesi diagnosis, jalankan server dengan `DEBUG_TOOL_PARSER=1` agar log menampilkan cuplikan awal payload bermasalah. Cuplikan dapat berisi perintah shell atau konten prompt, jadi jaga log tetap privat dan matikan flag setelah selesai.
+For one diagnostic session, start the server with `DEBUG_TOOL_PARSER=1` to log an initial excerpt of a malformed payload. This excerpt may contain shell commands or prompt content. Keep these logs private and disable the flag after diagnosis.
 
-## Test dan pemeriksaan sintaks
+## Tests and syntax checks
 
 ```bash
 npm test
