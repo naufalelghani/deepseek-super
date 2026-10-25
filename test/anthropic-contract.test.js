@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   validateMessagesRequest,
+  normalizeAnthropicMessagesRequest,
   estimateInputTokens,
   estimateOutputTokens,
 } = require('../src/anthropic-contract');
@@ -83,4 +84,54 @@ test('input token estimate includes system instructions and tool schemas', () =>
   });
   assert.ok(extended > base);
   assert.ok(estimateOutputTokens('answer', '', []) > 0);
+});
+
+test('normalizes Claude Code system-role messages into the top-level system field', () => {
+  const request = {
+    ...minimal,
+    system: 'Existing system instruction.',
+    messages: [
+      { role: 'user', content: 'hello' },
+      { role: 'system', content: 'Extra injected system instruction.' },
+      { role: 'assistant', content: 'hi' },
+      { role: 'user', content: 'continue' },
+    ],
+  };
+
+  const result = normalizeAnthropicMessagesRequest(request);
+  assert.equal(result.normalizedInstructionMessages, 1);
+  assert.deepEqual(result.body.messages, [
+    { role: 'user', content: 'hello' },
+    { role: 'assistant', content: 'hi' },
+    { role: 'user', content: 'continue' },
+  ]);
+  assert.deepEqual(result.body.system, [
+    { type: 'text', text: 'Existing system instruction.' },
+    { type: 'text', text: 'Extra injected system instruction.' },
+  ]);
+  assert.equal(request.messages[1].role, 'system', 'normalizer must not mutate original request');
+  assert.equal(validateMessagesRequest(result.body), null);
+});
+
+test('normalizes developer-role instructions too and preserves array content blocks', () => {
+  const result = normalizeAnthropicMessagesRequest({
+    ...minimal,
+    messages: [
+      { role: 'developer', content: [{ type: 'text', text: 'Developer instruction.' }] },
+      { role: 'user', content: 'hello' },
+    ],
+  });
+
+  assert.equal(result.normalizedInstructionMessages, 1);
+  assert.deepEqual(result.body.system, [{ type: 'text', text: 'Developer instruction.' }]);
+  assert.deepEqual(result.body.messages, [{ role: 'user', content: 'hello' }]);
+  assert.equal(validateMessagesRequest(result.body), null);
+});
+
+test('reports the actual unsupported message role in validation errors', () => {
+  const error = validateMessagesRequest({
+    ...minimal,
+    messages: [{ role: 'tool', content: 'unexpected role' }],
+  });
+  assert.match(error.message, /"tool"/);
 });
