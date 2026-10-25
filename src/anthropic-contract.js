@@ -79,7 +79,7 @@ function validateMessagesRequest(body, options = {}) {
       return { type: 'invalid_request_error', message: 'Field "tool_choice" tidak valid.' };
     }
     if (isPlainObject(choice) && choice.type === 'tool' &&
-        Array.isArray(body.tools) && !body.tools.some((tool) => tool.name === choice.name)) {
+        (!Array.isArray(body.tools) || !body.tools.some((tool) => tool.name === choice.name))) {
       return { type: 'invalid_request_error', message: `tool_choice merujuk tool yang tidak tersedia: ${choice.name}` };
     }
   }
