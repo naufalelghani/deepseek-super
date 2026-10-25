@@ -2,7 +2,7 @@
 
 // End-to-end test: real Claude Code CLI -> local Anthropic-compatible gateway.
 // It uses a temporary workspace and only allows six bounded built-in tools.
-// Prerequisites: the local 9Router gateway is running and ANTHROPIC_AUTH_TOKEN is set.
+// Prerequisites: npm start is running and the local DeepSeek profile is signed in.
 // Run: npm run test:claude-code
 
 const fs = require('node:fs');
@@ -19,7 +19,7 @@ const IS_DEFAULT_GATEWAY = (() => {
   try {
     const url = new URL(BASE_URL);
     return ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) &&
-      Number(url.port || 80) === 8787 && url.pathname.replace(/\\/+$/, '') === '/v1';
+      Number(url.port || 80) === 8787 && (url.pathname === '/v1' || url.pathname === '/v1/');
   } catch {
     return false;
   }
@@ -311,6 +311,6 @@ main().catch((error) => {
   console.error('\nCLAUDE CODE INTEGRATION TEST FAILED');
   console.error(error && error.stack ? error.stack : error);
   console.error('\nEnsure 9Router is running at ' + BASE_URL + ' and the API key is correct.');
-  console.error('The key is read from the environment and is never printed by this test.');
+  console.error('For the local gateway, .deepseek-super-token is read automatically. External endpoints require ANTHROPIC_AUTH_TOKEN.');
   process.exitCode = 1;
 });
