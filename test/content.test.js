@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { blocksOf, flattenContent, renderMessage, sessionKey, truncateReplay } = require('../src/content');
-const { approxTokens } = require('../src/config');
+const { approxTokens, MAX_REPLAY } = require('../src/config');
 
 test('blocksOf normalizes strings and handles empty content', () => {
   assert.deepEqual(blocksOf('hello'), [{ type: 'text', text: 'hello' }]);
@@ -26,6 +26,7 @@ test('sessionKey is stable for the same leading system and user messages', () =>
 test('truncateReplay caps very long replay prompts and token estimate is positive', () => {
   const long = 'x'.repeat(65000);
   const replay = truncateReplay(long);
+  assert.ok(replay.length <= MAX_REPLAY);
   assert.ok(replay.length < long.length);
   assert.match(replay, /WARNING: conversation replay was truncated/);
   assert.equal(approxTokens('hello'), 2);
