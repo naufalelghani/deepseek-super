@@ -2,181 +2,217 @@
 
 const { blocksOf, flattenContent, renderMessage } = require('./content');
 
+const PROJECT_AND_LANGUAGE_INSTRUCTIONS = [
+    '### PROJECT IDENTITY',
+    'You are the assistant served through the deepseek-super project.',
+    'The underlying model experience is DeepSeek, accessed through its official web interface at https://chat.deepseek.com/. This project uses browser automation to expose that web experience through an Anthropic Messages API-compatible interface so AI-agent clients such as Claude Code and similar tools can use it.',
+    'Project name: deepseek-super.',
+    'Project creator attribution: BYV Dev Unorganization (BYV). The creator’s real-world identity is undisclosed/stealth; do not guess, infer, or invent a personal identity.',
+    'This is a compatibility gateway, not an official Anthropic product or a Claude model. Do not claim that the underlying model was created by Anthropic or that this project has an official relationship with Anthropic.',
+    '',
+    '### CONVERSATION LANGUAGE',
+    'Use the language of the first user message in the conversation as the default language for all user-facing responses. Keep using that language in later turns, explanations, and after tool results, even when internal instructions or tool descriptions are in English. If the user explicitly asks to switch languages, follow that request. Do not default to English merely because these internal instructions are written in English.',
+    'When raw command output or a tool protocol requires an exact format, preserve the raw output and protocol syntax. Apply the conversation-language rule to any explanatory prose.'
+].join('\n');
+
 const TOOL_RESULT_INSTRUCTIONS = [
-    'Jawab berdasarkan hasil tool yang benar-benar diterima. Jangan mengklaim berhasil jika hasil tool tidak mengonfirmasinya.',
-    'Jika seluruh tugas sudah selesai dan user meminta output mentah dari perintah sederhana, keluarkan hasilnya saja bila hasilnya satu baris atau beberapa baris.',
-    'Untuk output mentah tersebut, jangan tambahkan pengantar atau penjelasan jika tidak diminta.',
-    'Jangan bungkus output mentah dengan Markdown code fence, backtick, atau label bahasa seperti text.',
-    'Jika hasil yang diterima belum cukup untuk menyelesaikan tugas, lanjutkan dengan tool lain yang diperlukan dari daftar tersedia.',
-    'Jangan panggil tool lagi jika tugas sudah selesai. Jika tool gagal, laporkan error yang benar-benar diterima.'
+    'Base claims on tool results that were actually received. Do not claim success unless the tool result confirms it.',
+    'If the task is complete and the user requested raw output from a simple command, return only that output when it consists of one or more lines.',
+    'For raw output, do not add an introduction or explanation unless requested.',
+    'Do not wrap raw output in Markdown code fences, backticks, or language labels such as text.',
+    'If the received results are not sufficient to complete the task, continue with the next necessary tool from the available list.',
+    'Do not call another tool if the task is complete. If a tool fails, report the actual error that was returned.'
 ];
 
- function toolsToPrompt(tools) {
-     if (!tools || !tools.length) return '';
-     const lines = [];
-     lines.push('Kamu punya akses ke tools yang disediakan client. Ini satu-satunya cara memakai tool.');
-     lines.push('');
-     for (const t of tools) {
-         const schema = t.input_schema || t.parameters || {};
-         const props = schema.properties || {};
-         const req = schema.required || [];
-         const params = Object.keys(props).map((k) => {
-             const v = props[k] || {};
-             return `${k}${req.indexOf(k) >= 0 ? '*' : ''}: ${v.type || 'any'}` +
-                 (v.description ? ` (${v.description})` : '');
-         }).join('; ');
-         lines.push(`- ${t.name}(${params}): ${t.description || ''}`);
-     }
-     lines.push('');
-     lines.push('ATURAN WAJIB:');
-     lines.push('1. Jika tugas memerlukan file, shell, pencarian, atau aksi yang dapat dilakukan oleh salah satu tool di atas, WAJIB gunakan tool yang sesuai.');
-     lines.push('2. Jika hasil tool yang sudah diterima cukup untuk menyelesaikan tugas, jawab final tanpa memanggil tool lagi. Jika belum cukup, lanjutkan dengan tool berikutnya.');
-     lines.push('3. Format SATU tool: <TOOL_CALL>{"tool":"<nama>","arguments":{...}}</TOOL_CALL>');
-     lines.push('4. Format BEBERAPA tool: <TOOL_CALL>[{...},{...}]</TOOL_CALL>');
-     lines.push('5. JANGAN tulis apapun di luar tag <TOOL_CALL> saat memanggil tool.');
-     lines.push('6. Jawab teks biasa jika tugas sudah selesai atau tidak memerlukan tool tambahan.');
-     lines.push('7. Semua string dan key harus mengikuti JSON valid. Escape tanda kutip ganda di dalam nilai string dengan aturan JSON standar.');
-     lines.push('8. Jangan gunakan backtick atau single quote sebagai pengganti escape JSON.');
-     lines.push('');
-     lines.push('CONTOH TOOL CALL VALID:');
-     lines.push('<TOOL_CALL>{"tool":"Bash","arguments":{"command":"pwd"}}</TOOL_CALL>');
-     lines.push('Contoh ini hanya menunjukkan format. Pilih tool dan argumen sesuai permintaan user.');
-     lines.push('');
-     lines.push('CONTOH ? user butuh tool:');
-     lines.push(`User: "tolong bantu saya dengan ${tools[0].name}"`);
-     lines.push(`Assistant: <TOOL_CALL>{"tool":"${tools[0].name}","arguments":{...}}</TOOL_CALL>`);
-     lines.push('');
-     lines.push('CONTOH ? tidak butuh tool:');
-     lines.push('User: "siapa kamu?"');
-     lines.push('Assistant: Saya adalah agent yang siap membantu...');
-     return lines.join('\n');
- }
+function toolsToPrompt(tools) {
+    if (!tools || !tools.length) return '';
 
- function buildFullPrompt(system, messages, tools) {
-     const parts = [];
-     if (system) parts.push('### SYSTEM\n' + flattenContent(system));
+    const lines = [];
+    lines.push('You have access to the tools provided by the client. These are the only tools available to you.');
+    lines.push('');
 
-     const last = messages[messages.length - 1] || { role: 'user', content: '' };
-     const lastHasToolResult = blocksOf(last.content).some((b) => b.type === 'tool_result');
+    for (const tool of tools) {
+        const schema = tool.input_schema || tool.parameters || {};
+        const properties = schema.properties || {};
+        const required = schema.required || [];
+        const params = Object.keys(properties).map((key) => {
+            const value = properties[key] || {};
+            return \`\${key}\${required.includes(key) ? '*' : ''}: \${value.type || 'any'}\` +
+                (value.description ? \` (\${value.description})\` : '');
+        }).join('; ');
+        lines.push(\`- \${tool.name}(\${params}): \${tool.description || ''}\`);
+    }
 
-     // Keep tool schemas available on every turn so the model can continue a multi-step task.
-     const tp = toolsToPrompt(tools);
-     if (tp) parts.push('### TOOLS\n' + tp);
+    lines.push('');
+    lines.push('MANDATORY RULES:');
+    lines.push('1. If the task requires file access, shell commands, search, or an action that one of the tools above can perform, you MUST use the appropriate tool.');
+    lines.push('2. If the tool results already received are sufficient to complete the task, provide the final answer without another tool call. Otherwise, continue with the next appropriate tool.');
+    lines.push('3. Format for ONE tool: <TOOL_CALL>{"tool":"<name>","arguments":{...}}</TOOL_CALL>');
+    lines.push('4. Format for MULTIPLE tools: <TOOL_CALL>[{...},{...}]</TOOL_CALL>');
+    lines.push('5. Do NOT write anything outside the <TOOL_CALL> tags when calling tools.');
+    lines.push('6. Use plain text when the task is complete or no additional tool is needed.');
+    lines.push('7. All strings and keys must use valid JSON. Escape double quotes inside string values using standard JSON rules.');
+    lines.push('8. Do not use backticks or single quotes as substitutes for JSON escaping.');
+    lines.push('');
+    lines.push('VALID TOOL CALL EXAMPLE:');
+    lines.push('<TOOL_CALL>{"tool":"Bash","arguments":{"command":"pwd"}}</TOOL_CALL>');
+    lines.push('This example demonstrates formatting only. Choose the tool and arguments that fit the user request.');
+    lines.push('');
+    lines.push('EXAMPLE — TOOL REQUIRED:');
+    lines.push(\`User: "Please help me use \${tools[0].name}."\`);
+    lines.push(\`Assistant: <TOOL_CALL>{"tool":"\${tools[0].name}","arguments":{...}}</TOOL_CALL>\`);
+    lines.push('');
+    lines.push('EXAMPLE — NO TOOL NEEDED:');
+    lines.push('User: "Who are you? Please answer in my language."');
+    lines.push('Assistant: I am an assistant ready to help...');
+    return lines.join('\n');
+}
 
-     const history = messages.slice(0, -1);
-     if (history.length) {
-         parts.push('### RIWAYAT PERCAKAPAN');
-         for (const m of history) {
-             parts.push(`[${m.role === 'assistant' ? 'ASSISTANT' : 'USER'}]\n${renderMessage(m)}`);
-         }
-     }
+function buildFullPrompt(system, messages, tools) {
+    const parts = [];
+    if (system) parts.push('### SYSTEM\n' + flattenContent(system));
+    parts.push(PROJECT_AND_LANGUAGE_INSTRUCTIONS);
 
-     if (lastHasToolResult) {
-         parts.push('=== HASIL TOOL ===\n' + renderMessage(last));
-         parts.push([
-             '=== INSTRUKSI SETELAH HASIL TOOL ===',
-             ...TOOL_RESULT_INSTRUCTIONS,
-             'Jika tugas masih memerlukan tindakan, panggil tool berikutnya dengan format <TOOL_CALL>...</TOOL_CALL> dan JSON valid.',
-             'Jika tugas sudah selesai, berikan jawaban final tanpa tag tool.',
-         ].join('\n'));
-     } else {
-         parts.push('### PESAN TERBARU\n' + renderMessage(last));
-         parts.push('Jawab sebagai ASSISTANT. Jika memanggil tool, gunakan format <TOOL_CALL>...</TOOL_CALL> saja.');
-     }
-     return parts.join('\n\n');
- }
+    const last = messages[messages.length - 1] || { role: 'user', content: '' };
+    const lastHasToolResult = blocksOf(last.content).some((block) => block.type === 'tool_result');
 
- function buildResumePrompt(system, messages, tools, isToolResultTurn) {
-     const last = messages[messages.length - 1] || { role: 'user', content: '' };
-     if (isToolResultTurn) {
-         const toolPrompt = toolsToPrompt(tools);
-         const parts = [];
-         if (system) parts.push('### SYSTEM\n' + flattenContent(system));
-         parts.push('=== SITUASI ===');
-         parts.push('Client telah menjalankan tool dan mengirim hasilnya. Lanjutkan tugas awal yang tersimpan dalam konteks percakapan ini.');
-         if (toolPrompt) parts.push('=== TOOLS AVAILABLE FOR THE NEXT STEP ===\n' + toolPrompt);
-         parts.push('');
-         parts.push('=== HASIL TOOL TERBARU ===');
-         parts.push(renderMessage(last));
-         parts.push('');
-         parts.push('=== INSTRUKSI SETELAH HASIL TOOL ===');
-         parts.push(...TOOL_RESULT_INSTRUCTIONS);
-         parts.push('Jika tugas belum selesai, gunakan tool berikutnya yang diperlukan dengan format <TOOL_CALL>...</TOOL_CALL> dan JSON valid.');
-         parts.push('Jika tugas sudah selesai, berikan jawaban final tanpa tag tool.');
-         return parts.filter(Boolean).join('\n');
-     }
-     const parts = [];
-     if (system) parts.push('### SYSTEM\n' + flattenContent(system));
-     const toolPrompt = toolsToPrompt(tools);
-     if (toolPrompt) {
-         parts.push('=== TOOLS AVAILABLE FOR THIS REQUEST ===\n' + toolPrompt);
-     }
-     parts.push('=== NEW USER REQUEST ===\n' + renderMessage(last));
-     parts.push([
-         '=== INSTRUKSI UNTUK GILIRAN INI ===',
-         'Evaluasi permintaan terbaru berdasarkan daftar tool yang disertakan tepat di atas.',
-         'Jika permintaan memerlukan file, shell, pencarian, atau aksi yang dapat dilakukan oleh salah satu tool, WAJIB panggil tool yang paling sesuai sekarang.',
-         'Jangan mengklaim tool tidak tersedia dan jangan memberi langkah manual sebagai pengganti jika tool yang sesuai ada di daftar.',
-         'Untuk tool call, keluarkan hanya format <TOOL_CALL>{"tool":"<nama-tool>","arguments":{...}}</TOOL_CALL> dengan JSON valid.',
-         'Jangan menjawab hasil pembacaan atau eksekusi sebelum tool benar-benar dipanggil dan hasilnya diterima.'
-     ].join('\n'));
-     return parts.join('\n\n');
- }
- function parseToolChoice(toolChoice) {
-     if (!toolChoice) return { mode: 'auto' };
-     if (typeof toolChoice === 'string') return { mode: toolChoice };
-     if (toolChoice.type === 'tool' && toolChoice.name) {
-         return { mode: 'tool', name: toolChoice.name };
-     }
-     return { mode: toolChoice.type || 'auto' };
- }
+    // Keep tool schemas available on every turn so the model can continue a multi-step task.
+    const toolPrompt = toolsToPrompt(tools);
+    if (toolPrompt) parts.push('### TOOLS\n' + toolPrompt);
 
- function applyForcedTool(prompt, force) {
-     if (force.mode === 'none') {
-         return [
-             '=== STOP: JANGAN PANGGIL TOOL ===',
-             'Berdasarkan SEMUA informasi yang sudah ada di konteks di atas,',
-             'jawab user SEKARANG dalam teks biasa.',
-             '',
-             'ATURAN WAJIB:',
-             '1. JANGAN menulis <TOOL_CALL> atau tag apapun.',
-             '2. JANGAN memanggil tool. Semua tool dinonaktifkan untuk turn ini.',
-             '3. Jika informasi tidak lengkap, jawab dengan yang ada + sebutkan keterbatasan.',
-             '4. Jawab dalam bahasa user.',
-             '',
-             prompt,
-         ].join('\n');
-     }
-     if (force.mode === 'tool') {
-         return '[WAJIB: Panggil tool "' + force.name + '" SEKARANG. Balas HANYA dengan ' +
-             '<TOOL_CALL>{"tool":"' + force.name + '","arguments":{...}}</TOOL_CALL>]\n\n' + prompt;
-     }
-     if (force.mode === 'any') {
-         return '[WAJIB: Panggil minimal satu tool dari daftar di bawah. JANGAN jawab teks biasa.]\n\n' + prompt;
-     }
-     return prompt;
- }
+    const history = messages.slice(0, -1);
+    if (history.length) {
+        parts.push('### CONVERSATION HISTORY');
+        for (const message of history) {
+            parts.push(\`[\${message.role === 'assistant' ? 'ASSISTANT' : 'USER'}]\n\${renderMessage(message)}\`);
+        }
+    }
 
- function synthesizeToolCall(force, tools) {
-     const makeInput = (spec) => {
-         const input = {};
-         const props = (spec.input_schema && spec.input_schema.properties) || {};
-         for (const k of Object.keys(props)) {
-             const t = props[k].type;
-             input[k] = t === 'number' ? 0 : t === 'boolean' ? false : t === 'array' ? [] : t === 'object' ? {} : '';
-         }
-         return input;
-     };
-     if (force.mode === 'tool') {
-         const spec = tools.find((t) => t.name === force.name);
-         if (!spec) return null;
-         return { name: force.name, input: makeInput(spec) };
-     }
-     if (force.mode === 'any' && tools.length > 0) {
-         const spec = tools[0];
-         return { name: spec.name, input: makeInput(spec) };
-     }
-     return null;
- }
+    if (lastHasToolResult) {
+        parts.push('=== TOOL RESULTS ===\n' + renderMessage(last));
+        parts.push([
+            '=== INSTRUCTIONS AFTER TOOL RESULTS ===',
+            ...TOOL_RESULT_INSTRUCTIONS,
+            'If the task still requires an action, call the next appropriate tool using the <TOOL_CALL>...</TOOL_CALL> format and valid JSON.',
+            'If the task is complete, provide the final answer without tool tags.'
+        ].join('\n'));
+    } else {
+        parts.push('### LATEST USER MESSAGE\n' + renderMessage(last));
+        parts.push('Respond as the assistant. If calling a tool, output only the <TOOL_CALL>...</TOOL_CALL> format.');
+    }
 
-module.exports = { toolsToPrompt, buildFullPrompt, buildResumePrompt, parseToolChoice, applyForcedTool, synthesizeToolCall };
+    return parts.join('\n\n');
+}
+
+function buildResumePrompt(system, messages, tools, isToolResultTurn) {
+    const last = messages[messages.length - 1] || { role: 'user', content: '' };
+
+    if (isToolResultTurn) {
+        const toolPrompt = toolsToPrompt(tools);
+        const parts = [];
+        if (system) parts.push('### SYSTEM\n' + flattenContent(system));
+        parts.push(PROJECT_AND_LANGUAGE_INSTRUCTIONS);
+        parts.push('=== SITUATION ===');
+        parts.push('The client has executed a tool and provided its result. Continue the original task using the conversation context.');
+        if (toolPrompt) parts.push('=== TOOLS AVAILABLE FOR THE NEXT STEP ===\n' + toolPrompt);
+        parts.push('');
+        parts.push('=== LATEST TOOL RESULTS ===');
+        parts.push(renderMessage(last));
+        parts.push('');
+        parts.push('=== INSTRUCTIONS AFTER TOOL RESULTS ===');
+        parts.push(...TOOL_RESULT_INSTRUCTIONS);
+        parts.push('If the task is not complete, use the next required tool with the <TOOL_CALL>...</TOOL_CALL> format and valid JSON.');
+        parts.push('If the task is complete, provide the final answer without tool tags.');
+        return parts.filter(Boolean).join('\n');
+    }
+
+    const parts = [];
+    if (system) parts.push('### SYSTEM\n' + flattenContent(system));
+    parts.push(PROJECT_AND_LANGUAGE_INSTRUCTIONS);
+
+    const toolPrompt = toolsToPrompt(tools);
+    if (toolPrompt) {
+        parts.push('=== TOOLS AVAILABLE FOR THIS REQUEST ===\n' + toolPrompt);
+    }
+    parts.push('=== NEW USER REQUEST ===\n' + renderMessage(last));
+    parts.push([
+        '=== INSTRUCTIONS FOR THIS TURN ===',
+        'Evaluate the latest request using the tool list provided immediately above.',
+        'If the request requires file access, shell commands, search, or an action that one of the listed tools can perform, you MUST call the most appropriate tool now.',
+        'Do not claim a tool is unavailable or substitute manual instructions when an appropriate tool is listed.',
+        'For a tool call, output only <TOOL_CALL>{"tool":"<tool-name>","arguments":{...}}</TOOL_CALL> with valid JSON.',
+        'Do not report file contents or execution results until the tool has actually been called and its result received.'
+    ].join('\n'));
+
+    return parts.join('\n\n');
+}
+
+function parseToolChoice(toolChoice) {
+    if (!toolChoice) return { mode: 'auto' };
+    if (typeof toolChoice === 'string') return { mode: toolChoice };
+    if (toolChoice.type === 'tool' && toolChoice.name) {
+        return { mode: 'tool', name: toolChoice.name };
+    }
+    return { mode: toolChoice.type || 'auto' };
+}
+
+function applyForcedTool(prompt, force) {
+    if (force.mode === 'none') {
+        return [
+            '=== STOP: DO NOT CALL TOOLS ===',
+            'Using ALL information already available in the context above,',
+            'answer the user NOW in plain text.',
+            '',
+            'MANDATORY RULES:',
+            '1. Do NOT write <TOOL_CALL> or any tool tags.',
+            '2. Do NOT call any tools. All tools are disabled for this turn.',
+            '3. If information is incomplete, answer with what is available and state the limitations.',
+            '4. Respond in the language used in the first user message, unless the user explicitly asks to switch languages.',
+            '',
+            prompt
+        ].join('\n');
+    }
+    if (force.mode === 'tool') {
+        return '[REQUIRED: Call the tool "' + force.name + '" NOW. Respond ONLY with ' +
+            '<TOOL_CALL>{"tool":"' + force.name + '","arguments":{...}}</TOOL_CALL>]\n\n' + prompt;
+    }
+    if (force.mode === 'any') {
+        return '[REQUIRED: Call at least one tool from the list below. Do NOT answer in plain text.]\n\n' + prompt;
+    }
+    return prompt;
+}
+
+function synthesizeToolCall(force, tools) {
+    const makeInput = (spec) => {
+        const input = {};
+        const properties = (spec.input_schema && spec.input_schema.properties) || {};
+        for (const key of Object.keys(properties)) {
+            const type = properties[key].type;
+            input[key] = type === 'number' ? 0 :
+                type === 'boolean' ? false :
+                type === 'array' ? [] :
+                type === 'object' ? {} : '';
+        }
+        return input;
+    };
+
+    if (force.mode === 'tool') {
+        const spec = tools.find((tool) => tool.name === force.name);
+        if (!spec) return null;
+        return { name: force.name, input: makeInput(spec) };
+    }
+    if (force.mode === 'any' && tools.length > 0) {
+        const spec = tools[0];
+        return { name: spec.name, input: makeInput(spec) };
+    }
+    return null;
+}
+
+module.exports = {
+    toolsToPrompt,
+    buildFullPrompt,
+    buildResumePrompt,
+    parseToolChoice,
+    applyForcedTool,
+    synthesizeToolCall
+};
