@@ -137,6 +137,10 @@ Gateway menggunakan satu tab Chrome Playwright dan berusaha melanjutkan URL chat
 
 Gateway membuat percakapan baru bila belum ada sesi tersimpan, sesi lama sudah tidak valid, atau server perlu memulai ulang setelah sesi cache hilang. Pemetaan URL percakapan disimpan di memori proses selama maksimal 30 menit, sehingga restart server akan menghapus cache tersebut. Log `[session]` menjelaskan kapan chat lama berhasil dilanjutkan atau gateway terpaksa membuat chat baru.
 
+### Kompatibilitas pesan system dari Claude Code
+
+Beberapa versi Claude Code dapat mengirim pesan dengan `role: "system"` di dalam array `messages`, padahal kontrak Anthropic mengharuskan instruksi sistem berada di field tingkat atas `system`. Gateway memindahkan pesan `system`/`developer` yang valid ke field tersebut sebelum validasi dan mencatat jumlah pesan yang dinormalisasi tanpa mencetak isi prompt.
+
 ## Integration test langsung dengan Claude Code
 
 Untuk menguji tool calling melalui Claude Code CLI asli (bukan hanya Anthropic SDK), jalankan server lokal terlebih dahulu:
