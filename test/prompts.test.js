@@ -30,7 +30,7 @@ test('full prompt requests raw tool output without Markdown wrappers', () => {
     role: 'user',
     content: [{ type: 'tool_result', tool_use_id: 'toolu_test', content: '/c/Users/USER/project' }],
   }], []);
-  assert.ok(prompt.includes('keluarkan baris hasil itu saja'));
+  assert.ok(prompt.includes('hasilnya saja bila hasilnya satu baris'));
   assert.ok(prompt.includes('Jangan bungkus output mentah dengan Markdown code fence'));
   assert.ok(prompt.includes('Jika tugas masih memerlukan tindakan'));
   assert.ok(!prompt.includes('JANGAN menulis <TOOL_CALL>'));
@@ -41,7 +41,7 @@ test('resume prompt requests raw tool output without Markdown wrappers', () => {
     role: 'user',
     content: [{ type: 'tool_result', tool_use_id: 'toolu_test', content: '/c/Users/USER/project' }],
   }], [], true);
-  assert.ok(prompt.includes('keluarkan baris hasil itu saja'));
+  assert.ok(prompt.includes('hasilnya saja bila hasilnya satu baris'));
   assert.ok(prompt.includes('Jangan bungkus output mentah dengan Markdown code fence'));
   assert.ok(prompt.includes('Jika tugas belum selesai, gunakan tool berikutnya yang diperlukan'));
   assert.ok(!prompt.includes('JANGAN memanggil tool apa pun.'));
