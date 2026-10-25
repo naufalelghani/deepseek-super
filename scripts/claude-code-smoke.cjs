@@ -18,8 +18,8 @@ const RAW_TOKEN = process.env.ANTHROPIC_AUTH_TOKEN ||
   '';
 // API keys should not contain whitespace. Remove accidental line breaks/spaces
 // introduced when copying a key from a terminal or dashboard; never log the key.
-const TOKEN = RAW_TOKEN.replace(/\\s+/g, '');
-const TOKEN_HAD_WHITESPACE = /\\s/.test(RAW_TOKEN);
+const TOKEN = RAW_TOKEN.replace(/\s+/g, '');
+const TOKEN_HAD_WHITESPACE = /\s/.test(RAW_TOKEN);
 const TIMEOUT_MS = Number.parseInt(process.env.CLAUDE_CODE_TEST_TIMEOUT_MS || '360000', 10);
 const TEST_TOOLS = 'Bash,Read,Edit,Write,Glob,Grep';
 const REQUIRED_TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash'];
@@ -286,7 +286,8 @@ async function main() {
 main().catch((error) => {
   console.error('\nCLAUDE CODE INTEGRATION TEST FAILED');
   console.error(error && error.stack ? error.stack : error);
-  console.error('\nEnsure npm start is running and Playwright Chrome is signed in to DeepSeek.');
-  console.error('If gateway auth is enabled, set DEEPSEEK_SUPER_TOKEN to the same token used by the server.');
+  console.error('\nEnsure 9Router is running at ' + BASE_URL + ' and the API key is correct.');
+  console.error('On Windows PowerShell, set ANTHROPIC_AUTH_TOKEN using the PowerShell example in README.md.');
+  console.error('The key is read from the environment and is never printed by this test.');
   process.exitCode = 1;
 });
