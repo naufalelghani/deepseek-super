@@ -123,9 +123,14 @@ Example non-streaming request:
 
 ```js
 const Anthropic = require('@anthropic-ai/sdk');
+const fs = require('node:fs');
+
+const apiKey = process.env.ANTHROPIC_AUTH_TOKEN ||
+  process.env.DEEPSEEK_SUPER_TOKEN ||
+  fs.readFileSync('.deepseek-super-token', 'utf8').trim();
 
 const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_AUTH_TOKEN || 'any',
+  apiKey,
   baseURL: 'http://127.0.0.1:8787',
 });
 
@@ -144,7 +149,7 @@ async function main() {
 main().catch(console.error);
 ```
 
-The SDK sends requests to `/v1/messages`; do not append that path to `baseURL`. If `DEEPSEEK_SUPER_TOKEN` is unset, `apiKey` only needs to be a non-empty string. If server authentication is enabled, `apiKey` must match that token.
+The SDK sends requests to `/v1/messages`; do not append that path to `baseURL`. Authentication is always enabled, so `apiKey` must match the server's `DEEPSEEK_SUPER_TOKEN` value or the value in `.deepseek-super-token`. Keep the token file local and ignored by Git.
 
 Example streaming request:
 
