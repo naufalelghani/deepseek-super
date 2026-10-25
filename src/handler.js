@@ -23,8 +23,10 @@ function detectToolLoop(messages, threshold = 3) {
   return tail.length >= threshold && tail.every((signature) => signature === tail[0]);
 }
 
+const MAX_CONVERSATION_MESSAGES = 41;
+
 function isConversationTooLong(messages) {
-  return messages.length >= 13;
+  return messages.length >= MAX_CONVERSATION_MESSAGES;
 }
 
 // Reuse the saved DeepSeek thread for every continuation, including tool_result
