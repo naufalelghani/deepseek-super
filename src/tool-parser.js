@@ -31,6 +31,9 @@
  }
 
  function tryParseJSON(str) {
+     if (typeof str !== 'string') return null;
+     str = str.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+     if (/^json\s*(?=\{|\[)/i.test(str)) str = str.replace(/^json\s*/i, '');
      // 1. Coba langsung
      try { return JSON.parse(str); } catch (e) {}
 
