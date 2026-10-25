@@ -13,8 +13,8 @@ test('blocksOf normalizes strings and handles empty content', () => {
 
 test('flattenContent and renderMessage preserve supported textual content', () => {
   assert.equal(flattenContent([{ type: 'text', text: 'hello' }, { type: 'tool_use', name: 'Bash', input: { command: 'pwd' } }]), 'hello');
-  assert.match(renderMessage({ content: [{ type: 'tool_use', name: 'Bash', input: { command: 'pwd' } }] }), /Memanggil tool Bash/);
-  assert.match(renderMessage({ content: [{ type: 'image' }] }), /gambar tidak didukung/);
+  assert.match(renderMessage({ content: [{ type: 'tool_use', name: 'Bash', input: { command: 'pwd' } }] }), /Tool call Bash/);
+  assert.match(renderMessage({ content: [{ type: 'image' }] }), /image unsupported/);
 });
 
 test('sessionKey is stable for the same leading system and user messages', () => {
@@ -27,6 +27,6 @@ test('truncateReplay caps very long replay prompts and token estimate is positiv
   const long = 'x'.repeat(65000);
   const replay = truncateReplay(long);
   assert.ok(replay.length < long.length);
-  assert.match(replay, /riwayat dipotong/);
+  assert.match(replay, /WARNING: conversation replay was truncated/);
   assert.equal(approxTokens('hello'), 2);
 });
