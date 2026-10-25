@@ -1,9 +1,10 @@
 'use strict';
 
 const http = require('node:http');
-const { MODEL_NAME, approxTokens } = require('./config');
+const { MODEL_NAME } = require('./config');
 const { handleMessages } = require('./handler');
 const { jsonError, readBody, checkAuth } = require('./http-utils');
+const { validateMessagesRequest, estimateInputTokens } = require('./anthropic-contract');
 
 function createServer() {
   return http.createServer(async (req, res) => {
@@ -41,13 +42,20 @@ function createServer() {
     }
 
     if (req.method === 'POST' && urlPath === '/v1/messages/count_tokens') {
-      let body = {};
+      let body;
       try {
         body = await readBody(req);
-      } catch {}
-      const n = approxTokens(JSON.stringify(body.messages || []));
+      } catch (e) {
+        return jsonError(res, 400, 'invalid_request_error', 'JSON tidak valid: ' + e.message);
+      }
+
+      const validationError = validateMessagesRequest(body, { countTokens: true });
+      if (validationError) {
+        return jsonError(res, 400, validationError.type, validationError.message);
+      }
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ input_tokens: n }));
+      return res.end(JSON.stringify({ input_tokens: estimateInputTokens(body) }));
     }
 
     if (req.method === 'POST' && (urlPath === '/v1/messages' || urlPath === '/v1/messages/')) {
@@ -56,6 +64,11 @@ function createServer() {
         body = await readBody(req);
       } catch (e) {
         return jsonError(res, 400, 'invalid_request_error', 'JSON tidak valid: ' + e.message);
+      }
+
+      const validationError = validateMessagesRequest(body);
+      if (validationError) {
+        return jsonError(res, 400, validationError.type, validationError.message);
       }
 
       const wantStream = body.stream === true;
