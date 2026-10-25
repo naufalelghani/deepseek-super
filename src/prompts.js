@@ -90,21 +90,23 @@ const TOOL_RESULT_INSTRUCTIONS = [
      const last = messages[messages.length - 1] || { role: 'user', content: '' };
      if (isToolResultTurn) {
          const toolPrompt = toolsToPrompt(tools);
-         return [
-             '=== SITUASI ===',
-             'Client telah menjalankan tool dan mengirim hasilnya. Lanjutkan tugas awal yang tersimpan dalam konteks percakapan ini.',
-             toolPrompt ? '=== TOOLS AVAILABLE FOR THE NEXT STEP ===\n' + toolPrompt : '',
-             '',
-             '=== HASIL TOOL TERBARU ===',
-             renderMessage(last),
-             '',
-             '=== INSTRUKSI SETELAH HASIL TOOL ===',
-             ...TOOL_RESULT_INSTRUCTIONS,
-             'Jika tugas belum selesai, gunakan tool berikutnya yang diperlukan dengan format <TOOL_CALL>...</TOOL_CALL> dan JSON valid.',
-             'Jika tugas sudah selesai, berikan jawaban final tanpa tag tool.',
-         ].filter(Boolean).join('\n');
+         const parts = [];
+         if (system) parts.push('### SYSTEM\n' + flattenContent(system));
+         parts.push('=== SITUASI ===');
+         parts.push('Client telah menjalankan tool dan mengirim hasilnya. Lanjutkan tugas awal yang tersimpan dalam konteks percakapan ini.');
+         if (toolPrompt) parts.push('=== TOOLS AVAILABLE FOR THE NEXT STEP ===\n' + toolPrompt);
+         parts.push('');
+         parts.push('=== HASIL TOOL TERBARU ===');
+         parts.push(renderMessage(last));
+         parts.push('');
+         parts.push('=== INSTRUKSI SETELAH HASIL TOOL ===');
+         parts.push(...TOOL_RESULT_INSTRUCTIONS);
+         parts.push('Jika tugas belum selesai, gunakan tool berikutnya yang diperlukan dengan format <TOOL_CALL>...</TOOL_CALL> dan JSON valid.');
+         parts.push('Jika tugas sudah selesai, berikan jawaban final tanpa tag tool.');
+         return parts.filter(Boolean).join('\n');
      }
      const parts = [];
+     if (system) parts.push('### SYSTEM\n' + flattenContent(system));
      const toolPrompt = toolsToPrompt(tools);
      if (toolPrompt) {
          parts.push('=== TOOLS AVAILABLE FOR THIS REQUEST ===\n' + toolPrompt);
