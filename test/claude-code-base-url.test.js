@@ -6,7 +6,7 @@ const {
   DEFAULT_GATEWAY_URL,
   normalizeClaudeCodeBaseUrl,
   isDefaultLocalGateway,
-} = require('../scripts/claude-code-base-url');
+} = require('../scripts/claude-code-base-url.cjs');
 
 test('Claude Code default base URL is the gateway root without /v1', () => {
   assert.equal(DEFAULT_GATEWAY_URL, 'http://127.0.0.1:8787');
