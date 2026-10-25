@@ -93,6 +93,12 @@ server.listen(config.PORT, '127.0.0.1');
 
 Untuk shutdown normal saat menggunakan `createServer()` secara langsung, tutup HTTP server dan panggil `shutdownBrowser()` dari `deepseek-super/src/browser` agar konteks Chrome ikut ditutup. Untuk penggunaan CLI biasa, gunakan `npm start` sehingga handler shutdown bawaan aktif.
 
+## Troubleshooting tool call
+
+Jika DeepSeek menghasilkan blok `<TOOL_CALL>` dengan JSON yang tidak valid, gateway mengirim sampai dua prompt koreksi di percakapan yang sama. Parser hanya memproses jawaban assistant yang baru, bukan baris user yang baru saja ditambahkan ke UI. Log akan mencatat jumlah payload, status blok yang terpotong, dan alasan parse gagal.
+
+Untuk satu sesi diagnosis, jalankan server dengan `DEBUG_TOOL_PARSER=1` agar log menampilkan cuplikan awal payload bermasalah. Cuplikan dapat berisi perintah shell atau konten prompt, jadi jaga log tetap privat dan matikan flag setelah selesai.
+
 ## Test dan pemeriksaan sintaks
 
 ```bash
