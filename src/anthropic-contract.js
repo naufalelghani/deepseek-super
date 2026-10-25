@@ -21,49 +21,49 @@ function validateMessagesRequest(body, options = {}) {
   const countTokens = options.countTokens === true;
 
   if (!isPlainObject(body)) {
-    return { type: 'invalid_request_error', message: 'Request body harus berupa object JSON.' };
+    return { type: 'invalid_request_error', message: 'Request body must be a JSON object.' };
   }
 
   if (typeof body.model !== 'string' || !body.model.trim()) {
-    return { type: 'invalid_request_error', message: 'Field "model" wajib berupa string yang tidak kosong.' };
+    return { type: 'invalid_request_error', message: 'Field "model" must be a non-empty string.' };
   }
 
   if (!Array.isArray(body.messages) || body.messages.length === 0) {
-    return { type: 'invalid_request_error', message: 'Field "messages" wajib berupa array yang tidak kosong.' };
+    return { type: 'invalid_request_error', message: 'Field "messages" must be a non-empty array.' };
   }
 
   if (!countTokens && (!Number.isInteger(body.max_tokens) || body.max_tokens < 1)) {
-    return { type: 'invalid_request_error', message: 'Field "max_tokens" wajib berupa integer positif.' };
+    return { type: 'invalid_request_error', message: 'Field "max_tokens" must be a positive integer.' };
   }
 
   if (body.system !== undefined && !validContent(body.system)) {
-    return { type: 'invalid_request_error', message: 'Field "system" harus berupa string atau array content block.' };
+    return { type: 'invalid_request_error', message: 'Field "system" must be a string or an array of content blocks.' };
   }
 
   for (let i = 0; i < body.messages.length; i++) {
     const message = body.messages[i];
     if (!isPlainObject(message)) {
-      return { type: 'invalid_request_error', message: `messages[${i}] harus berupa object.` };
+      return { type: 'invalid_request_error', message: `messages[${i}] must be an object.` };
     }
     if (message.role !== 'user' && message.role !== 'assistant') {
-      return { type: 'invalid_request_error', message: `messages[${i}].role harus "user" atau "assistant", tetapi menerima ${JSON.stringify(message.role)}.` };
+      return { type: 'invalid_request_error', message: `messages[${i}].role must be "user" or "assistant"; received ${JSON.stringify(message.role)}.` };
     }
     if (!validContent(message.content)) {
-      return { type: 'invalid_request_error', message: `messages[${i}].content harus berupa string atau array content block.` };
+      return { type: 'invalid_request_error', message: `messages[${i}].content must be a string or an array of content blocks.` };
     }
   }
 
   if (body.tools !== undefined) {
     if (!Array.isArray(body.tools)) {
-      return { type: 'invalid_request_error', message: 'Field "tools" harus berupa array.' };
+      return { type: 'invalid_request_error', message: 'Field "tools" must be an array.' };
     }
     for (let i = 0; i < body.tools.length; i++) {
       const tool = body.tools[i];
       if (!isPlainObject(tool) || typeof tool.name !== 'string' || !tool.name.trim()) {
-        return { type: 'invalid_request_error', message: `tools[${i}] harus memiliki field name berupa string yang tidak kosong.` };
+        return { type: 'invalid_request_error', message: `tools[${i}] must have a non-empty string name field.` };
       }
       if (!isPlainObject(tool.input_schema)) {
-        return { type: 'invalid_request_error', message: `tools[${i}].input_schema wajib berupa object.` };
+        return { type: 'invalid_request_error', message: `tools[${i}].input_schema must be an object.` };
       }
     }
   }
@@ -76,16 +76,16 @@ function validateMessagesRequest(body, options = {}) {
       (choice.type === 'tool' && typeof choice.name === 'string' && choice.name.trim())
     );
     if (!validStringChoice && !validObjectChoice) {
-      return { type: 'invalid_request_error', message: 'Field "tool_choice" tidak valid.' };
+      return { type: 'invalid_request_error', message: 'Field "tool_choice" is invalid.' };
     }
     if (isPlainObject(choice) && choice.type === 'tool' &&
         (!Array.isArray(body.tools) || !body.tools.some((tool) => tool.name === choice.name))) {
-      return { type: 'invalid_request_error', message: `tool_choice merujuk tool yang tidak tersedia: ${choice.name}` };
+      return { type: 'invalid_request_error', message: `tool_choice references an unavailable tool: ${choice.name}` };
     }
   }
 
   if (body.stream !== undefined && typeof body.stream !== 'boolean') {
-    return { type: 'invalid_request_error', message: 'Field "stream" harus berupa boolean.' };
+    return { type: 'invalid_request_error', message: 'Field "stream" must be a boolean.' };
   }
 
   return null;
