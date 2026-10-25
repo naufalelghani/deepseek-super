@@ -1,8 +1,9 @@
 'use strict';
 
-// End-to-end integration test: real Claude Code CLI -> local Anthropic-compatible gateway.
-// Prerequisites: npm start is running and Playwright is logged in to chat.deepseek.com.
-// Run from the repo root: npm run test:claude-code
+// End-to-end test: real Claude Code CLI -> local Anthropic-compatible gateway.
+// It uses a temporary workspace and only allows six bounded built-in tools.
+// Prerequisites: npm start is running and Playwright is logged in to DeepSeek.
+// Run: npm run test:claude-code
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -15,11 +16,12 @@ const TOKEN = process.env.ANTHROPIC_AUTH_TOKEN ||
   process.env.DEEPSEEK_SUPER_TOKEN ||
   'any';
 const TIMEOUT_MS = Number.parseInt(process.env.CLAUDE_CODE_TEST_TIMEOUT_MS || '360000', 10);
+const TEST_TOOLS = 'Bash,Read,Edit,Write,Glob,Grep';
+const REQUIRED_TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash'];
 
 function quoteArg(value) {
   const text = String(value);
   if (process.platform === 'win32') {
-    // CMD-style quoting; arguments here are controlled by this script, not user input.
     return '"' + text.replace(/"/g, '\\"') + '"';
   }
   return "'" + text.replace(/'/g, "'\\''") + "'";
@@ -51,32 +53,35 @@ function parseStreamJson(stdout) {
   return { events, nonJson };
 }
 
-function runClaude(prompt, settingsPath) {
+function runClaude(prompt, settingsPath, cwd) {
   return new Promise((resolve, reject) => {
     const args = [
-      '--bare',
+      '--restricted',
       '--print',
       '--output-format', 'stream-json',
       '--verbose',
       '--no-session-persistence',
       '--permission-mode', 'dontAsk',
       '--settings', settingsPath,
+      '--tools', TEST_TOOLS,
       '--model', MODEL,
-      '--max-turns', '8',
+      '--max-turns', '12',
     ];
 
-    // Quote every argument explicitly because the Windows Claude command may be a .cmd shim.
     const command = ['claude', ...args, prompt].map(quoteArg).join(' ');
     const child = spawn(command, [], {
-      cwd: process.cwd(),
+      cwd,
       env: {
         ...process.env,
         ANTHROPIC_BASE_URL: BASE_URL,
         ANTHROPIC_AUTH_TOKEN: TOKEN,
-        ANTHROPIC_MODEL: MODEL,
-        // Both authentication styles target only the local gateway token.
-        // Bare mode intentionally does not use the user's Claude subscription login.
         ANTHROPIC_API_KEY: TOKEN,
+        ANTHROPIC_MODEL: MODEL,
+        // Claude Code validates --model IDs before sending a request. Register the
+        // gateway's model as its custom option so this arbitrary ID is accepted.
+        ANTHROPIC_CUSTOM_MODEL_OPTION: MODEL,
+        ANTHROPIC_CUSTOM_MODEL_OPTION_NAME: 'DeepSeek Super Gateway',
+        ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION: 'Local integration-test model routed through deepseek-super',
       },
       shell: true,
       windowsHide: true,
@@ -90,7 +95,7 @@ function runClaude(prompt, settingsPath) {
       child.kill();
       finish(new Error(
         'Claude Code timed out after ' + TIMEOUT_MS +
-        ' ms. Check the gateway logs and whether the DeepSeek browser session is logged in.'
+        ' ms. Check gateway logs and the DeepSeek browser session.'
       ));
     }, TIMEOUT_MS);
 
@@ -108,7 +113,7 @@ function runClaude(prompt, settingsPath) {
     child.stderr.on('data', (chunk) => { stderr += chunk; });
     child.on('error', (error) => {
       finish(new Error(
-        'Tidak dapat menjalankan Claude Code CLI. Pastikan perintah "claude" terpasang dan ada di PATH. ' +
+        'Tidak dapat menjalankan Claude Code CLI. Pastikan perintah "claude" tersedia di PATH. ' +
         error.message
       ));
     });
@@ -117,7 +122,7 @@ function runClaude(prompt, settingsPath) {
         finish(new Error(
           'Claude Code exit code=' + code + ' signal=' + signal +
           '\nSTDERR:\n' + (stderr || '(kosong)') +
-          '\nSTDOUT (akhir):\n' + stdout.slice(-8000)
+          '\nSTDOUT (akhir):\n' + stdout.slice(-10000)
         ));
         return;
       }
@@ -130,88 +135,127 @@ async function main() {
   console.log('Claude Code CLI integration test');
   console.log('Gateway:', BASE_URL);
   console.log('Model:', MODEL);
-  console.log('Working directory:', process.cwd());
+  console.log('Tools under test:', REQUIRED_TOOLS.join(', '));
 
-  // The temporary permission config only permits reading files and running pwd.
-  // dontAsk mode denies any other tool rather than requesting interactive approval.
-  const settingsPath = path.join(
-    os.tmpdir(),
-    'deepseek-super-claude-code-smoke-' + process.pid + '.json'
-  );
+  // Keep writes confined to an isolated temporary project rather than the repo.
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'deepseek-super-claude-test-'));
+  const settingsPath = path.join(os.tmpdir(), 'deepseek-super-claude-settings-' + process.pid + '.json');
+
+  fs.mkdirSync(path.join(workspace, 'nested'), { recursive: true });
+  fs.writeFileSync(path.join(workspace, 'package.json'), JSON.stringify({
+    name: 'deepseek-super-claude-code-fixture',
+    private: true,
+  }, null, 2) + '\n');
+  fs.writeFileSync(path.join(workspace, 'fixture.txt'), 'TEST_PATTERN_FOUND\nordinary fixture line\n');
+  fs.writeFileSync(path.join(workspace, 'nested', 'second.txt'), 'SECOND_FIXTURE\n');
+  fs.writeFileSync(path.join(workspace, 'fixture-edit.txt'), 'EDIT_BEFORE\n');
+
+  // Restricted mode confines built-in file tools to the temporary workspace.
+  // Bash is only allowlisted for the exact safe command "pwd".
   fs.writeFileSync(settingsPath, JSON.stringify({
     permissions: {
-      allow: ['Read', 'Bash(pwd)'],
-      deny: ['Edit', 'Write', 'NotebookEdit'],
+      allow: [
+        'Read',
+        'Glob',
+        'Grep',
+        'Edit',
+        'Write',
+        'Bash(pwd)',
+      ],
     },
   }, null, 2));
 
   const prompt = [
-    'Integration test only.',
-    'Use the Read tool to read package.json in the current working directory and determine its top-level name.',
-    'Use the Bash tool to execute exactly one shell command: pwd.',
-    'Do not execute any other shell commands. Do not edit or create project files.',
-    'Do not answer from assumptions; use the actual tool outputs.',
-    'In your final response, include the package name and the output of pwd.',
+    'This is a mandatory integration test. Use every one of these six tools, each for its named task; do not substitute a different tool.',
+    '1. Read: read package.json and identify its top-level name.',
+    '2. Glob: find all files matching **/*.txt in the current workspace.',
+    '3. Grep: search for the exact string TEST_PATTERN_FOUND in **/*.txt.',
+    '4. Edit: in fixture-edit.txt replace EDIT_BEFORE with EDIT_AFTER.',
+    '5. Write: create smoke-created.txt with exactly WRITE_OK as its contents.',
+    '6. Bash: execute exactly the one command pwd. Do not chain commands.',
+    'Do not execute any other shell command. Do not access files outside the current workspace. Do not use tools other than those requested.',
+    'After every tool has returned a result, report the package name, files found by Glob, Grep match file, and output from pwd.',
   ].join(' ');
 
   try {
-    console.log('\nRunning Claude Code; only Read and Bash(pwd) are permitted ...');
-    const { stdout, stderr } = await runClaude(prompt, settingsPath);
+    console.log('Workspace:', workspace);
+    console.log('\nRunning Claude Code in restricted mode; all file writes are isolated to a temp workspace ...');
+    const { stdout, stderr } = await runClaude(prompt, settingsPath, workspace);
     const { events, nonJson } = parseStreamJson(stdout);
 
-    const toolUses = findObjects(
-      events,
-      (value) => value.type === 'tool_use' && typeof value.name === 'string'
+    const toolUses = findObjects(events, (value) =>
+      value.type === 'tool_use' && typeof value.name === 'string'
     );
-    const toolResults = findObjects(
-      events,
-      (value) => value.type === 'tool_result' ||
-        (typeof value.tool_use_id === 'string' && Object.prototype.hasOwnProperty.call(value, 'content'))
+    const toolResults = findObjects(events, (value) =>
+      value.type === 'tool_result' ||
+      (typeof value.tool_use_id === 'string' && Object.prototype.hasOwnProperty.call(value, 'content'))
     );
-    const readUses = toolUses.filter((tool) => tool.name === 'Read');
-    const bashUses = toolUses.filter((tool) => tool.name === 'Bash');
-    const pwdCall = bashUses.find((tool) =>
-      tool.input && typeof tool.input.command === 'string' &&
+
+    const missingTools = REQUIRED_TOOLS.filter((name) =>
+      !toolUses.some((tool) => tool.name === name)
+    );
+    if (missingTools.length) {
+      throw new Error(
+        'Claude Code tidak memanggil semua tool wajib. Tidak terlihat: ' + missingTools.join(', ') +
+        '\nTool yang terdeteksi: ' + toolUses.map((tool) => tool.name).join(', ') +
+        '\nSTDOUT (akhir):\n' + stdout.slice(-10000)
+      );
+    }
+
+    const pwdCall = toolUses.find((tool) =>
+      tool.name === 'Bash' && tool.input &&
+      typeof tool.input.command === 'string' &&
       tool.input.command.trim() === 'pwd'
     );
-
-    if (readUses.length === 0) {
-      throw new Error('Claude Code selesai tetapi stream tidak menunjukkan pemanggilan tool Read.\n' + stdout.slice(-8000));
-    }
-    if (bashUses.length === 0) {
-      throw new Error('Claude Code selesai tetapi stream tidak menunjukkan pemanggilan tool Bash.\n' + stdout.slice(-8000));
-    }
     if (!pwdCall) {
-      throw new Error('Tool Bash dipanggil, tetapi command yang terdeteksi bukan persis "pwd".\n' +
-        JSON.stringify(bashUses.map((tool) => tool.input), null, 2));
-    }
-    if (toolResults.length < 2) {
-      throw new Error('Stream belum menunjukkan hasil kedua tool. tool_result count=' + toolResults.length +
-        '\n' + stdout.slice(-8000));
+      throw new Error('Bash terdeteksi, tetapi command yang dijalankan bukan persis "pwd".\n' +
+        JSON.stringify(toolUses.filter((tool) => tool.name === 'Bash').map((tool) => tool.input), null, 2));
     }
 
-    const finalEvents = events.filter((event) => event.type === 'result');
-    const finalText = finalEvents.map((event) => event.result || '').join('\n');
-    console.log('PASS Claude Code CLI completed');
-    console.log('PASS tool Read invoked:', JSON.stringify(readUses[0].input || {}));
-    console.log('PASS tool Bash invoked:', JSON.stringify(pwdCall.input));
+    if (toolResults.length < REQUIRED_TOOLS.length) {
+      throw new Error(
+        'Tidak semua tool result terlihat di output stream. Ditemukan ' + toolResults.length +
+        ' result untuk ' + REQUIRED_TOOLS.length + ' tool wajib.\n' + stdout.slice(-10000)
+      );
+    }
+
+    const editedFile = fs.readFileSync(path.join(workspace, 'fixture-edit.txt'), 'utf8');
+    const writtenFilePath = path.join(workspace, 'smoke-created.txt');
+    if (!editedFile.includes('EDIT_AFTER') || editedFile.includes('EDIT_BEFORE')) {
+      throw new Error('Tool Edit tidak menghasilkan perubahan yang diharapkan. Isi file: ' + JSON.stringify(editedFile));
+    }
+    if (!fs.existsSync(writtenFilePath)) {
+      throw new Error('Tool Write tidak membuat smoke-created.txt.');
+    }
+    const writtenFile = fs.readFileSync(writtenFilePath, 'utf8').trim();
+    if (writtenFile !== 'WRITE_OK') {
+      throw new Error('Isi smoke-created.txt tidak sesuai. Isi aktual: ' + JSON.stringify(writtenFile));
+    }
+
+    const finalText = events
+      .filter((event) => event.type === 'result')
+      .map((event) => event.result || '')
+      .join('\n');
+
+    for (const name of REQUIRED_TOOLS) console.log('PASS tool invoked:', name);
     console.log('PASS tool results observed:', toolResults.length);
+    console.log('PASS Edit changed only the isolated fixture');
+    console.log('PASS Write created the isolated fixture');
+    console.log('PASS Bash command was exactly pwd');
     if (finalText) console.log('\nClaude Code final response:\n' + finalText);
     if (stderr.trim()) console.log('\nClaude Code diagnostics (stderr):\n' + stderr.trim().slice(-3000));
-    if (nonJson.length) {
-      // Stream-json may include human-readable stderr-like lines on stdout for some CLI versions.
-      console.log('\nAdditional CLI output:\n' + nonJson.join('\n').slice(-2000));
-    }
+    if (nonJson.length) console.log('\nAdditional CLI output:\n' + nonJson.join('\n').slice(-2000));
     console.log('\nCLAUDE CODE INTEGRATION TEST PASSED');
   } finally {
     try { fs.unlinkSync(settingsPath); } catch {}
+    try { fs.rmSync(workspace, { recursive: true, force: true }); } catch {}
   }
 }
 
 main().catch((error) => {
   console.error('\nCLAUDE CODE INTEGRATION TEST FAILED');
   console.error(error && error.stack ? error.stack : error);
-  console.error('\nEnsure npm start is running and its Playwright Chrome is signed in to DeepSeek.');
-  console.error('If the server token is enabled, set DEEPSEEK_SUPER_TOKEN in this terminal before running the test.');
+  console.error('\nEnsure npm start is running and Playwright Chrome is signed in to DeepSeek.');
+  console.error('If gateway auth is enabled, set DEEPSEEK_SUPER_TOKEN to the same token used by the server.');
   process.exitCode = 1;
 });
