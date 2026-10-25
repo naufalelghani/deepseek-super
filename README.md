@@ -149,7 +149,23 @@ Tes ini menggunakan Claude Code CLI asli melalui 9Router lokal, dengan default b
 - Model combo: `byv-flash-2410`
 - API key: dibaca dari variabel lingkungan `ANTHROPIC_AUTH_TOKEN` atau `ANTHROPIC_API_KEY`
 
-Jalankan dari Git Bash di root repo. Masukkan API key ketika diminta; karakter input tidak akan ditampilkan dan key tidak disimpan ke repo atau shell command history:
+Jalankan dari root repo. Pilih instruksi sesuai terminal yang digunakan. API key tidak ditampilkan saat diketik dan tidak disimpan ke repo.
+
+**Windows PowerShell:**
+
+```powershell
+$secure = Read-Host "9Router API key" -AsSecureString
+$ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+try {
+  $env:ANTHROPIC_AUTH_TOKEN = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
+} finally {
+  [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+}
+npm run test:claude-code
+Remove-Item Env:ANTHROPIC_AUTH_TOKEN
+```
+
+**Git Bash:**
 
 ```bash
 read -rsp "9Router API key: " ANTHROPIC_AUTH_TOKEN; echo
