@@ -4,3 +4,4 @@ deepseek-profile/
 *.log
 .DS_Store
 coverage/
+deepseek-auth.json
