@@ -215,7 +215,7 @@ async function main() {
     if (toolResults.length < REQUIRED_TOOLS.length) {
       throw new Error(
         'Tidak semua tool result terlihat di output stream. Ditemukan ' + toolResults.length +
-        ' result untuk ' + REQUIRED_TOOLS.length + ' tool wajib.\\n' + stdout.slice(-10000)
+        ' result untuk ' + REQUIRED_TOOLS.length + ' tool wajib.\n' + stdout.slice(-10000)
       );
     }
 
@@ -228,7 +228,7 @@ async function main() {
       throw new Error(
         'Tool dipanggil tetapi result tidak ditemukan untuk ID: ' +
         missingToolResults.map((tool) => tool.name + ':' + tool.id).join(', ') +
-        '\\n' + stdout.slice(-10000)
+        '\n' + stdout.slice(-10000)
       );
     }
 
