@@ -9,6 +9,14 @@ test('tryParseJSON parses valid JSON and repairs common invalid backslashes', ()
   assert.deepEqual(tryParseJSON('{tool:"Bash",arguments:{command:"C:\\work"}}'), { tool: 'Bash', arguments: { command: 'C:\\work' } });
 });
 
+test('tryParseJSON recovers unescaped quotes embedded inside a shell command', () => {
+  const malformed = '{"tool":"Bash","arguments":{"command":"cd "C:/path" && ls"}}';
+  assert.deepEqual(tryParseJSON(malformed), {
+    tool: 'Bash',
+    arguments: { command: 'cd "C:/path" && ls' },
+  });
+});
+
 test('StreamParser keeps regular text and parses tool call split across chunks', () => {
   const emitted = [];
   const parser = new StreamParser((chunk) => emitted.push(chunk));
