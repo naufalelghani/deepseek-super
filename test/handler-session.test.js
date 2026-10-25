@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { shouldResumeSession } = require('../src/handler');
+const { shouldResumeSession, isConversationTooLong } = require('../src/handler');
 
 test('resumes the cached DeepSeek chat when the latest message is a tool_result', () => {
   const cached = { url: 'https://chat.deepseek.com/a/chat/s/test-session' };
@@ -33,4 +33,13 @@ test('starts a new conversation for the first request with no history', () => {
     { url: 'https://chat.deepseek.com/a/chat/s/test-session' },
     [{ role: 'user', content: 'hello' }]
   ), false);
+});
+
+test('allows multi-step tool chains but still caps very long conversations', () => {
+  const makeMessages = (length) =>
+    Array.from({ length }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: 'fixture' }));
+
+  assert.equal(isConversationTooLong(makeMessages(13)), false);
+  assert.equal(isConversationTooLong(makeMessages(40)), false);
+  assert.equal(isConversationTooLong(makeMessages(41)), true);
 });
