@@ -1,7 +1,7 @@
 'use strict';
 
 const { chromium } = require('playwright');
-const { PROFILE_DIR, POLL_MS, STABLE_MS, MAX_TURN_MS, HOLD_CHARS } = require('./config');
+const { PROFILE_DIR, POLL_MS, STABLE_MS, MAX_TURN_MS, HOLD_CHARS, MAX_PENDING_TURNS } = require('./config');
 const { StreamParser, extractToolCallsFromText } = require('./tool-parser');
 const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
 
@@ -10,11 +10,21 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
  let textarea = null;
  let initPromise = null;
  let chain = Promise.resolve();
+ let pendingTurns = 0;
 
  function locked(fn) {
+     if (pendingTurns >= MAX_PENDING_TURNS) {
+         const error = new Error('The browser turn queue is full. Retry after another request completes.');
+         error.statusCode = 503;
+         error.type = 'overloaded_error';
+         throw error;
+     }
+     pendingTurns++;
      const run = chain.then(fn, fn);
      chain = run.then(() => {}, () => {});
-     return run;
+     return run.finally(() => {
+         pendingTurns = Math.max(0, pendingTurns - 1);
+     });
  }
 
  async function ensurePage() {
