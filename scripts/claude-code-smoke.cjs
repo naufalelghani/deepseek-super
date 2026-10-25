@@ -10,17 +10,18 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-const BASE_URL = process.env.DEEPSEEK_SUPER_BASE_URL || 'http://127.0.0.1:8787/v1';
+const {
+  DEFAULT_GATEWAY_URL,
+  normalizeClaudeCodeBaseUrl,
+  isDefaultLocalGateway,
+} = require('./claude-code-base-url');
+
+const BASE_URL = normalizeClaudeCodeBaseUrl(
+  process.env.DEEPSEEK_SUPER_BASE_URL || DEFAULT_GATEWAY_URL
+);
 const MODEL = process.env.ANTHROPIC_MODEL || 'deepseek-super';
-const IS_DEFAULT_GATEWAY = (() => {
-  try {
-    const url = new URL(BASE_URL);
-    return ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) &&
-      Number(url.port || 80) === 8787 && (url.pathname === '/v1' || url.pathname === '/v1/');
-  } catch {
-    return false;
-  }
-})();
+const IS_DEFAULT_GATEWAY = isDefaultLocalGateway(BASE_URL);
+
 function readLocalGatewayToken() {
   if (!IS_DEFAULT_GATEWAY) return '';
   try {
