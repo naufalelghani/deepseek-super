@@ -50,7 +50,8 @@ async function handleMessages(req, res, body) {
 
   const last = messages[messages.length - 1];
   const lastHasToolResult = blocksOf(last.content).some((block) => block.type === 'tool_result');
-  let force = lastHasToolResult ? { mode: 'none' } : parseToolChoice(body.tool_choice);
+  // Respect the caller's tool_choice after tool results too; the model may need another tool step.
+  let force = parseToolChoice(body.tool_choice);
 
   if (detectToolLoop(messages, 3)) {
     console.warn('[loop-detect] 3 tool_use identik — paksa text, stop tool');
