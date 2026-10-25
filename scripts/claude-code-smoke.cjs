@@ -163,7 +163,7 @@ async function main() {
   console.log('Claude Code CLI integration test');
   console.log('Gateway:', BASE_URL);
   console.log('Model:', MODEL);
-  if (BASE_URL === DEFAULT_GATEWAY_URL) console.log('Target: this repository\'s local gateway');
+  if (IS_DEFAULT_GATEWAY) console.log('Target: this repository\'s local gateway');
   console.log('Tools under test:', REQUIRED_TOOLS.join(', '));
 
   if (TOKEN_HAD_WHITESPACE) {
