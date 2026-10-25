@@ -68,7 +68,7 @@ test('resumed request includes current tool schemas and requires tool use when r
 });
 
 test('tool-result resume prompt includes schemas and allows the next tool step', () => {
-  const prompt = buildResumePrompt('', [{
+  const prompt = buildResumePrompt('Keep the project-specific system policy.', [{
     role: 'user',
     content: [{
       type: 'tool_result',
@@ -85,6 +85,7 @@ test('tool-result resume prompt includes schemas and allows the next tool step',
     },
   }], true);
 
+  assert.ok(prompt.includes('### SYSTEM\\nKeep the project-specific system policy.'));
   assert.ok(prompt.includes('TOOLS AVAILABLE FOR THE NEXT STEP'));
   assert.ok(prompt.includes('Read(file_path*: string'));
   assert.ok(prompt.includes('Jika tugas belum selesai, gunakan tool berikutnya'));
