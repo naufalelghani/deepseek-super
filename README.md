@@ -31,9 +31,14 @@ The script opens Chrome with the persistent profile in `deepseek-profile/`. Auth
 1. On the DeepSeek page, click **Log in / Sign in**.
 2. Choose **Sign in with Google**.
 3. Complete Google's sign-in, consent, CAPTCHA, or two-factor authentication in the browser yourself.
-4. Once the DeepSeek chat composer is visible and ready, return to the terminal and press **Enter**. The script verifies the composer, saves an optional local session backup to `deepseek-auth.json`, and closes Chrome so the profile is not left locked.
+4. Once the DeepSeek chat composer is visible and ready, return to the terminal and press **Enter**. The script verifies the composer, ensures the `deepseek-profile/` directory exists, writes `deepseek-auth.json`, verifies that both artifacts were created, and closes Chrome so the profile is not left locked.
 
-The persistent session is stored in `deepseek-profile/`. Both this directory and the `deepseek-auth.json` backup are listed in `.gitignore` because they contain authentication data. **Never commit or share these files.**
+After successful login verification, two local artifacts should be present in the repository root:
+
+- `deepseek-profile/` — Chrome's persistent user profile, including the login session. The script creates this directory before launching Chrome.
+- `deepseek-auth.json` — a storage-state backup written after the DeepSeek chat composer is verified.
+
+Both are listed in `.gitignore` because they contain authentication data. **Never commit or share these files.** If saving `deepseek-auth.json` fails, the login helper reports an error rather than reporting the setup as successful.
 
 If the profile is already signed in, you do not need to authenticate again: make sure the chat page is ready and press Enter in the terminal. If the session has expired, rerun `node deepseek-login.js` and sign in manually. After you press Enter, the chat-composer check has a default timeout of 10 minutes; change it with the `DEEPSEEK_LOGIN_TIMEOUT_MS` environment variable if needed.
 
