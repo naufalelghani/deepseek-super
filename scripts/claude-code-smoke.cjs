@@ -14,7 +14,6 @@ const BASE_URL = process.env.DEEPSEEK_SUPER_BASE_URL ||
   process.env.ANTHROPIC_BASE_URL ||
   'http://127.0.0.1:8787/v1';
 const MODEL = process.env.ANTHROPIC_MODEL || 'deepseek-super';
-const DEFAULT_GATEWAY_URL = 'http://127.0.0.1:8787/v1';
 const IS_DEFAULT_GATEWAY = (() => {
   try {
     const url = new URL(BASE_URL);
@@ -146,7 +145,7 @@ function runClaude(prompt, settingsPath, cwd) {
       if (code !== 0) {
         finish(new Error(
           'Claude Code exit code=' + code + ' signal=' + signal +
-          '\nSTDERR:\n' + (stderr || '(kosong)') +
+          '\nSTDERR:\n' + (stderr || '(empty)') +
           '\nSTDOUT (akhir):\n' + stdout.slice(-10000)
         ));
         return;
@@ -239,7 +238,7 @@ async function main() {
     if (missingTools.length) {
       throw new Error(
         'Claude Code did not call all required tools. Missing: ' + missingTools.join(', ') +
-        '\nTool yang terdeteksi: ' + toolUses.map((tool) => tool.name).join(', ') +
+        '\nDetected tools: ' + toolUses.map((tool) => tool.name).join(', ') +
         '\nSTDOUT (akhir):\n' + stdout.slice(-10000)
       );
     }
@@ -250,14 +249,14 @@ async function main() {
       tool.input.command.trim() === 'pwd'
     );
     if (!pwdCall) {
-      throw new Error('Bash terdeteksi, tetapi command yang dijalankan bukan persis "pwd".\n' +
+      throw new Error('Bash was called, but its command was not exactly "pwd".\n' +
         JSON.stringify(toolUses.filter((tool) => tool.name === 'Bash').map((tool) => tool.input), null, 2));
     }
 
     if (toolResults.length < REQUIRED_TOOLS.length) {
       throw new Error(
         'Not all tool results were found in the output stream. Found ' + toolResults.length +
-        ' results for ' + REQUIRED_TOOLS.length + ' tool wajib.\n' + stdout.slice(-10000)
+        ' results for ' + REQUIRED_TOOLS.length + ' required tools.\n' + stdout.slice(-10000)
       );
     }
 
@@ -310,7 +309,7 @@ async function main() {
 main().catch((error) => {
   console.error('\nCLAUDE CODE INTEGRATION TEST FAILED');
   console.error(error && error.stack ? error.stack : error);
-  console.error('\nEnsure 9Router is running at ' + BASE_URL + ' and the API key is correct.');
+  console.error('\nEnsure the configured gateway is running at ' + BASE_URL + ' and the API token is correct.');
   console.error('For the local gateway, .deepseek-super-token is read automatically. External endpoints require ANTHROPIC_AUTH_TOKEN.');
   process.exitCode = 1;
 });
