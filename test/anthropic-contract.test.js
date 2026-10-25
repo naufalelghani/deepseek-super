@@ -58,7 +58,7 @@ test('validates tool schemas and tool_choice references', () => {
   assert.equal(validateMessagesRequest({ ...minimal, tools, tool_choice: { type: 'tool', name: 'Bash' } }), null);
   assert.match(
     validateMessagesRequest({ ...minimal, tools, tool_choice: { type: 'tool', name: 'Read' } }).message,
-    /tidak tersedia/
+    /unavailable/
   );
   assert.match(
     validateMessagesRequest({ ...minimal, tool_choice: { type: 'random' } }).message,
