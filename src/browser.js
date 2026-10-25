@@ -212,6 +212,7 @@ const { StreamParser, extractToolCallsFromText } = require('./tool-parser');
      // Post-process: kalau parser tidak menemukan tool tapi teks mengandungnya
      let finalTools = parser.toolCalls();
      let finalText = parser.textOut;
+     const invalidToolCall = parser.sawToolMarkup && finalTools.length === 0;
      if (finalTools.length === 0 && finalText) {
          const ex = extractToolCallsFromText(finalText);
          if (ex.calls.length > 0) {
@@ -223,13 +224,21 @@ const { StreamParser, extractToolCallsFromText } = require('./tool-parser');
      // Emit ke sink
      if (sink) {
          if (thinkOpened || textOpened) sink.stopBlock();
-         if (bufferText && finalText && finalTools.length === 0) {
+         // Buffer until parsing completes when tools are available. Do not leak malformed
+         // tool-call payloads as assistant text while the handler is preparing a retry.
+         if (bufferText && finalText && !invalidToolCall) {
              sink.emitText(finalText);
          }
          for (const t of finalTools) sink.toolBlock(t.name, t.input);
      }
 
-     return { text: finalText, thinking: emittedThink, toolCalls: finalTools };
+     if (finalTools.length > 0) {
+         console.log('[tool-parser] parsed tool call(s): ' + finalTools.map((t) => t.name).join(', '));
+     } else if (invalidToolCall) {
+         console.warn('[tool-parser] TOOL_CALL markup detected, but no valid tool input parsed');
+     }
+
+     return { text: finalText, thinking: emittedThink, toolCalls: finalTools, invalidToolCall };
  }
 
 async function shutdownBrowser() {
