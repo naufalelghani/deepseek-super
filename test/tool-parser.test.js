@@ -18,7 +18,7 @@ test('tryParseJSON recovers unescaped quotes embedded inside a shell command', (
 });
 
 test('tryParseJSON strips accidental JSON code fences', () => {
-  const fenced = '```json\\n{"tool":"Bash","arguments":{"command":"pwd"}}\\n```';
+  const fenced = '```json\n{"tool":"Bash","arguments":{"command":"pwd"}}\n```';
   assert.deepEqual(tryParseJSON(fenced), { tool: 'Bash', arguments: { command: 'pwd' } });
 });
 
