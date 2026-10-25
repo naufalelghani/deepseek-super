@@ -48,6 +48,64 @@ ANTHROPIC_MODEL=deepseek-super
 
 Jika autentikasi server diaktifkan, atur `ANTHROPIC_AUTH_TOKEN` sama dengan `DEEPSEEK_SUPER_TOKEN`.
 
+## Menggunakan Anthropic TypeScript SDK
+
+Gateway ini dapat dipanggil melalui SDK resmi Anthropic dengan mengarahkan `baseURL` ke server lokal:
+
+```bash
+npm install @anthropic-ai/sdk
+```
+
+Contoh request non-streaming:
+
+```js
+const Anthropic = require('@anthropic-ai/sdk');
+
+const client = new Anthropic({
+  apiKey: process.env.ANTHROPIC_AUTH_TOKEN || 'any',
+  baseURL: 'http://127.0.0.1:8787',
+});
+
+async function main() {
+  const message = await client.messages.create({
+    model: 'deepseek-super',
+    max_tokens: 1024,
+    messages: [{ role: 'user', content: 'Jelaskan fungsi folder src/.' }],
+  });
+
+  for (const block of message.content) {
+    if (block.type === 'text') process.stdout.write(block.text);
+  }
+}
+
+main().catch(console.error);
+```
+
+SDK mengirim request ke `/v1/messages`; jangan menambahkan path tersebut ke `baseURL`. Jika `DEEPSEEK_SUPER_TOKEN` tidak diatur, nilai `apiKey` hanya perlu string nonkosong. Jika token server diaktifkan, `apiKey` harus sama dengan token itu.
+
+Contoh streaming:
+
+```js
+const stream = await client.messages.create({
+  model: 'deepseek-super',
+  max_tokens: 1024,
+  stream: true,
+  messages: [{ role: 'user', content: 'Halo!' }],
+});
+
+for await (const event of stream) {
+  if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+    process.stdout.write(event.delta.text);
+  }
+}
+```
+
+### Batas kompatibilitas saat ini
+
+Kontrak request memvalidasi `model`, `messages`, `max_tokens`, role/content, schema tools, `tool_choice`, dan `stream`. Endpoint `count_tokens` juga memakai `system`, `messages`, dan schema tools pada perkiraan input. Angka token tersebut adalah estimasi berbasis panjang karakter, bukan hitungan tokenizer DeepSeek yang sebenarnya.
+
+SDK compatibility pada lapisan HTTP tidak berarti semua fitur model Anthropic tersedia secara semantik. Gateway ini mengotomatisasi situs web DeepSeek; misalnya, `max_tokens`, parameter sampling, fitur prompt caching, citra/dokumen, dan opsi khusus Anthropic yang tidak dipetakan ke UI belum tentu bekerja seperti API Anthropic resmi. Jangan mengandalkan opsi yang belum didokumentasikan sebagai fitur yang didukung.
+
 ## Endpoint
 
 - `GET /v1/models`
