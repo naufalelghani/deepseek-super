@@ -30,9 +30,9 @@ test('full prompt requests raw tool output without Markdown wrappers', () => {
     role: 'user',
     content: [{ type: 'tool_result', tool_use_id: 'toolu_test', content: '/c/Users/USER/project' }],
   }], []);
-  assert.ok(prompt.includes('hasilnya saja bila hasilnya satu baris'));
-  assert.ok(prompt.includes('Jangan bungkus output mentah dengan Markdown code fence'));
-  assert.ok(prompt.includes('Jika tugas masih memerlukan tindakan'));
+  assert.ok(prompt.includes('return only that output when it consists of one or more lines'));
+  assert.ok(prompt.includes('Do not wrap raw output in Markdown code fences'));
+  assert.ok(prompt.includes('If the task still requires an action'));
   assert.ok(!prompt.includes('JANGAN menulis <TOOL_CALL>'));
 });
 
@@ -41,9 +41,9 @@ test('resume prompt requests raw tool output without Markdown wrappers', () => {
     role: 'user',
     content: [{ type: 'tool_result', tool_use_id: 'toolu_test', content: '/c/Users/USER/project' }],
   }], [], true);
-  assert.ok(prompt.includes('hasilnya saja bila hasilnya satu baris'));
-  assert.ok(prompt.includes('Jangan bungkus output mentah dengan Markdown code fence'));
-  assert.ok(prompt.includes('Jika tugas belum selesai, gunakan tool berikutnya yang diperlukan'));
+  assert.ok(prompt.includes('return only that output when it consists of one or more lines'));
+  assert.ok(prompt.includes('Do not wrap raw output in Markdown code fences'));
+  assert.ok(prompt.includes('If the task is not complete, use the next required tool'));
   assert.ok(!prompt.includes('JANGAN memanggil tool apa pun.'));
 });
 
@@ -63,7 +63,7 @@ test('resumed request includes current tool schemas and requires tool use when r
   assert.ok(prompt.includes('TOOLS AVAILABLE FOR THIS REQUEST'));
   assert.ok(prompt.includes('Read(file_path*: string'));
   assert.ok(prompt.includes('NEW USER REQUEST'));
-  assert.ok(prompt.includes('WAJIB panggil tool yang paling sesuai sekarang'));
+  assert.ok(prompt.includes('you MUST call the most appropriate tool now'));
   assert.ok(prompt.includes('<TOOL_CALL>'));
 });
 
@@ -123,6 +123,23 @@ test('full prompt retains tool schemas on a tool_result fallback turn', () => {
 
   assert.ok(prompt.includes('### TOOLS'));
   assert.ok(prompt.includes('Edit(file_path*: string'));
-  assert.ok(prompt.includes('Jika tugas masih memerlukan tindakan'));
+  assert.ok(prompt.includes('If the task still requires an action'));
   assert.ok(prompt.includes('<TOOL_CALL>...</TOOL_CALL>'));
+});
+
+test('project identity and first-user-language policy are included in every prompt path', () => {
+  const messages = [{ role: 'user', content: 'Halo, bantu saya membaca file.' }];
+  const fullPrompt = buildFullPrompt('', messages, []);
+  const resumedPrompt = buildResumePrompt('', messages, [], false);
+  const toolResultPrompt = buildResumePrompt('', [{
+    role: 'user',
+    content: [{ type: 'tool_result', tool_use_id: 'toolu_test', content: 'OK' }],
+  }], [], true);
+
+  for (const prompt of [fullPrompt, resumedPrompt, toolResultPrompt]) {
+    assert.ok(prompt.includes('deepseek-super'));
+    assert.ok(prompt.includes('BYV Dev Unorganization'));
+    assert.ok(prompt.includes('language of the first user message'));
+    assert.ok(prompt.includes('https://chat.deepseek.com/'));
+  }
 });
