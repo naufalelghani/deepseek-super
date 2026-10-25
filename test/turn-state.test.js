@@ -23,26 +23,22 @@ test('empty or unchanged assistant content is not treated as a fresh response', 
 
 test('explicit UI completion requires a known signal, no active generation, and an enabled send button', () => {
   assert.equal(isResponseComplete({
-    completionSignalAvailable: true,
     isGenerating: false,
     sendButtonEnabled: true,
-  }), true);
+  }, true), true);
 
   assert.equal(isResponseComplete({
-    completionSignalAvailable: false,
     isGenerating: false,
     sendButtonEnabled: true,
-  }), false);
+  }, false), false);
 
   assert.equal(isResponseComplete({
-    completionSignalAvailable: true,
     isGenerating: true,
     sendButtonEnabled: false,
-  }), false);
+  }, true), false);
 
   assert.equal(isResponseComplete({
-    completionSignalAvailable: true,
     isGenerating: false,
     sendButtonEnabled: false,
-  }), false);
+  }, true), false);
 });
