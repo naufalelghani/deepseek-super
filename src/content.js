@@ -40,9 +40,11 @@ const { sha, MAX_REPLAY } = require('./config');
 
  function sessionKey(system, messages) {
      const firstUser = messages.find((m) => m.role === 'user');
+     // Hash the complete leading instructions and first user message. Truncating
+     // either value before hashing created avoidable prefix collisions.
      return sha(JSON.stringify({
-         sys: flattenContent(system).slice(0, 300),
-         u1: firstUser ? flattenContent(firstUser.content).slice(0, 800) : '',
+         sys: flattenContent(system),
+         u1: firstUser ? flattenContent(firstUser.content) : '',
      }));
  }
  function truncateReplay(text) {
