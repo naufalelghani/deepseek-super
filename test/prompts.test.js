@@ -44,3 +44,23 @@ test('resume prompt requests raw tool output without Markdown wrappers', () => {
   assert.ok(prompt.includes('Jangan bungkus output mentah dengan Markdown code fence'));
   assert.ok(prompt.includes('JANGAN memanggil tool apa pun.'));
 });
+
+test('resumed request includes current tool schemas and requires tool use when relevant', () => {
+  const prompt = buildResumePrompt('', [{
+    role: 'user',
+    content: 'Gunakan tool Read untuk membaca package.json di direktori kerja saat ini.',
+  }], [{
+    name: 'Read',
+    description: 'Read a file from the filesystem',
+    input_schema: {
+      type: 'object',
+      properties: { file_path: { type: 'string', description: 'Absolute path to the file' } },
+      required: ['file_path'],
+    },
+  }], false);
+  assert.ok(prompt.includes('TOOLS AVAILABLE FOR THIS REQUEST'));
+  assert.ok(prompt.includes('Read(file_path*: string'));
+  assert.ok(prompt.includes('NEW USER REQUEST'));
+  assert.ok(prompt.includes('WAJIB panggil tool yang paling sesuai sekarang'));
+  assert.ok(prompt.includes('<TOOL_CALL>'));
+});
