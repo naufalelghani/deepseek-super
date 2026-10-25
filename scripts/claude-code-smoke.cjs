@@ -30,10 +30,16 @@ function readLocalGatewayToken() {
   }
 }
 
-const RAW_TOKEN = process.env.ANTHROPIC_AUTH_TOKEN ||
-  process.env.ANTHROPIC_API_KEY ||
-  process.env.DEEPSEEK_SUPER_TOKEN ||
-  readLocalGatewayToken();
+const RAW_TOKEN = IS_DEFAULT_GATEWAY
+  ? (process.env.DEEPSEEK_SUPER_TOKEN ||
+      readLocalGatewayToken() ||
+      process.env.ANTHROPIC_AUTH_TOKEN ||
+      process.env.ANTHROPIC_API_KEY ||
+      '')
+  : (process.env.ANTHROPIC_AUTH_TOKEN ||
+      process.env.ANTHROPIC_API_KEY ||
+      process.env.DEEPSEEK_SUPER_TOKEN ||
+      '');
 // API keys should not contain whitespace. Remove accidental line breaks/spaces
 // introduced when copying a key from a terminal or dashboard; never log the key.
 const TOKEN = RAW_TOKEN.replace(/\s+/g, '');
