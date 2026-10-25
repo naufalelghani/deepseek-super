@@ -11,10 +11,10 @@ function hasNewAssistantResponse(previous, current) {
 
 // This signal is only useful after a generation/stop control has actually been
 // observed during the current turn. Otherwise callers should use the idle timer.
-function isResponseComplete(state) {
+function isResponseComplete(state, sawGeneratingSignal) {
   return Boolean(
+    sawGeneratingSignal === true &&
     state &&
-    state.completionSignalAvailable === true &&
     state.isGenerating === false &&
     state.sendButtonEnabled === true
   );
