@@ -6,3 +6,4 @@ deepseek-profile/
 coverage/
 deepseek-auth.json
 .deepseek-super-token
+.deepseek-super-token.*.tmp
