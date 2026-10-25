@@ -10,12 +10,33 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-const BASE_URL = process.env.DEEPSEEK_SUPER_BASE_URL || 'http://localhost:20128/v1';
-const MODEL = process.env.ANTHROPIC_MODEL || 'byv-flash-2410';
+const BASE_URL = process.env.DEEPSEEK_SUPER_BASE_URL ||
+  process.env.ANTHROPIC_BASE_URL ||
+  'http://127.0.0.1:8787/v1';
+const MODEL = process.env.ANTHROPIC_MODEL || 'deepseek-super';
+const DEFAULT_GATEWAY_URL = 'http://127.0.0.1:8787/v1';
+const IS_DEFAULT_GATEWAY = (() => {
+  try {
+    const url = new URL(BASE_URL);
+    return ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) &&
+      Number(url.port || 80) === 8787 && url.pathname.replace(/\\/+$/, '') === '/v1';
+  } catch {
+    return false;
+  }
+})();
+function readLocalGatewayToken() {
+  if (!IS_DEFAULT_GATEWAY) return '';
+  try {
+    return fs.readFileSync(path.join(__dirname, '..', '.deepseek-super-token'), 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
 const RAW_TOKEN = process.env.ANTHROPIC_AUTH_TOKEN ||
   process.env.ANTHROPIC_API_KEY ||
   process.env.DEEPSEEK_SUPER_TOKEN ||
-  '';
+  readLocalGatewayToken();
 // API keys should not contain whitespace. Remove accidental line breaks/spaces
 // introduced when copying a key from a terminal or dashboard; never log the key.
 const TOKEN = RAW_TOKEN.replace(/\s+/g, '');
@@ -84,8 +105,8 @@ function runClaude(prompt, settingsPath, cwd) {
         ANTHROPIC_MODEL: MODEL,
         // Register the 9Router combo model so Claude Code accepts this custom ID.
         ANTHROPIC_CUSTOM_MODEL_OPTION: MODEL,
-        ANTHROPIC_CUSTOM_MODEL_OPTION_NAME: 'byv-flash-2410 via 9Router',
-        ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION: 'Local model combo routed through 9Router',
+        ANTHROPIC_CUSTOM_MODEL_OPTION_NAME: IS_DEFAULT_GATEWAY ? 'deepseek-super local gateway' : MODEL + ' external gateway',
+        ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION: IS_DEFAULT_GATEWAY ? 'The model provided by this deepseek-super gateway' : 'Externally configured model alias; routing is controlled by the external gateway',
       },
       shell: true,
       windowsHide: true,
@@ -117,7 +138,7 @@ function runClaude(prompt, settingsPath, cwd) {
     child.stderr.on('data', (chunk) => { stderr += chunk; });
     child.on('error', (error) => {
       finish(new Error(
-        'Tidak dapat menjalankan Claude Code CLI. Pastikan perintah "claude" tersedia di PATH. ' +
+        'Could not launch Claude Code CLI. Ensure the "claude" command is available on PATH. ' +
         error.message
       ));
     });
@@ -139,6 +160,7 @@ async function main() {
   console.log('Claude Code CLI integration test');
   console.log('Gateway:', BASE_URL);
   console.log('Model:', MODEL);
+  if (BASE_URL === DEFAULT_GATEWAY_URL) console.log('Target: this repository\'s local gateway');
   console.log('Tools under test:', REQUIRED_TOOLS.join(', '));
 
   if (TOKEN_HAD_WHITESPACE) {
@@ -146,7 +168,9 @@ async function main() {
   }
 
   if (!TOKEN) {
-    throw new Error('API key 9Router belum diatur. Jalankan read -rsp untuk memasukkan key ke ANTHROPIC_AUTH_TOKEN. Jangan menaruh key di source code.');
+    throw new Error(IS_DEFAULT_GATEWAY
+      ? 'Local gateway token was not found. Start npm start first so .deepseek-super-token is created, then retry.'
+      : 'API token is missing. Set ANTHROPIC_AUTH_TOKEN for the selected external gateway. Never hard-code the token in source.');
   }
 
   // Keep writes confined to an isolated temporary project rather than the repo.
@@ -214,7 +238,7 @@ async function main() {
     );
     if (missingTools.length) {
       throw new Error(
-        'Claude Code tidak memanggil semua tool wajib. Tidak terlihat: ' + missingTools.join(', ') +
+        'Claude Code did not call all required tools. Missing: ' + missingTools.join(', ') +
         '\nTool yang terdeteksi: ' + toolUses.map((tool) => tool.name).join(', ') +
         '\nSTDOUT (akhir):\n' + stdout.slice(-10000)
       );
@@ -232,8 +256,8 @@ async function main() {
 
     if (toolResults.length < REQUIRED_TOOLS.length) {
       throw new Error(
-        'Tidak semua tool result terlihat di output stream. Ditemukan ' + toolResults.length +
-        ' result untuk ' + REQUIRED_TOOLS.length + ' tool wajib.\n' + stdout.slice(-10000)
+        'Not all tool results were found in the output stream. Found ' + toolResults.length +
+        ' results for ' + REQUIRED_TOOLS.length + ' tool wajib.\n' + stdout.slice(-10000)
       );
     }
 
@@ -244,7 +268,7 @@ async function main() {
     );
     if (missingToolResults.length) {
       throw new Error(
-        'Tool dipanggil tetapi result tidak ditemukan untuk ID: ' +
+        'A tool was called but no result was found for IDs: ' +
         missingToolResults.map((tool) => tool.name + ':' + tool.id).join(', ') +
         '\n' + stdout.slice(-10000)
       );
@@ -253,14 +277,14 @@ async function main() {
     const editedFile = fs.readFileSync(path.join(workspace, 'fixture-edit.txt'), 'utf8');
     const writtenFilePath = path.join(workspace, 'smoke-created.txt');
     if (!editedFile.includes('EDIT_AFTER') || editedFile.includes('EDIT_BEFORE')) {
-      throw new Error('Tool Edit tidak menghasilkan perubahan yang diharapkan. Isi file: ' + JSON.stringify(editedFile));
+      throw new Error('The Edit tool did not produce the expected change. File contents: ' + JSON.stringify(editedFile));
     }
     if (!fs.existsSync(writtenFilePath)) {
-      throw new Error('Tool Write tidak membuat smoke-created.txt.');
+      throw new Error('The Write tool did not create smoke-created.txt.');
     }
     const writtenFile = fs.readFileSync(writtenFilePath, 'utf8').trim();
     if (writtenFile !== 'WRITE_OK') {
-      throw new Error('Isi smoke-created.txt tidak sesuai. Isi aktual: ' + JSON.stringify(writtenFile));
+      throw new Error('smoke-created.txt contents did not match the expected value. Actual: ' + JSON.stringify(writtenFile));
     }
 
     const finalText = events
@@ -287,7 +311,6 @@ main().catch((error) => {
   console.error('\nCLAUDE CODE INTEGRATION TEST FAILED');
   console.error(error && error.stack ? error.stack : error);
   console.error('\nEnsure 9Router is running at ' + BASE_URL + ' and the API key is correct.');
-  console.error('On Windows PowerShell, set ANTHROPIC_AUTH_TOKEN using the PowerShell example in README.md.');
   console.error('The key is read from the environment and is never printed by this test.');
   process.exitCode = 1;
 });
