@@ -143,24 +143,24 @@ Beberapa versi Claude Code dapat mengirim pesan dengan `role: "system"` di dalam
 
 ## Integration test langsung dengan Claude Code
 
-Untuk menguji tool calling melalui Claude Code CLI asli (bukan hanya Anthropic SDK), jalankan server lokal terlebih dahulu:
+Tes ini menggunakan Claude Code CLI asli melalui 9Router lokal, dengan default berikut:
+
+- Base URL: `http://localhost:20128/v1`
+- Model combo: `byv-flash-2410`
+- API key: dibaca dari variabel lingkungan `ANTHROPIC_AUTH_TOKEN` atau `ANTHROPIC_API_KEY`
+
+Jalankan dari Git Bash di root repo. Masukkan API key ketika diminta; karakter input tidak akan ditampilkan dan key tidak disimpan ke repo atau shell command history:
 
 ```bash
-npm install
-npm start
-```
-
-Pastikan Chrome Playwright sudah login ke DeepSeek. Di terminal kedua pada root repo:
-
-```bash
+read -rsp "9Router API key: " ANTHROPIC_AUTH_TOKEN; echo
+export ANTHROPIC_AUTH_TOKEN
 npm run test:claude-code
+unset ANTHROPIC_AUTH_TOKEN
 ```
 
-Tes ini mengarahkan variabel lingkungan Claude Code ke gateway lokal dan menjalankan Claude Code CLI asli dalam restricted mode. Skrip mendaftarkan `deepseek-super` sebagai custom model Claude Code supaya CLI tidak menolak ID model sebelum request dikirim ke gateway.
+Tes mewajibkan enam tool dipanggil secara berurutan dan menerima hasil masing-masing: `Read`, `Glob`, `Grep`, `Edit`, `Write`, dan `Bash(pwd)`. Ini juga menguji rangkaian multi-step tool calling. Operasi tulis/edit hanya dilakukan di workspace sementara di folder temp, bukan di repo. Perintah Bash yang diizinkan hanya `pwd`; tool lain tidak tersedia. Workspace pengujian dihapus setelah selesai.
 
-Tes ini mengharuskan enam tool dipanggil secara berurutan dan menerima hasil masing-masing: `Read`, `Glob`, `Grep`, `Edit`, `Write`, dan `Bash(pwd)`. Ini juga menguji bahwa gateway melanjutkan chat yang sama di antara beberapa putaran tool. Operasi tulis/edit hanya dilakukan di workspace sementara di folder temp, bukan di repo. Perintah Bash yang diizinkan hanya `pwd`; tool lain tidak tersedia. Workspace pengujian dihapus setelah selesai.
-
-Persyaratan: Claude Code CLI harus terpasang serta dapat dijalankan sebagai `claude` dari terminal. Jika autentikasi server gateway diaktifkan, tetapkan `DEEPSEEK_SUPER_TOKEN` pada terminal yang menjalankan tes dengan nilai token yang sama seperti server. Base URL dapat diubah melalui `DEEPSEEK_SUPER_BASE_URL`, model melalui `ANTHROPIC_MODEL`, dan timeout melalui `CLAUDE_CODE_TEST_TIMEOUT_MS`.
+Endpoint dan model dapat diubah melalui `DEEPSEEK_SUPER_BASE_URL` / `ANTHROPIC_BASE_URL` dan `ANTHROPIC_MODEL`. Jika kamu menggunakan endpoint 9Router di atas, server `npm start` dari gateway DeepSeek lokal tidak diperlukan; 9Router saja yang harus aktif. Simpan API key hanya di lingkungan lokal, jangan commit ke repo publik.
 
 ## Endpoint
 
