@@ -20,20 +20,20 @@ const { sha, MAX_REPLAY } = require('./config');
  function renderMessage(m) {
      const parts = [];
      for (const b of blocksOf(m.content)) {
-        if (b.type === 'text') {
-            if (b.text) parts.push(b.text);
-        } else if (b.type === 'tool_use') {
-            parts.push(`[Memanggil tool ${b.name} dengan input: ${JSON.stringify(b.input || {})}]`);
-        } else if (b.type === 'tool_result') {
+         if (b.type === 'text') {
+             if (b.text) parts.push(b.text);
+         } else if (b.type === 'tool_use') {
+             parts.push(`[Memanggil tool ${b.name} dengan input: ${JSON.stringify(b.input || {})}]`);
+         } else if (b.type === 'tool_result') {
              const txt = typeof b.content === 'string' ? b.content : flattenContent(b.content);
-             parts.push(`[Hasil tool ${b.tool_use_id || ''}\n${txt}`);
-        } else if (b.type === 'image') {
-            parts.push('[gambar tidak didukung]');
-        } else if (b.type === 'thinking' || b.type === 'redacted_thinking') {
-            // skip
-        } else if (b.type === 'document') {
+             parts.push(`[Hasil tool ${b.tool_use_id || ''}]:\n${txt}`);
+         } else if (b.type === 'image') {
+             parts.push('[gambar tidak didukung]');
+         } else if (b.type === 'thinking' || b.type === 'redacted_thinking') {
+             // skip
+         } else if (b.type === 'document') {
              parts.push('[dokumen tidak didukung]');
-        }
+         }
      }
      return parts.join('\n');
  }
