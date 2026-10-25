@@ -46,7 +46,7 @@ function validateMessagesRequest(body, options = {}) {
       return { type: 'invalid_request_error', message: `messages[${i}] harus berupa object.` };
     }
     if (message.role !== 'user' && message.role !== 'assistant') {
-      return { type: 'invalid_request_error', message: `messages[${i}].role harus "user" atau "assistant".` };
+      return { type: 'invalid_request_error', message: `messages[${i}].role harus "user" atau "assistant", tetapi menerima ${JSON.stringify(message.role)}.` };
     }
     if (!validContent(message.content)) {
       return { type: 'invalid_request_error', message: `messages[${i}].content harus berupa string atau array content block.` };
@@ -92,6 +92,50 @@ function validateMessagesRequest(body, options = {}) {
 }
 
 /**
+ * Normalize Claude Code requests that put a system/developer instruction
+ * inside messages[]. Anthropic expects these instructions in top-level system.
+ * Returns a copied request and does not mutate the caller's object.
+ */
+function normalizeAnthropicMessagesRequest(body) {
+  if (!isPlainObject(body) || !Array.isArray(body.messages)) {
+    return { body, normalizedInstructionMessages: 0 };
+  }
+
+  const systemBlocks = [];
+  const messages = [];
+  let normalizedInstructionMessages = 0;
+
+  if (typeof body.system === 'string') {
+    systemBlocks.push({ type: 'text', text: body.system });
+  } else if (Array.isArray(body.system)) {
+    systemBlocks.push(...body.system);
+  }
+
+  for (const message of body.messages) {
+    if (isPlainObject(message) &&
+        (message.role === 'system' || message.role === 'developer')) {
+      normalizedInstructionMessages++;
+      if (typeof message.content === 'string') {
+        systemBlocks.push({ type: 'text', text: message.content });
+      } else if (Array.isArray(message.content)) {
+        systemBlocks.push(...message.content);
+      }
+      continue;
+    }
+    messages.push(message);
+  }
+
+  if (normalizedInstructionMessages === 0) {
+    return { body, normalizedInstructionMessages: 0 };
+  }
+
+  return {
+    body: { ...body, system: systemBlocks, messages },
+    normalizedInstructionMessages,
+  };
+}
+
+/**
  * A local character-based estimate, not a tokenizer or actual upstream usage.
  * Count all major prompt inputs so system instructions and tool schemas aren't
  * omitted from the reported input usage.
@@ -117,6 +161,7 @@ function estimateOutputTokens(text, thinking, toolCalls) {
 module.exports = {
   isPlainObject,
   validContent,
+  normalizeAnthropicMessagesRequest,
   validateMessagesRequest,
   estimateInputTokens,
   estimateOutputTokens,
