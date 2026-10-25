@@ -10,11 +10,14 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-const BASE_URL = process.env.DEEPSEEK_SUPER_BASE_URL || 'http://127.0.0.1:8787';
-const MODEL = process.env.ANTHROPIC_MODEL || 'deepseek-super';
+const BASE_URL = process.env.DEEPSEEK_SUPER_BASE_URL ||
+  process.env.ANTHROPIC_BASE_URL ||
+  'http://localhost:20128/v1';
+const MODEL = process.env.ANTHROPIC_MODEL || 'byv-flash-2410';
 const TOKEN = process.env.ANTHROPIC_AUTH_TOKEN ||
+  process.env.ANTHROPIC_API_KEY ||
   process.env.DEEPSEEK_SUPER_TOKEN ||
-  'any';
+  '';
 const TIMEOUT_MS = Number.parseInt(process.env.CLAUDE_CODE_TEST_TIMEOUT_MS || '360000', 10);
 const TEST_TOOLS = 'Bash,Read,Edit,Write,Glob,Grep';
 const REQUIRED_TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash'];
@@ -77,11 +80,10 @@ function runClaude(prompt, settingsPath, cwd) {
         ANTHROPIC_AUTH_TOKEN: TOKEN,
         ANTHROPIC_API_KEY: TOKEN,
         ANTHROPIC_MODEL: MODEL,
-        // Claude Code validates --model IDs before sending a request. Register the
-        // gateway's model as its custom option so this arbitrary ID is accepted.
+        // Register the 9Router combo model so Claude Code accepts this custom ID.
         ANTHROPIC_CUSTOM_MODEL_OPTION: MODEL,
-        ANTHROPIC_CUSTOM_MODEL_OPTION_NAME: 'DeepSeek Super Gateway',
-        ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION: 'Local integration-test model routed through deepseek-super',
+        ANTHROPIC_CUSTOM_MODEL_OPTION_NAME: 'byv-flash-2410 via 9Router',
+        ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION: 'Local model combo routed through 9Router',
       },
       shell: true,
       windowsHide: true,
@@ -153,10 +155,10 @@ async function main() {
   // Restricted mode confines built-in file tools to the temporary workspace.
   // Bash is only allowlisted for the exact safe command "pwd".
   fs.writeFileSync(settingsPath, JSON.stringify({
-    // Map a built-in Claude model ID to the gateway model so Claude Code can
-    // recognize the gateway alias and not emit an unrecognized_model diagnostic.
+    // This key must be an actual built-in Anthropic model ID. The value is the
+    // custom gateway model; this also suppresses the unrecognized-model diagnostic.
     modelOverrides: {
-      'claude-sonnet-4-5': MODEL,
+      'claude-sonnet-4-5-20250929': MODEL,
     },
     permissions: {
       allow: [
