@@ -164,7 +164,8 @@ const { hasNewAssistantResponse } = require('./turn-state');
                  sawResponseContent = Boolean(st.answer || st.think);
                  // Mulai dari baseline thinking — bukan string kosong
                  // Ini mencegah emit thinking LAMA saat resume thread
-                 emittedThink = before.think || '';
+                 const changedKey = Boolean(st.answerKey && st.answerKey !== before.answerKey);
+                 emittedThink = !changedKey && before.think && st.think.startsWith(before.think) ? before.think : '';
                  emittedAnswer = '';
                  thinkOpened = false; // thinking baru = blok baru
              }
