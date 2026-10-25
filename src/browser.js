@@ -3,6 +3,7 @@
 const { chromium } = require('playwright');
 const { PROFILE_DIR, POLL_MS, STABLE_MS, MAX_TURN_MS, HOLD_CHARS } = require('./config');
 const { StreamParser, extractToolCallsFromText } = require('./tool-parser');
+const { hasNewAssistantResponse } = require('./turn-state');
 
  let ctx = null;
  let page = null;
@@ -79,11 +80,12 @@ const { StreamParser, extractToolCallsFromText } = require('./tool-parser');
          for (let i = items.length - 1; i >= 0; i--) {
              if (items[i].querySelector('.ds-assistant-message-main-content')) { last = items[i]; break; }
          }
-         if (!last) return { count: items.length, think: '', answer: '' };
+         if (!last) return { count: items.length, answerKey: null, think: '', answer: '' };
          const tEl = last.querySelector('.ds-think-content .ds-markdown');
          const aEl = last.querySelector('.ds-assistant-message-main-content');
          return {
              count: items.length,
+             answerKey: last.getAttribute('data-virtual-list-item-key') || null,
              think: tEl ? tEl.innerText : '',
              answer: aEl ? aEl.innerText : '',
          };
@@ -118,7 +120,6 @@ const { StreamParser, extractToolCallsFromText } = require('./tool-parser');
  async function runTurn(prompt, sink, bufferText) {
      const before = await readState();
      const baselineAnswer = before.answer;
-     const baselineCount = before.count;
 
      await textarea.click();
      await textarea.fill(prompt);
@@ -158,9 +159,8 @@ const { StreamParser, extractToolCallsFromText } = require('./tool-parser');
          try { st = await readState(); } catch (e) { break; }
 
          if (!sawNewMessage) {
-             const newByCount = st.count > baselineCount;
-             const newByAnswer = st.answer && st.answer !== baselineAnswer && st.answer.length > 15;
-             if (newByCount || newByAnswer) {
+             // Ignore user-message row-count changes; wait for a fresh assistant response.
+             if (hasNewAssistantResponse(before, st)) {
                  sawNewMessage = true;
                  // Mulai dari baseline thinking — bukan string kosong
                  // Ini mencegah emit thinking LAMA saat resume thread
