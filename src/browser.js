@@ -319,8 +319,8 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
              if (hasNewAssistantResponse(before, st)) {
                  sawNewMessage = true;
                  sawResponseContent = Boolean(st.answer || st.think);
-                 // Mulai dari baseline thinking — bukan string kosong
-                 // Ini mencegah emit thinking LAMA saat resume thread
+                 // Start from the previous thinking baseline rather than an empty string.
+                 // This prevents old thinking content from being emitted when resuming a thread.
                  const changedKey = Boolean(st.answerKey && st.answerKey !== before.answerKey);
                  emittedThink = !changedKey && before.think && st.think.startsWith(before.think) ? before.think : '';
                  emittedAnswer = '';
@@ -398,7 +398,7 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
 
      parser.finish();
 
-     // Post-process: kalau parser tidak menemukan tool tapi teks mengandungnya
+     // Post-process: recover tool calls if the parser did not find them but the text contains markup.
      let finalTools = parser.toolCalls();
      let finalText = parser.textOut;
      const invalidToolCall = parser.sawToolMarkup && finalTools.length === 0;
@@ -410,7 +410,7 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
          }
      }
 
-     // Emit ke sink
+     // Emit parsed content to the sink.
      if (sink) {
          if (thinkOpened || textOpened) sink.stopBlock();
          // Buffer until parsing completes when tools are available. Do not leak malformed
