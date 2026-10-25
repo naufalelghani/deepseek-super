@@ -167,6 +167,7 @@ async function main() {
 
   const prompt = [
     'This is a mandatory integration test. Use every one of these six tools, each for its named task; do not substitute a different tool.',
+    'Perform the tasks sequentially: make exactly one tool call in each response, wait for its real result, then decide which next tool to use. Do not batch tool calls.',
     '1. Read: read package.json and identify its top-level name.',
     '2. Glob: find all files matching **/*.txt in the current workspace.',
     '3. Grep: search for the exact string TEST_PATTERN_FOUND in **/*.txt.',
