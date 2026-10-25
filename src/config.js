@@ -9,6 +9,12 @@ const MODEL_NAME = process.env.MODEL_NAME || 'deepseek-super';
 const PROFILE_DIR = process.env.PROFILE_DIR || path.join(__dirname, '..', 'deepseek-profile');
 const AUTH_TOKEN_FILE = path.join(__dirname, '..', '.deepseek-super-token');
 
+function readExistingToken() {
+    const saved = fs.readFileSync(AUTH_TOKEN_FILE, 'utf8').trim();
+    if (!saved) throw new Error('Local API token file is empty: ' + AUTH_TOKEN_FILE);
+    return saved;
+}
+
 function loadAuthToken() {
     const fromEnvironment = (process.env.DEEPSEEK_SUPER_TOKEN || '').trim();
     if (fromEnvironment) {
@@ -16,23 +22,29 @@ function loadAuthToken() {
     }
 
     try {
-        const saved = fs.readFileSync(AUTH_TOKEN_FILE, 'utf8').trim();
-        if (saved) return { token: saved, source: 'local token file' };
+        return { token: readExistingToken(), source: 'local token file' };
     } catch (error) {
         if (error.code !== 'ENOENT') throw error;
     }
 
+    // Create a complete temporary file first, then hard-link it to the final
+    // path. The final token path becomes visible only after the content exists,
+    // so parallel Node test workers cannot read a half-written empty token.
     const generated = crypto.randomBytes(32).toString('hex');
+    const tempPath = AUTH_TOKEN_FILE + '.' + process.pid + '.' +
+        crypto.randomBytes(6).toString('hex') + '.tmp';
+
+    fs.writeFileSync(tempPath, generated + '\n', { flag: 'wx', mode: 0o600 });
     try {
-        fs.writeFileSync(AUTH_TOKEN_FILE, generated + '\n', { flag: 'wx', mode: 0o600 });
-        return { token: generated, source: 'generated local token file' };
-    } catch (error) {
-        if (error.code !== 'EEXIST') {
-            throw new Error('Could not create local API token file: ' + error.message);
+        try {
+            fs.linkSync(tempPath, AUTH_TOKEN_FILE);
+            return { token: generated, source: 'generated local token file' };
+        } catch (error) {
+            if (error.code !== 'EEXIST') throw error;
+            return { token: readExistingToken(), source: 'local token file' };
         }
-        const saved = fs.readFileSync(AUTH_TOKEN_FILE, 'utf8').trim();
-        if (!saved) throw new Error('Local API token file is empty: ' + AUTH_TOKEN_FILE);
-        return { token: saved, source: 'local token file' };
+    } finally {
+        try { fs.unlinkSync(tempPath); } catch {}
     }
 }
 
