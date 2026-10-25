@@ -32,6 +32,27 @@ test('StreamParser keeps regular text and parses tool call split across chunks',
   assert.deepEqual(parser.toolCalls(), [{ name: 'Bash', input: { command: 'pwd' } }]);
 });
 
+test('StreamParser preserves a closing marker split across chunks', () => {
+  const emitted = [];
+  const parser = new StreamParser((chunk) => emitted.push(chunk));
+  const input = { tool: 'Bash', arguments: { command: 'pwd', note: 'this is extra padding to ensure the payload is longer than the parser holdback suffix' } };
+  const payload = JSON.stringify(input);
+  parser.feed('<TOOL_CALL>' + payload + '</TOOL_');
+  parser.feed('CALL>');
+  parser.finish();
+  assert.equal(parser.incompleteToolBlock, false);
+  assert.deepEqual(parser.toolCalls(), [{ name: 'Bash', input: input.arguments }]);
+  assert.equal(emitted.join(''), '');
+});
+
+test('StreamParser preserves held payload when the closing marker is missing', () => {
+  const parser = new StreamParser(() => {});
+  parser.feed('<TOOL_CALL>' + JSON.stringify({ tool: 'Bash', arguments: { command: 'pwd' } }));
+  parser.finish();
+  assert.equal(parser.incompleteToolBlock, true);
+  assert.deepEqual(parser.toolCalls(), [{ name: 'Bash', input: { command: 'pwd' } }]);
+});
+
 test('extractToolCallsFromText removes tool-call markup and returns normalized calls', () => {
   const result = extractToolCallsFromText('Before <TOOL_CALL>{"tool":"Grep","arguments":{"pattern":"abc"}}</TOOL_CALL> After');
   assert.equal(result.text, 'Before  After');
