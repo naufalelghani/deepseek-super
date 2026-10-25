@@ -164,7 +164,7 @@ async function handleMessages(req, res, body) {
             ? 'Correct the format only; preserve the intent and arguments of the original task.'
             : 'Final recovery attempt: do not copy the previous output. Rebuild the simplest arguments that still complete the original task.'
         ].join('\n');
-        // Gunakan dummy sink agar output percobaan gagal tidak bocor atau terduplikasi pada SSE.
+        // Use a dummy sink so failed retry output is not leaked or duplicated in the SSE stream.
         const retry = await runTurn(retryPrompt, dummySink, useBuffer, isCancelled);
         abortIfCancelled();
         answer = retry.text;
