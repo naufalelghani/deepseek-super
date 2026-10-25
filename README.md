@@ -35,7 +35,7 @@ Skrip akan membuka Chrome dengan profil persisten `deepseek-profile/`. Login dil
 
 Sesi utama disimpan di `deepseek-profile/`; folder ini dan backup `deepseek-auth.json` masuk `.gitignore` karena berisi data autentikasi. Jangan commit atau membagikan keduanya.
 
-Kalau profil masih login, kamu tidak perlu melakukan login ulang—cukup pastikan halaman chat sudah siap lalu tekan Enter di terminal. Kalau sesi habis, jalankan kembali `node deepseek-login.js` dan lakukan login manual lagi. Timeout login default 10 menit; ubah melalui environment variable `DEEPSEEK_LOGIN_TIMEOUT_MS` jika diperlukan.
+Kalau profil masih login, kamu tidak perlu melakukan login ulang—cukup pastikan halaman chat sudah siap lalu tekan Enter di terminal. Kalau sesi habis, jalankan kembali `node deepseek-login.js` dan lakukan login manual lagi. Setelah kamu menekan Enter, pengecekan kotak chat memiliki timeout default 10 menit; ubah melalui environment variable `DEEPSEEK_LOGIN_TIMEOUT_MS` jika diperlukan.
 
 ### 2. Jalankan gateway
 
