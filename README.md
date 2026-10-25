@@ -160,7 +160,7 @@ unset ANTHROPIC_AUTH_TOKEN
 
 Tes mewajibkan enam tool dipanggil secara berurutan dan menerima hasil masing-masing: `Read`, `Glob`, `Grep`, `Edit`, `Write`, dan `Bash(pwd)`. Ini juga menguji rangkaian multi-step tool calling. Operasi tulis/edit hanya dilakukan di workspace sementara di folder temp, bukan di repo. Perintah Bash yang diizinkan hanya `pwd`; tool lain tidak tersedia. Workspace pengujian dihapus setelah selesai.
 
-Endpoint dan model dapat diubah melalui `DEEPSEEK_SUPER_BASE_URL` / `ANTHROPIC_BASE_URL` dan `ANTHROPIC_MODEL`. Jika kamu menggunakan endpoint 9Router di atas, server `npm start` dari gateway DeepSeek lokal tidak diperlukan; 9Router saja yang harus aktif. Simpan API key hanya di lingkungan lokal, jangan commit ke repo publik.
+Endpoint dapat diubah melalui `DEEPSEEK_SUPER_BASE_URL`, dan model melalui `ANTHROPIC_MODEL`. Jika kamu menggunakan endpoint 9Router di atas, server `npm start` dari gateway DeepSeek lokal tidak diperlukan; 9Router saja yang harus aktif. Simpan API key hanya di lingkungan lokal, jangan commit ke repo publik.
 
 ## Endpoint
 
