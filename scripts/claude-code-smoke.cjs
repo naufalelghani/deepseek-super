@@ -74,8 +74,9 @@ function runClaude(prompt, settingsPath) {
         ANTHROPIC_BASE_URL: BASE_URL,
         ANTHROPIC_AUTH_TOKEN: TOKEN,
         ANTHROPIC_MODEL: MODEL,
-        // Ensure a personal API key cannot override the local gateway token.
-        ANTHROPIC_API_KEY: '',
+        // Both authentication styles target only the local gateway token.
+        // Bare mode intentionally does not use the user's Claude subscription login.
+        ANTHROPIC_API_KEY: TOKEN,
       },
       shell: true,
       windowsHide: true,
