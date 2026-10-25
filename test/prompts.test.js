@@ -85,7 +85,8 @@ test('tool-result resume prompt includes schemas and allows the next tool step',
     },
   }], true);
 
-  assert.ok(prompt.includes('### SYSTEM\\nKeep the project-specific system policy.'));
+  assert.ok(prompt.includes('### SYSTEM'));
+  assert.ok(prompt.includes('Keep the project-specific system policy.'));
   assert.ok(prompt.includes('TOOLS AVAILABLE FOR THE NEXT STEP'));
   assert.ok(prompt.includes('Read(file_path*: string'));
   assert.ok(prompt.includes('Jika tugas belum selesai, gunakan tool berikutnya'));
