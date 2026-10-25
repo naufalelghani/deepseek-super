@@ -153,6 +153,11 @@ async function main() {
   // Restricted mode confines built-in file tools to the temporary workspace.
   // Bash is only allowlisted for the exact safe command "pwd".
   fs.writeFileSync(settingsPath, JSON.stringify({
+    // Map a built-in Claude model ID to the gateway model so Claude Code can
+    // recognize the gateway alias and not emit an unrecognized_model diagnostic.
+    modelOverrides: {
+      'claude-sonnet-4-5': MODEL,
+    },
     permissions: {
       allow: [
         'Read',
