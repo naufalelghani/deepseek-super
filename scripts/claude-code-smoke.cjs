@@ -2,7 +2,7 @@
 
 // End-to-end test: real Claude Code CLI -> local Anthropic-compatible gateway.
 // It uses a temporary workspace and only allows six bounded built-in tools.
-// Prerequisites: npm start is running and Playwright is logged in to DeepSeek.
+// Prerequisites: the local 9Router gateway is running and ANTHROPIC_AUTH_TOKEN is set.
 // Run: npm run test:claude-code
 
 const fs = require('node:fs');
@@ -97,7 +97,7 @@ function runClaude(prompt, settingsPath, cwd) {
       child.kill();
       finish(new Error(
         'Claude Code timed out after ' + TIMEOUT_MS +
-        ' ms. Check gateway logs and the DeepSeek browser session.'
+        ' ms. Check that the local 9Router gateway and selected model are responding.'
       ));
     }, TIMEOUT_MS);
 
