@@ -32,9 +32,16 @@ function readLocalGatewayToken() {
   }
 }
 
-const apiKey = process.env.ANTHROPIC_AUTH_TOKEN ||
-  process.env.DEEPSEEK_SUPER_TOKEN ||
-  readLocalGatewayToken();
+const apiKey = isDefaultLocalGateway(baseURL)
+  ? (process.env.DEEPSEEK_SUPER_TOKEN ||
+      readLocalGatewayToken() ||
+      process.env.ANTHROPIC_AUTH_TOKEN ||
+      process.env.ANTHROPIC_API_KEY ||
+      '')
+  : (process.env.ANTHROPIC_AUTH_TOKEN ||
+      process.env.ANTHROPIC_API_KEY ||
+      process.env.DEEPSEEK_SUPER_TOKEN ||
+      '');
 const model = process.env.ANTHROPIC_MODEL || 'deepseek-super';
 
 const client = new Anthropic({
