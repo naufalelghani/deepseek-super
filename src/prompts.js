@@ -37,10 +37,10 @@ function toolsToPrompt(tools) {
         const required = schema.required || [];
         const params = Object.keys(properties).map((key) => {
             const value = properties[key] || {};
-            return \`\${key}\${required.includes(key) ? '*' : ''}: \${value.type || 'any'}\` +
-                (value.description ? \` (\${value.description})\` : '');
+            return `${key}${required.includes(key) ? '*' : ''}: ${value.type || 'any'}` +
+                (value.description ? ` (${value.description})` : '');
         }).join('; ');
-        lines.push(\`- \${tool.name}(\${params}): \${tool.description || ''}\`);
+        lines.push(`- ${tool.name}(${params}): ${tool.description || ''}`);
     }
 
     lines.push('');
@@ -59,8 +59,8 @@ function toolsToPrompt(tools) {
     lines.push('This example demonstrates formatting only. Choose the tool and arguments that fit the user request.');
     lines.push('');
     lines.push('EXAMPLE — TOOL REQUIRED:');
-    lines.push(\`User: "Please help me use \${tools[0].name}."\`);
-    lines.push(\`Assistant: <TOOL_CALL>{"tool":"\${tools[0].name}","arguments":{...}}</TOOL_CALL>\`);
+    lines.push(`User: "Please help me use ${tools[0].name}."`);
+    lines.push(`Assistant: <TOOL_CALL>{"tool":"${tools[0].name}","arguments":{...}}</TOOL_CALL>`);
     lines.push('');
     lines.push('EXAMPLE — NO TOOL NEEDED:');
     lines.push('User: "Who are you? Please answer in my language."');
@@ -84,7 +84,7 @@ function buildFullPrompt(system, messages, tools) {
     if (history.length) {
         parts.push('### CONVERSATION HISTORY');
         for (const message of history) {
-            parts.push(\`[\${message.role === 'assistant' ? 'ASSISTANT' : 'USER'}]\n\${renderMessage(message)}\`);
+            parts.push(`[${message.role === 'assistant' ? 'ASSISTANT' : 'USER'}]\n${renderMessage(message)}`);
         }
     }
 
