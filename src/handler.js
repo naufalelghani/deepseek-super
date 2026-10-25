@@ -27,6 +27,12 @@ function isConversationTooLong(messages) {
   return messages.length >= 13;
 }
 
+// Reuse the saved DeepSeek thread for every continuation, including tool_result
+// turns. A tool result is a continuation of the same assistant turn, not a new chat.
+function shouldResumeSession(cached, messages) {
+  return Boolean(cached && Array.isArray(messages) && messages.length > 1);
+}
+
 async function handleMessages(req, res, body) {
   console.error('[REQ] model=' + (body.model || '?') +
     ' tools=' + (Array.isArray(body.tools) ? body.tools.length : 0) +
@@ -67,11 +73,14 @@ async function handleMessages(req, res, body) {
     await ensureTogglesOn(tools.length > 0);
 
     let resumed = false;
-    if (cached && messages.length > 1 && !lastHasToolResult) {
+    if (shouldResumeSession(cached, messages)) {
       try {
         resumed = await resumeUrl(cached.url);
-      } catch {
-        resumed = false;
+      } catch (error) {
+        console.warn('[session] failed to resume cached conversation:', error.message || String(error));
+      }
+      if (resumed) {
+        console.log('[session] resumed cached conversation; tool_result=' + lastHasToolResult);
       }
     }
 
@@ -79,6 +88,9 @@ async function handleMessages(req, res, body) {
     if (resumed) {
       prompt = buildResumePrompt(system, messages, tools, lastHasToolResult);
     } else {
+      if (cached) {
+        console.warn('[session] cached conversation unavailable; creating a new conversation');
+      }
       await gotoNewChat();
       prompt = truncateReplay(buildFullPrompt(system, messages, tools));
     }
@@ -187,4 +199,4 @@ async function handleMessages(req, res, body) {
   res.end(JSON.stringify(payload));
 }
 
-module.exports = { handleMessages, detectToolLoop, isConversationTooLong };
+module.exports = { handleMessages, detectToolLoop, isConversationTooLong, shouldResumeSession };
