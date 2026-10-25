@@ -78,7 +78,6 @@ async function handleMessages(req, res, body) {
   }
 
   const key = sessionKey(system, messages);
-  const cached = getSession(key);
   if (isCancelled()) return;
   await ensurePage();
   if (isCancelled()) return;
@@ -91,6 +90,11 @@ async function handleMessages(req, res, body) {
     await ensurePage();
     abortIfCancelled();
     await ensureTogglesOn(tools.length > 0);
+    abortIfCancelled();
+
+    // Resolve the latest cached URL inside the browser lock. A preceding
+    // queued request may have created or updated this conversation's URL.
+    const cached = getSession(key);
     abortIfCancelled();
 
     let resumed = false;
