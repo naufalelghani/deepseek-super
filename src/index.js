@@ -11,12 +11,16 @@ function start() {
     console.log('Model      : ' + config.MODEL_NAME);
     console.log('Endpoint   : http://127.0.0.1:' + config.PORT);
     console.log('Routes     : POST /v1/messages, POST /v1/messages/count_tokens, GET /v1/models');
-    console.log('Auth       : ' + (config.AUTH_TOKEN ? 'token wajib' : 'terbuka (localhost)'));
-    console.log('');
-    console.log('Set di client (Claude Code / Cline / Roo Code):');
-    console.log('  ANTHROPIC_BASE_URL=http://127.0.0.1:' + config.PORT);
-    console.log('  ANTHROPIC_AUTH_TOKEN=' + (config.AUTH_TOKEN || 'any'));
-    console.log('  ANTHROPIC_MODEL=' + config.MODEL_NAME);
+    console.log('Auth       : required');
+    console.log('Token source: ' + config.AUTH_TOKEN_SOURCE);
+    if (config.AUTH_TOKEN_SOURCE !== 'environment') {
+      console.log('Local token file: ' + config.AUTH_TOKEN_FILE);
+      console.log('PowerShell client setup: $env:ANTHROPIC_AUTH_TOKEN = (Get-Content -Raw .deepseek-super-token).Trim()');
+      console.log('Git Bash client setup: export ANTHROPIC_AUTH_TOKEN="$(tr -d \"\\\\r\\\\n\" < .deepseek-super-token)"');
+    } else {
+      console.log('Set DEEPSEEK_SUPER_TOKEN / ANTHROPIC_AUTH_TOKEN to the same secret in client processes.');
+    }
+    console.log('Never commit or share the local token file.');
     console.log('');
   });
 
