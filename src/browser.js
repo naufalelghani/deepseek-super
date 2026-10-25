@@ -3,7 +3,7 @@
 const { chromium } = require('playwright');
 const { PROFILE_DIR, POLL_MS, STABLE_MS, MAX_TURN_MS, HOLD_CHARS } = require('./config');
 const { StreamParser, extractToolCallsFromText } = require('./tool-parser');
-const { hasNewAssistantResponse } = require('./turn-state');
+const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
 
  let ctx = null;
  let page = null;
@@ -80,14 +80,60 @@ const { hasNewAssistantResponse } = require('./turn-state');
          for (let i = items.length - 1; i >= 0; i--) {
              if (items[i].querySelector('.ds-assistant-message-main-content')) { last = items[i]; break; }
          }
-         if (!last) return { count: items.length, answerKey: null, think: '', answer: '' };
-         const tEl = last.querySelector('.ds-think-content .ds-markdown');
-         const aEl = last.querySelector('.ds-assistant-message-main-content');
+
+         // Prefer explicit generation controls over guessing from response inactivity.
+         // DeepSeek may change these selectors, so a stable-time fallback remains available.
+         const stopSelector = [
+             'button[aria-label*="stop" i]',
+             'button[title*="stop" i]',
+             '[data-testid*="stop" i]',
+             '[class*="stop" i]',
+             'button[aria-label*="停止"]',
+             'button[title*="停止"]',
+             '[data-testid*="停止"]'
+         ].join(',');
+         const isVisible = (element) => {
+             if (!element || element.getAttribute('aria-hidden') === 'true') return false;
+             const style = window.getComputedStyle(element);
+             const rect = element.getBoundingClientRect();
+             return style.display !== 'none' && style.visibility !== 'hidden' &&
+                 Number(style.opacity || 1) !== 0 && rect.width > 0 && rect.height > 0;
+         };
+         const stopCandidates = Array.from(document.querySelectorAll(stopSelector));
+         const stopButtonVisible = stopCandidates.some(isVisible);
+         const primaryButton = document.querySelector('.bf38813a .ds-button--primary');
+         const primaryLabel = primaryButton ? [
+             primaryButton.getAttribute('aria-label') || '',
+             primaryButton.getAttribute('title') || '',
+             primaryButton.innerText || '',
+             typeof primaryButton.className === 'string' ? primaryButton.className : '',
+             Array.from(primaryButton.querySelectorAll('[aria-label],[title],svg,[class]'))
+                 .map((el) => [
+                     el.getAttribute('aria-label') || '',
+                     el.getAttribute('title') || '',
+                     typeof el.className === 'string' ? el.className : ''
+                 ].join(' '))
+                 .join(' ')
+         ].join(' ') : '';
+         const primaryIsStop = /stop|cancel|停止|取消/i.test(primaryLabel);
+         const isGenerating = stopButtonVisible || primaryIsStop;
+         const sendButtonEnabled = Boolean(primaryButton && !primaryIsStop &&
+             !primaryButton.classList.contains('ds-button--disabled') &&
+             !primaryButton.hasAttribute('disabled') &&
+             primaryButton.getAttribute('aria-disabled') !== 'true');
+         const completionSignalAvailable = Boolean(primaryButton &&
+             (stopCandidates.length > 0 || primaryIsStop));
+
+         const tEl = last ? last.querySelector('.ds-think-content .ds-markdown') : null;
+         const aEl = last ? last.querySelector('.ds-assistant-message-main-content') : null;
          return {
              count: items.length,
-             answerKey: last.getAttribute('data-virtual-list-item-key') || null,
+             answerKey: last ? (last.getAttribute('data-virtual-list-item-key') || null) : null,
              think: tEl ? tEl.innerText : '',
              answer: aEl ? aEl.innerText : '',
+             isGenerating,
+             sendButtonEnabled,
+             completionSignalAvailable
          };
      });
  }
@@ -117,8 +163,16 @@ const { hasNewAssistantResponse } = require('./turn-state');
      return !!(await currentUrl());
  }
 
- async function runTurn(prompt, sink, bufferText) {
+ async function runTurn(prompt, sink, bufferText, isCancelled = () => false) {
+     const abortIfCancelled = () => {
+         if (!isCancelled()) return;
+         const error = new Error('The client disconnected before the DeepSeek turn completed.');
+         error.name = 'AbortError';
+         throw error;
+     };
+     abortIfCancelled();
      const before = await readState();
+     abortIfCancelled();
      await textarea.click();
      await textarea.fill(prompt);
      await page.waitForTimeout(250);
@@ -140,6 +194,10 @@ const { hasNewAssistantResponse } = require('./turn-state');
      const start = Date.now();
      let sawNewMessage = false;
      let sawResponseContent = false;
+     let sawGeneratingSignal = false;
+     let completionSignalStreak = 0;
+     let usedStableFallback = false;
+     let timedOut = false;
      let thinkOpened = false;
      let textOpened = false;
 
@@ -153,9 +211,17 @@ const { hasNewAssistantResponse } = require('./turn-state');
      };
 
      for (;;) {
+         abortIfCancelled();
          await page.waitForTimeout(POLL_MS);
+         abortIfCancelled();
          let st;
-         try { st = await readState(); } catch (e) { break; }
+         try {
+             st = await readState();
+         } catch (error) {
+             if (isCancelled()) abortIfCancelled();
+             throw new Error('Could not read the DeepSeek UI state: ' + (error.message || String(error)));
+         }
+         if (st.isGenerating) sawGeneratingSignal = true;
 
          if (!sawNewMessage) {
              // Ignore user-message row-count changes; wait for a fresh assistant response.
@@ -170,7 +236,10 @@ const { hasNewAssistantResponse } = require('./turn-state');
                  thinkOpened = false; // thinking baru = blok baru
              }
              lastChange = Date.now();
-             if (Date.now() - start > MAX_TURN_MS) break;
+             if (Date.now() - start > MAX_TURN_MS) {
+                 timedOut = true;
+                 break;
+             }
              continue;
          }
 
@@ -194,11 +263,36 @@ const { hasNewAssistantResponse } = require('./turn-state');
              }
          }
 
-         if (sawNewMessage && sawResponseContent && Date.now() - lastChange > STABLE_MS) break;
-         if (Date.now() - start > MAX_TURN_MS) break;
+         if (sawNewMessage && sawResponseContent) {
+             if (sawGeneratingSignal && isResponseComplete(st)) {
+                 completionSignalStreak++;
+                 if (completionSignalStreak >= 3) break;
+             } else {
+                 completionSignalStreak = 0;
+             }
+
+             // Use inactivity only as a fallback when the UI completion signal
+             // was not observed. A visible "generating" signal overrides this timer.
+             if (!sawGeneratingSignal && Date.now() - lastChange > STABLE_MS) {
+                 usedStableFallback = true;
+                 break;
+             }
+         }
+         if (Date.now() - start > MAX_TURN_MS) {
+             timedOut = true;
+             break;
+         }
      }
 
-     // Flush sisa
+     abortIfCancelled();
+     if (timedOut) {
+         throw new Error('DeepSeek did not signal completion before MAX_TURN_MS. The turn was not treated as complete.');
+     }
+     if (usedStableFallback) {
+         console.warn('[turn-completion] explicit stop/send completion signal was not observed; used STABLE_MS fallback');
+     }
+
+     // Flush the remaining text after the UI has reported completion.
      try {
          const fin = await readState();
          if (fin.answer && fin.answer.startsWith(emittedAnswer) && fin.answer.length > emittedAnswer.length) {
