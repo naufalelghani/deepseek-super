@@ -140,12 +140,12 @@ function createServer() {
         if (wantStream) {
           res.write('event: error\ndata: ' + JSON.stringify({
             type: 'error',
-            error: { type: 'api_error', message: error.message || String(error) },
+            error: { type: error.type || 'api_error', message: error.message || String(error) },
           }) + '\n\n');
           return res.end();
         }
         if (!res.headersSent) {
-          return jsonError(res, 500, 'api_error', error.message || String(error));
+          return jsonError(res, error.statusCode || 500, error.type || 'api_error', error.message || String(error));
         }
         res.end();
       }
