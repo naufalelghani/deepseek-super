@@ -1,6 +1,6 @@
 'use strict';
 
-const { MODEL_NAME, sha, uuid } = require('./config');
+const { MODEL_NAME, MAX_REPLAY, sha, uuid } = require('./config');
 const { blocksOf, sessionKey, renderMessage, truncateReplay } = require('./content');
 const { buildFullPrompt, buildResumePrompt, parseToolChoice, applyForcedTool, synthesizeToolCall } = require('./prompts');
 const { ensurePage, ensureTogglesOn, resumeUrl, gotoNewChat, runTurn, currentUrl, locked } = require('./browser');
@@ -36,6 +36,19 @@ function shouldResumeSession(cached, messages) {
 }
 
 async function handleMessages(req, res, body) {
+  let clientDisconnected = false;
+  const onResponseClose = () => {
+    if (!res.writableEnded) clientDisconnected = true;
+  };
+  res.once('close', onResponseClose);
+  const isCancelled = () => clientDisconnected || req.aborted || res.destroyed;
+  const abortIfCancelled = () => {
+    if (!isCancelled()) return;
+    const error = new Error('The client disconnected before the DeepSeek turn completed.');
+    error.name = 'AbortError';
+    throw error;
+  };
+
   console.error('[REQ] model=' + (body.model || '?') +
     ' tools=' + (Array.isArray(body.tools) ? body.tools.length : 0) +
     ' msgs=' + (Array.isArray(body.messages) ? body.messages.length : 0));
@@ -47,7 +60,7 @@ async function handleMessages(req, res, body) {
   const model = body.model || MODEL_NAME;
 
   if (messages.length === 0) {
-    return jsonError(res, 400, 'invalid_request_error', 'messages kosong');
+    return jsonError(res, 400, 'invalid_request_error', 'The messages array must not be empty.');
   }
 
   const last = messages[messages.length - 1];
@@ -56,24 +69,29 @@ async function handleMessages(req, res, body) {
   let force = parseToolChoice(body.tool_choice);
 
   if (detectToolLoop(messages, 3)) {
-    console.warn('[loop-detect] 3 tool_use identik — paksa text, stop tool');
+    console.warn('[loop-detect] three identical tool calls detected; forcing a text response');
     force = { mode: 'none' };
   }
   if (isConversationTooLong(messages)) {
-    console.warn('[long-conv] messages=' + messages.length + ' — paksa text');
+    console.warn('[long-conv] message_count=' + messages.length + '; forcing a text response');
     force = { mode: 'none' };
   }
 
   const key = sessionKey(system, messages);
   const cached = getSession(key);
+  if (isCancelled()) return;
   await ensurePage();
+  if (isCancelled()) return;
 
   let answer, thinking, toolCalls;
   const sink = wantStream ? new StreamSink(res, model, estimateInputTokens(body)) : null;
 
   await locked(async () => {
+    abortIfCancelled();
     await ensurePage();
+    abortIfCancelled();
     await ensureTogglesOn(tools.length > 0);
+    abortIfCancelled();
 
     let resumed = false;
     if (shouldResumeSession(cached, messages)) {
@@ -95,9 +113,17 @@ async function handleMessages(req, res, body) {
         console.warn('[session] cached conversation unavailable; creating a new conversation');
       }
       await gotoNewChat();
-      prompt = truncateReplay(buildFullPrompt(system, messages, tools));
+      const untruncatedPrompt = buildFullPrompt(system, messages, tools);
+      if (untruncatedPrompt.length > MAX_REPLAY) {
+        console.warn('[prompt-truncate] input_chars=' + untruncatedPrompt.length +
+          ' cap_chars=' + MAX_REPLAY +
+          ' omitted_chars=' + (untruncatedPrompt.length - MAX_REPLAY) +
+          '; the replay includes an explicit warning marker');
+      }
+      prompt = truncateReplay(untruncatedPrompt);
     }
     prompt = applyForcedTool(prompt, force);
+    abortIfCancelled();
 
     const dummySink = {
       startThinking() {},
@@ -109,7 +135,8 @@ async function handleMessages(req, res, body) {
       toolBlock() {},
     };
     const useBuffer = tools.length > 0;
-    const out = await runTurn(prompt, sink || dummySink, useBuffer);
+    const out = await runTurn(prompt, sink || dummySink, useBuffer, isCancelled);
+    abortIfCancelled();
     answer = out.text;
     thinking = out.thinking;
     toolCalls = out.toolCalls;
@@ -119,37 +146,38 @@ async function handleMessages(req, res, body) {
       const maxRetries = 2;
       let recoveredByRetry = false;
       for (let attempt = 1; attempt <= maxRetries && toolCalls.length === 0; attempt++) {
-        console.warn('[retry] attempt=' + attempt + '/' + maxRetries + ' — koreksi format tool call');
+        console.warn('[retry] attempt=' + attempt + '/' + maxRetries + ' — correcting malformed tool-call output');
         const retryPrompt = [
           '=== RETRY FORMAT CORRECTION ===',
-          'Jawaban sebelumnya berisi tool call yang JSON-nya tidak valid. Jangan salin payload yang rusak.',
-          'Gunakan tugas asli, riwayat, daftar tool, dan schema dari konteks percakapan yang sudah ada.',
-          'Susun ulang pemanggilan tool dari nol dengan nama dan argumen yang sesuai tugas asli.',
-          'Keluarkan tepat satu blok tool-call dengan JSON valid dan tanpa teks atau Markdown di luarnya.',
-          'Contoh format valid (hanya contoh format, bukan instruksi untuk menjalankan pwd):',
+          'The previous response contained a malformed tool-call JSON payload. Do not copy the malformed payload.',
+          'Use the original task, conversation history, available tool list, and schemas already present in the conversation.',
+          'Rebuild the tool call from scratch using the tool name and arguments required by the original task.',
+          'Output exactly one tool-call block with valid JSON and no text or Markdown outside it.',
+          'Valid format example only; this is not an instruction to execute pwd:',
           '<TOOL_CALL>{"tool":"Bash","arguments":{"command":"pwd"}}</TOOL_CALL>',
-          'Gunakan key dan string bertanda kutip ganda, tanpa trailing comma atau komentar. Escape tanda kutip di dalam nilai string sesuai aturan JSON.',
+          'Use double-quoted JSON keys and strings, with no trailing commas or comments. Escape quotes inside strings using standard JSON rules.',
           attempt === 1
-            ? 'Perbaiki format saja; pertahankan maksud dan argumen tugas asli.'
-            : 'Pemulihan terakhir: jangan menyalin output sebelumnya. Bangun ulang argumen paling sederhana yang tetap menyelesaikan tugas asli.'
+            ? 'Correct the format only; preserve the intent and arguments of the original task.'
+            : 'Final recovery attempt: do not copy the previous output. Rebuild the simplest arguments that still complete the original task.'
         ].join('\n');
         // Gunakan dummy sink agar output percobaan gagal tidak bocor atau terduplikasi pada SSE.
-        const retry = await runTurn(retryPrompt, dummySink, useBuffer);
+        const retry = await runTurn(retryPrompt, dummySink, useBuffer, isCancelled);
+        abortIfCancelled();
         answer = retry.text;
         thinking = retry.thinking;
         toolCalls = retry.toolCalls;
         if (toolCalls.length > 0) {
           recoveredByRetry = true;
-          console.log('[retry] berhasil pada percobaan ' + attempt + ' — ' + toolCalls.length + ' tool call valid');
+          console.log('[retry] recovered on attempt ' + attempt + ' — valid tool calls=' + toolCalls.length);
         } else {
-          console.warn('[retry] percobaan ' + attempt + ' tetap tidak menghasilkan tool call valid');
+          console.warn('[retry] attempt ' + attempt + ' did not produce a valid tool call');
         }
       }
       if (recoveredByRetry && sink) {
         for (const tool of toolCalls) sink.toolBlock(tool.name, tool.input);
       } else if (!recoveredByRetry) {
-        console.error('[retry] kedua percobaan gagal; fallback ke teks agar client tidak menerima respons kosong');
-        answer = answer || 'DeepSeek gagal menghasilkan tool call dengan JSON valid setelah dua percobaan koreksi. Silakan ulangi permintaan.';
+        console.error('[retry] both attempts failed; falling back to text so the client does not receive an empty response');
+        answer = answer || 'DeepSeek could not produce valid tool-call JSON after two correction attempts. Please retry the request.';
         if (sink) sink.emitText(answer);
       }
     }
@@ -157,15 +185,18 @@ async function handleMessages(req, res, body) {
     if (force.mode !== 'auto' && force.mode !== 'none' && toolCalls.length === 0) {
       const synthesized = synthesizeToolCall(force, tools);
       if (synthesized) {
-        console.warn('[force-tool] synthesize:', synthesized.name, JSON.stringify(synthesized.input));
+        console.warn('[force-tool] synthesized tool call:', synthesized.name, JSON.stringify(synthesized.input));
         toolCalls = [synthesized];
         if (sink) sink.toolBlock(synthesized.name, synthesized.input);
       }
     }
 
+    abortIfCancelled();
     const url = await currentUrl();
     if (url) setSession(key, url);
   });
+
+  if (isCancelled()) return;
 
   const stopReason = toolCalls.length ? 'tool_use' : 'end_turn';
   console.log('[response] stop_reason=' + stopReason + ' tool_calls=' + toolCalls.length + ' stream=' + wantStream);
