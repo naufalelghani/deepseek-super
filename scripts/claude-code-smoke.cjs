@@ -10,9 +10,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-const BASE_URL = process.env.DEEPSEEK_SUPER_BASE_URL ||
-  process.env.ANTHROPIC_BASE_URL ||
-  'http://127.0.0.1:8787/v1';
+const BASE_URL = process.env.DEEPSEEK_SUPER_BASE_URL || 'http://127.0.0.1:8787/v1';
 const MODEL = process.env.ANTHROPIC_MODEL || 'deepseek-super';
 const IS_DEFAULT_GATEWAY = (() => {
   try {
