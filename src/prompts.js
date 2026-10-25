@@ -2,6 +2,15 @@
 
 const { blocksOf, flattenContent, renderMessage } = require('./content');
 
+const TOOL_RESULT_INSTRUCTIONS = [
+    'Jawab berdasarkan hasil tool yang benar-benar diterima. Jangan mengklaim berhasil jika hasil tool tidak mengonfirmasinya.',
+    'Jika user meminta output mentah dari perintah sederhana dan hasilnya hanya satu baris atau beberapa baris, keluarkan baris hasil itu saja.',
+    'Untuk output mentah tersebut, jangan tambahkan pengantar atau penjelasan jika tidak diminta.',
+    'Jangan bungkus output mentah dengan Markdown code fence, backtick, atau label bahasa seperti text.',
+    'Jika user meminta penjelasan atau analisis, berikan penjelasan yang diperlukan dengan format yang sesuai.',
+    'Jangan panggil tool lagi jika tugas sudah selesai. Jika tool gagal, laporkan error yang benar-benar diterima.'
+];
+
  function toolsToPrompt(tools) {
      if (!tools || !tools.length) return '';
      const lines = [];
@@ -66,7 +75,7 @@ const { blocksOf, flattenContent, renderMessage } = require('./content');
 
      if (lastHasToolResult) {
          parts.push('=== HASIL TOOL ===\n' + renderMessage(last));
-         parts.push('=== INSTRUKSI WAJIB ===\nJawab user SEKARANG dalam teks biasa berdasarkan data di atas. JANGAN menulis <TOOL_CALL> atau tag apapun.');
+         parts.push('=== INSTRUKSI WAJIB ===\n' + TOOL_RESULT_INSTRUCTIONS.join('\n') + '\nJANGAN menulis <TOOL_CALL> atau tag apapun.');
      } else {
          parts.push('### PESAN TERBARU\n' + renderMessage(last));
          parts.push('Jawab sebagai ASSISTANT. Jika memanggil tool, gunakan format <TOOL_CALL>...</TOOL_CALL> saja.');
@@ -86,7 +95,7 @@ const { blocksOf, flattenContent, renderMessage } = require('./content');
              renderMessage(last),
              '',
              '=== INSTRUKSI WAJIB ===',
-             'Jawab user SEKARANG dalam teks biasa berdasarkan data di atas.',
+             ...TOOL_RESULT_INSTRUCTIONS,
              'JANGAN menulis <TOOL_CALL> atau tag apapun.',
              'JANGAN memanggil tool apa pun.',
          ].join('\n');
