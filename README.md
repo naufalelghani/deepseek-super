@@ -81,7 +81,7 @@ Configuration is read from environment variables:
 
 ### Authentication is always required
 
-The server binds to `127.0.0.1` and requires a token for every endpoint, including the health endpoint. On first startup, if `DEEPSEEK_SUPER_TOKEN` is not set, the app generates a random local token and stores it in `.deepseek-super-token`. The file is listed in `.gitignore`; do not commit, publish, or share it. If `DEEPSEEK_SUPER_TOKEN` is set, that environment variable takes precedence over the local token file.
+The server binds to `127.0.0.1` and requires a token for every API route, including the health endpoint. CORS `OPTIONS` preflight requests are handled before token authentication, but only for an accepted local or explicitly allowlisted Origin and they do not execute API operations. On first startup, if `DEEPSEEK_SUPER_TOKEN` is not set, the app generates a random local token and stores it in `.deepseek-super-token`. The file is listed in `.gitignore`; do not commit, publish, or share it. If `DEEPSEEK_SUPER_TOKEN` is set, that environment variable takes precedence over the local token file.
 
 When using the default local token file, load the same value in a **second PowerShell terminal** before running an SDK or client command:
 
@@ -256,7 +256,7 @@ The external route is optional and is not the CI test. Keep API keys in local en
 - `POST /v1/messages/count_tokens`
 - `HEAD /api/hello`
 
-All endpoints require the API token. `POST /v1/messages` supports SSE streaming and non-streaming JSON responses, plus the local mapping of `tool_use`/`tool_result` blocks.
+All listed API routes require the API token. Browser `OPTIONS` preflight is the exception: it is allowed only for a validated Origin and returns no API data. `POST /v1/messages` supports SSE streaming and non-streaming JSON responses, plus the local mapping of `tool_use`/`tool_result` blocks.
 
 ## End-to-end architecture and trust boundaries
 
