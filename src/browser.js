@@ -139,6 +139,7 @@ const { hasNewAssistantResponse } = require('./turn-state');
      let lastChange = Date.now();
      const start = Date.now();
      let sawNewMessage = false;
+     let sawResponseContent = false;
      let thinkOpened = false;
      let textOpened = false;
 
@@ -160,6 +161,7 @@ const { hasNewAssistantResponse } = require('./turn-state');
              // Ignore user-message row-count changes; wait for a fresh assistant response.
              if (hasNewAssistantResponse(before, st)) {
                  sawNewMessage = true;
+                 sawResponseContent = Boolean(st.answer || st.think);
                  // Mulai dari baseline thinking — bukan string kosong
                  // Ini mencegah emit thinking LAMA saat resume thread
                  emittedThink = before.think || '';
@@ -170,6 +172,9 @@ const { hasNewAssistantResponse } = require('./turn-state');
              if (Date.now() - start > MAX_TURN_MS) break;
              continue;
          }
+
+         if (st.think) sawResponseContent = true;
+         if (st.answer) sawResponseContent = true;
 
          if (st.think && st.think.length > emittedThink.length && st.think.startsWith(emittedThink)) {
              const d = st.think.slice(emittedThink.length);
@@ -188,7 +193,7 @@ const { hasNewAssistantResponse } = require('./turn-state');
              }
          }
 
-         if (sawNewMessage && Date.now() - lastChange > STABLE_MS) break;
+         if (sawNewMessage && sawResponseContent && Date.now() - lastChange > STABLE_MS) break;
          if (Date.now() - start > MAX_TURN_MS) break;
      }
 
