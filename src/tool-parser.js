@@ -155,6 +155,8 @@
          this.toolBuf = '';
          this.toolBlocks = [];
          this.textOut = '';
+         this.sawToolMarkup = false;
+         this.incompleteToolBlock = false;
      }
      feed(chunk) {
          if (!chunk) return;
@@ -171,6 +173,7 @@
              if (this.mode === 'text') {
                  const m = this.buf.match(OPEN_RE);
                  if (m) {
+                     this.sawToolMarkup = true;
                      this._emitText(this.buf.slice(0, m.index));
                      this.buf = this.buf.slice(m.index + m[0].length);
                      this.mode = 'tool';
@@ -206,8 +209,12 @@
              this._emitText(this.buf);
              this.buf = '';
          } else if (this.mode === 'tool') {
-             this._emitText('<TOOL_CALL>' + this.toolBuf);
+             // Preserve an unterminated payload for parsing/retry, not as user-facing text.
+             this.incompleteToolBlock = true;
+             this.toolBlocks.push(this.toolBuf);
              this.toolBuf = '';
+             this.buf = '';
+             this.mode = 'text';
          }
      }
      toolCalls() {
