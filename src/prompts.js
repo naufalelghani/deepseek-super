@@ -7,7 +7,7 @@ const TOOL_RESULT_INSTRUCTIONS = [
     'Jika user meminta output mentah dari perintah sederhana dan hasilnya hanya satu baris atau beberapa baris, keluarkan baris hasil itu saja.',
     'Untuk output mentah tersebut, jangan tambahkan pengantar atau penjelasan jika tidak diminta.',
     'Jangan bungkus output mentah dengan Markdown code fence, backtick, atau label bahasa seperti text.',
-    'Jika user meminta penjelasan atau analisis, berikan penjelasan yang diperlukan dengan format yang sesuai.',
+    'Jika hasil yang diterima belum cukup untuk menyelesaikan tugas, lanjutkan dengan tool lain yang diperlukan dari daftar tersedia.',
     'Jangan panggil tool lagi jika tugas sudah selesai. Jika tool gagal, laporkan error yang benar-benar diterima.'
 ];
 
@@ -29,12 +29,12 @@ const TOOL_RESULT_INSTRUCTIONS = [
      }
      lines.push('');
      lines.push('ATURAN WAJIB:');
-     lines.push('1. Jika user bertanya hal yang relevan dengan salah satu tool di atas, WAJIB panggil tool tersebut.');
-     lines.push('2. JANGAN menjawab dari pengetahuan sendiri jika ada tool yang cocok.');
+     lines.push('1. Jika tugas memerlukan file, shell, pencarian, atau aksi yang dapat dilakukan oleh salah satu tool di atas, WAJIB gunakan tool yang sesuai.');
+     lines.push('2. Jika hasil tool yang sudah diterima cukup untuk menyelesaikan tugas, jawab final tanpa memanggil tool lagi. Jika belum cukup, lanjutkan dengan tool berikutnya.');
      lines.push('3. Format SATU tool: <TOOL_CALL>{"tool":"<nama>","arguments":{...}}</TOOL_CALL>');
      lines.push('4. Format BEBERAPA tool: <TOOL_CALL>[{...},{...}]</TOOL_CALL>');
      lines.push('5. JANGAN tulis apapun di luar tag <TOOL_CALL> saat memanggil tool.');
-     lines.push('6. Jawab teks biasa HANYA jika tidak ada tool yang relevan.');
+     lines.push('6. Jawab teks biasa jika tugas sudah selesai atau tidak memerlukan tool tambahan.');
      lines.push('7. Semua string dan key harus mengikuti JSON valid. Escape tanda kutip ganda di dalam nilai string dengan aturan JSON standar.');
      lines.push('8. Jangan gunakan backtick atau single quote sebagai pengganti escape JSON.');
      lines.push('');
@@ -59,11 +59,9 @@ const TOOL_RESULT_INSTRUCTIONS = [
      const last = messages[messages.length - 1] || { role: 'user', content: '' };
      const lastHasToolResult = blocksOf(last.content).some((b) => b.type === 'tool_result');
 
-     // HANYA sertakan tools kalau turn ini BUKAN tool_result
-     if (!lastHasToolResult) {
-         const tp = toolsToPrompt(tools);
-         if (tp) parts.push('### TOOLS\n' + tp);
-     }
+     // Keep tool schemas available on every turn so the model can continue a multi-step task.
+     const tp = toolsToPrompt(tools);
+     if (tp) parts.push('### TOOLS\n' + tp);
 
      const history = messages.slice(0, -1);
      if (history.length) {
@@ -75,7 +73,12 @@ const TOOL_RESULT_INSTRUCTIONS = [
 
      if (lastHasToolResult) {
          parts.push('=== HASIL TOOL ===\n' + renderMessage(last));
-         parts.push('=== INSTRUKSI WAJIB ===\n' + TOOL_RESULT_INSTRUCTIONS.join('\n') + '\nJANGAN menulis <TOOL_CALL> atau tag apapun.');
+         parts.push([
+             '=== INSTRUKSI SETELAH HASIL TOOL ===',
+             ...TOOL_RESULT_INSTRUCTIONS,
+             'Jika tugas masih memerlukan tindakan, panggil tool berikutnya dengan format <TOOL_CALL>...</TOOL_CALL> dan JSON valid.',
+             'Jika tugas sudah selesai, berikan jawaban final tanpa tag tool.',
+         ].join('\n'));
      } else {
          parts.push('### PESAN TERBARU\n' + renderMessage(last));
          parts.push('Jawab sebagai ASSISTANT. Jika memanggil tool, gunakan format <TOOL_CALL>...</TOOL_CALL> saja.');
@@ -86,19 +89,20 @@ const TOOL_RESULT_INSTRUCTIONS = [
  function buildResumePrompt(system, messages, tools, isToolResultTurn) {
      const last = messages[messages.length - 1] || { role: 'user', content: '' };
      if (isToolResultTurn) {
+         const toolPrompt = toolsToPrompt(tools);
          return [
              '=== SITUASI ===',
-             'Kamu SUDAH memanggil tool. Hasilnya sudah tersedia di bawah.',
-             'JANGAN memanggil tool lagi. JANGAN mengulang tool call sebelumnya.',
+             'Client telah menjalankan tool dan mengirim hasilnya. Lanjutkan tugas awal yang tersimpan dalam konteks percakapan ini.',
+             toolPrompt ? '=== TOOLS AVAILABLE FOR THE NEXT STEP ===\n' + toolPrompt : '',
              '',
-             '=== HASIL TOOL ===',
+             '=== HASIL TOOL TERBARU ===',
              renderMessage(last),
              '',
-             '=== INSTRUKSI WAJIB ===',
+             '=== INSTRUKSI SETELAH HASIL TOOL ===',
              ...TOOL_RESULT_INSTRUCTIONS,
-             'JANGAN menulis <TOOL_CALL> atau tag apapun.',
-             'JANGAN memanggil tool apa pun.',
-         ].join('\n');
+             'Jika tugas belum selesai, gunakan tool berikutnya yang diperlukan dengan format <TOOL_CALL>...</TOOL_CALL> dan JSON valid.',
+             'Jika tugas sudah selesai, berikan jawaban final tanpa tag tool.',
+         ].filter(Boolean).join('\n');
      }
      const parts = [];
      const toolPrompt = toolsToPrompt(tools);
