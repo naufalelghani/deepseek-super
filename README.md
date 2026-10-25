@@ -137,6 +137,25 @@ Gateway menggunakan satu tab Chrome Playwright dan berusaha melanjutkan URL chat
 
 Gateway membuat percakapan baru bila belum ada sesi tersimpan, sesi lama sudah tidak valid, atau server perlu memulai ulang setelah sesi cache hilang. Pemetaan URL percakapan disimpan di memori proses selama maksimal 30 menit, sehingga restart server akan menghapus cache tersebut. Log `[session]` menjelaskan kapan chat lama berhasil dilanjutkan atau gateway terpaksa membuat chat baru.
 
+## Integration test langsung dengan Claude Code
+
+Untuk menguji tool calling melalui Claude Code CLI asli (bukan hanya Anthropic SDK), jalankan server lokal terlebih dahulu:
+
+```bash
+npm install
+npm start
+```
+
+Pastikan Chrome Playwright sudah login ke DeepSeek. Di terminal kedua pada root repo:
+
+```bash
+npm run test:claude-code
+```
+
+Tes ini mengarahkan variabel lingkungan Claude Code ke gateway lokal dan menjalankan Claude Code dalam mode non-interaktif. Tes hanya mengizinkan tool `Read` dan perintah Bash persis `pwd`; tes memverifikasi bahwa keduanya benar-benar dipanggil dan hasil tool diterima. Tool lain ditolak, file proyek tidak boleh diedit, dan sesi test tidak disimpan sebagai sesi Claude Code.
+
+Persyaratan: Claude Code CLI harus terpasang serta dapat dijalankan sebagai `claude` dari terminal. Jika autentikasi server gateway diaktifkan, tetapkan `DEEPSEEK_SUPER_TOKEN` pada terminal yang menjalankan tes dengan nilai token yang sama seperti server. Base URL dapat diubah melalui `DEEPSEEK_SUPER_BASE_URL`, model melalui `ANTHROPIC_MODEL`, dan timeout melalui `CLAUDE_CODE_TEST_TIMEOUT_MS`.
+
 ## Endpoint
 
 - `GET /v1/models`
