@@ -243,7 +243,7 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
                  const changedKey = Boolean(st.answerKey && st.answerKey !== before.answerKey);
                  emittedThink = !changedKey && before.think && st.think.startsWith(before.think) ? before.think : '';
                  emittedAnswer = '';
-                 thinkOpened = false; // thinking baru = blok baru
+                 thinkOpened = false; // New thinking starts a new content block.
              }
              lastChange = Date.now();
              if (Date.now() - start > MAX_TURN_MS) {
@@ -274,7 +274,7 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
          }
 
          if (sawNewMessage && sawResponseContent) {
-             if (sawGeneratingSignal && isResponseComplete(st)) {
+             if (sawGeneratingSignal && isResponseComplete(st, sawGeneratingSignal)) {
                  completionSignalStreak++;
                  if (completionSignalStreak >= 3) break;
              } else {
