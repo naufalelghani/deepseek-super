@@ -131,6 +131,12 @@ npm test
 npm run check
 ```
 
+## Reuse percakapan DeepSeek
+
+Gateway menggunakan satu tab Chrome Playwright dan berusaha melanjutkan URL chat DeepSeek yang tersimpan untuk request berikutnya. Hasil tool (`tool_result`) juga harus melanjutkan chat yang sama; gateway tidak semestinya membuat percakapan baru hanya karena client mengirim hasil tool.
+
+Gateway membuat percakapan baru bila belum ada sesi tersimpan, sesi lama sudah tidak valid, atau server perlu memulai ulang setelah sesi cache hilang. Pemetaan URL percakapan disimpan di memori proses selama maksimal 30 menit, sehingga restart server akan menghapus cache tersebut. Log `[session]` menjelaskan kapan chat lama berhasil dilanjutkan atau gateway terpaksa membuat chat baru.
+
 ## Endpoint
 
 - `GET /v1/models`
