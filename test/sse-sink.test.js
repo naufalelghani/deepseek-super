@@ -12,7 +12,7 @@ test('StreamSink emits a valid Anthropic-style tool-use SSE sequence', () => {
   sink.finish('tool_use');
 
   const events = chunks.map((chunk) => {
-    const match = chunk.match(/^event: ([^\\n]+)\\ndata: ([\\s\\S]*?)\\n\\n$/);
+    const match = chunk.match(/^event: ([^\n]+)\ndata: ([\s\S]*?)\n\n$/);
     assert.ok(match, `Malformed SSE chunk: ${chunk}`);
     return { event: match[1], data: JSON.parse(match[2]) };
   });
