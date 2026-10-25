@@ -4,6 +4,7 @@
 // Google OAuth manually. The same profile is used by the gateway server.
 
 const path = require('node:path');
+const readline = require('node:readline/promises');
 const { chromium } = require('playwright');
 
 const DEEPSEEK_URL = 'https://chat.deepseek.com/';
@@ -33,27 +34,30 @@ async function main() {
     const page = context.pages()[0] || await context.newPage();
     await page.goto(DEEPSEEK_URL, { waitUntil: 'domcontentloaded' });
 
+    // This helper intentionally leaves OAuth entirely to the human. Ask for
+    // explicit confirmation instead of assuming a visible composer means login succeeded.
+    console.log('');
+    console.log('Complete these steps manually in the Chrome window:');
+    console.log('  1. Click Log in / Sign in on DeepSeek (skip if already signed in).');
+    console.log('  2. Choose Sign in with Google.');
+    console.log('  3. Complete Google sign-in, consent, CAPTCHA, or 2FA yourself.');
+    console.log('  4. Confirm the DeepSeek chat composer is visible and usable.');
+    console.log('');
+    console.log('Do not enter Google credentials in this terminal; use the browser only.');
+
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      await rl.question('When DeepSeek is ready, press Enter here to save the session and close Chrome...');
+    } finally {
+      rl.close();
+    }
+
     // Match the composer selector used by src/browser.js.
     const chatInput = page.locator('textarea[placeholder="Message DeepSeek"]');
-    const alreadyReady = await chatInput.isVisible().catch(() => false);
-
-    if (alreadyReady) {
-      console.log('Chat composer detected. The existing profile may already be logged in.');
-    } else {
-      console.log('');
-      console.log('Complete these steps manually in the Chrome window:');
-      console.log('  1. Click Log in / Sign in on DeepSeek.');
-      console.log('  2. Choose Sign in with Google.');
-      console.log('  3. Complete Google sign-in, consent, CAPTCHA, or 2FA yourself.');
-      console.log('  4. Wait until the DeepSeek chat composer is visible.');
-      console.log('');
-      console.log('Waiting for the DeepSeek chat composer. Timeout: ' + Math.round(LOGIN_TIMEOUT_MS / 60000) + ' minutes.');
-
-      await chatInput.waitFor({
-        state: 'visible',
-        timeout: LOGIN_TIMEOUT_MS,
-      });
-    }
+    await chatInput.waitFor({
+      state: 'visible',
+      timeout: LOGIN_TIMEOUT_MS,
+    });
 
     // Wait briefly for cookies/local storage to settle before saving the backup.
     await page.waitForTimeout(1000);
