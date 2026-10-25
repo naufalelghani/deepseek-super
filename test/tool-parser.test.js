@@ -17,6 +17,11 @@ test('tryParseJSON recovers unescaped quotes embedded inside a shell command', (
   });
 });
 
+test('tryParseJSON strips accidental JSON code fences', () => {
+  const fenced = '```json\\n{"tool":"Bash","arguments":{"command":"pwd"}}\\n```';
+  assert.deepEqual(tryParseJSON(fenced), { tool: 'Bash', arguments: { command: 'pwd' } });
+});
+
 test('StreamParser keeps regular text and parses tool call split across chunks', () => {
   const emitted = [];
   const parser = new StreamParser((chunk) => emitted.push(chunk));
