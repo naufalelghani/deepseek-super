@@ -10,9 +10,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-const BASE_URL = process.env.DEEPSEEK_SUPER_BASE_URL ||
-  process.env.ANTHROPIC_BASE_URL ||
-  'http://localhost:20128/v1';
+const BASE_URL = process.env.DEEPSEEK_SUPER_BASE_URL || 'http://localhost:20128/v1';
 const MODEL = process.env.ANTHROPIC_MODEL || 'byv-flash-2410';
 const TOKEN = process.env.ANTHROPIC_AUTH_TOKEN ||
   process.env.ANTHROPIC_API_KEY ||
@@ -138,6 +136,10 @@ async function main() {
   console.log('Gateway:', BASE_URL);
   console.log('Model:', MODEL);
   console.log('Tools under test:', REQUIRED_TOOLS.join(', '));
+
+  if (!TOKEN) {
+    throw new Error('API key 9Router belum diatur. Jalankan read -rsp untuk memasukkan key ke ANTHROPIC_AUTH_TOKEN. Jangan menaruh key di source code.');
+  }
 
   // Keep writes confined to an isolated temporary project rather than the repo.
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'deepseek-super-claude-test-'));
