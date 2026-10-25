@@ -113,11 +113,12 @@ function normalizeAnthropicMessagesRequest(body) {
 
   for (const message of body.messages) {
     if (isPlainObject(message) &&
-        (message.role === 'system' || message.role === 'developer')) {
+        (message.role === 'system' || message.role === 'developer') &&
+        validContent(message.content)) {
       normalizedInstructionMessages++;
       if (typeof message.content === 'string') {
         systemBlocks.push({ type: 'text', text: message.content });
-      } else if (Array.isArray(message.content)) {
+      } else {
         systemBlocks.push(...message.content);
       }
       continue;
