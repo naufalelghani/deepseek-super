@@ -4,7 +4,7 @@ const { blocksOf, flattenContent, renderMessage } = require('./content');
 
 const TOOL_RESULT_INSTRUCTIONS = [
     'Jawab berdasarkan hasil tool yang benar-benar diterima. Jangan mengklaim berhasil jika hasil tool tidak mengonfirmasinya.',
-    'Jika user meminta output mentah dari perintah sederhana dan hasilnya hanya satu baris atau beberapa baris, keluarkan baris hasil itu saja.',
+    'Jika seluruh tugas sudah selesai dan user meminta output mentah dari perintah sederhana, keluarkan hasilnya saja bila hasilnya satu baris atau beberapa baris.',
     'Untuk output mentah tersebut, jangan tambahkan pengantar atau penjelasan jika tidak diminta.',
     'Jangan bungkus output mentah dengan Markdown code fence, backtick, atau label bahasa seperti text.',
     'Jika hasil yang diterima belum cukup untuk menyelesaikan tugas, lanjutkan dengan tool lain yang diperlukan dari daftar tersedia.',
