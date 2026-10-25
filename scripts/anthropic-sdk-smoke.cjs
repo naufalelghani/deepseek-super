@@ -5,16 +5,40 @@
 // then run: npm run test:sdk
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const Anthropic = require('@anthropic-ai/sdk');
 
-const baseURL = process.env.DEEPSEEK_SUPER_BASE_URL || 'http://127.0.0.1:8787';
+const baseURL = process.env.DEEPSEEK_SUPER_BASE_URL ||
+  'http://127.0.0.1:8787';
+
+function isDefaultLocalGateway(value) {
+  try {
+    const url = new URL(value);
+    return ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) &&
+      Number(url.port || 80) === 8787 &&
+      (url.pathname === '/' || url.pathname === '');
+  } catch {
+    return false;
+  }
+}
+
+function readLocalGatewayToken() {
+  if (!isDefaultLocalGateway(baseURL)) return '';
+  try {
+    return fs.readFileSync(path.join(__dirname, '..', '.deepseek-super-token'), 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
 const apiKey = process.env.ANTHROPIC_AUTH_TOKEN ||
   process.env.DEEPSEEK_SUPER_TOKEN ||
-  'any';
+  readLocalGatewayToken();
 const model = process.env.ANTHROPIC_MODEL || 'deepseek-super';
 
 const client = new Anthropic({
-  apiKey,
+  apiKey: apiKey || 'missing-local-gateway-token',
   baseURL,
   maxRetries: 0,
   timeout: 300_000,
@@ -28,16 +52,16 @@ function textFrom(message) {
 }
 
 function assertMessageShape(message, label) {
-  assert.equal(message.type, 'message', label + ': response type harus message');
-  assert.equal(message.role, 'assistant', label + ': role harus assistant');
-  assert.ok(Array.isArray(message.content), label + ': content harus array');
+  assert.equal(message.type, 'message', label + ': response type must be message');
+  assert.equal(message.role, 'assistant', label + ': role must be assistant');
+  assert.ok(Array.isArray(message.content), label + ': content must be an array');
   assert.ok(
     Number.isInteger(message.usage && message.usage.input_tokens),
-    label + ': usage.input_tokens harus integer'
+    label + ': usage.input_tokens must be an integer'
   );
   assert.ok(
     Number.isInteger(message.usage && message.usage.output_tokens),
-    label + ': usage.output_tokens harus integer'
+    label + ': usage.output_tokens must be an integer'
   );
 }
 
@@ -45,6 +69,11 @@ async function main() {
   console.log('Anthropic SDK smoke test');
   console.log('Endpoint:', baseURL);
   console.log('Model:', model);
+  if (!apiKey) {
+    throw new Error(isDefaultLocalGateway(baseURL)
+      ? 'Local gateway token not found. Start npm start first so .deepseek-super-token is created.'
+      : 'API token is missing. Set ANTHROPIC_AUTH_TOKEN for the selected external endpoint.');
+  }
 
   // 1. Actual non-streaming Messages API request.
   console.log('\n[1/3] Non-streaming request ...');
@@ -57,7 +86,7 @@ async function main() {
     }],
   });
   assertMessageShape(normal, 'non-streaming');
-  assert.ok(textFrom(normal).trim(), 'non-streaming: teks jawaban kosong');
+  assert.ok(textFrom(normal).trim(), 'non-streaming: response text is empty');
   console.log('PASS non-streaming:', textFrom(normal).trim().slice(0, 160));
   console.log('  stop_reason:', normal.stop_reason);
 
@@ -89,9 +118,9 @@ async function main() {
     if (event.type === 'message_stop') sawMessageStop = true;
   }
 
-  assert.ok(eventCount > 0, 'streaming: SDK tidak menerima event');
-  assert.ok(streamedText.trim(), 'streaming: tidak ada text_delta');
-  assert.ok(sawMessageStop, 'streaming: event message_stop tidak diterima');
+  assert.ok(eventCount > 0, 'streaming: the SDK received no events');
+  assert.ok(streamedText.trim(), 'streaming: no text_delta was received');
+  assert.ok(sawMessageStop, 'streaming: message_stop was not received');
   console.log('PASS streaming:', streamedText.trim().slice(0, 160));
   console.log('  events:', eventCount);
 
@@ -121,13 +150,13 @@ async function main() {
   });
 
   assertMessageShape(toolMessage, 'tool-use');
-  assert.equal(toolMessage.stop_reason, 'tool_use', 'tool-use: stop_reason harus tool_use');
+  assert.equal(toolMessage.stop_reason, 'tool_use', 'tool-use: stop_reason must be tool_use');
 
   const toolUse = toolMessage.content.find((block) => block.type === 'tool_use');
-  assert.ok(toolUse, 'tool-use: tidak ada blok tool_use');
-  assert.equal(toolUse.name, 'Bash', 'tool-use: nama tool tidak cocok');
+  assert.ok(toolUse, 'tool-use: no tool_use block was returned');
+  assert.equal(toolUse.name, 'Bash', 'tool-use: tool name did not match');
   assert.ok(typeof toolUse.input.command === 'string' && toolUse.input.command.trim(),
-    'tool-use: input command kosong atau tidak valid');
+    'tool-use: command input is empty or invalid');
   console.log('PASS tool_use:', JSON.stringify({ name: toolUse.name, input: toolUse.input }));
 
   const finalMessage = await client.messages.create({
@@ -149,7 +178,7 @@ async function main() {
   });
 
   assertMessageShape(finalMessage, 'tool-result round trip');
-  assert.ok(textFrom(finalMessage).trim(), 'tool-result round trip: jawaban akhir kosong');
+  assert.ok(textFrom(finalMessage).trim(), 'tool-result round trip: final response is empty');
   console.log('PASS tool_result round trip:', textFrom(finalMessage).trim().slice(0, 160));
 
   console.log('\nALL SDK SMOKE TESTS PASSED');
@@ -160,11 +189,11 @@ main().catch((error) => {
   if (error && error.status) console.error('HTTP status:', error.status);
   console.error(error && error.stack ? error.stack : error);
   if (error && (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND')) {
-    console.error('\nPastikan server berjalan dan alamat DEEPSEEK_SUPER_BASE_URL benar.');
+    console.error('\nEnsure the server is running and DEEPSEEK_SUPER_BASE_URL is correct.');
   } else if (error && error.status === 401) {
-    console.error('\nToken salah: samakan ANTHROPIC_AUTH_TOKEN dengan DEEPSEEK_SUPER_TOKEN jika auth server diaktifkan.');
+    console.error('\nInvalid token: use the same secret as DEEPSEEK_SUPER_TOKEN when server authentication is enabled.');
   } else {
-    console.error('\nPastikan server berjalan, Chrome Playwright sudah login ke DeepSeek, lalu coba lagi.');
+    console.error('\nEnsure the server is running and the Playwright Chrome profile is signed in to DeepSeek, then retry.');
   }
   process.exitCode = 1;
 });
