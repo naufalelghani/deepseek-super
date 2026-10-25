@@ -4,6 +4,14 @@ A local gateway that exposes an **Anthropic Messages API-compatible** interface 
 
 > **Important:** This project automates the DeepSeek website; it is not an official DeepSeek API integration. Website UI changes may require updates to selectors in `src/browser.js`. Use this project in accordance with DeepSeek's terms of service and your account requirements.
 
+## Project positioning and policy risks
+
+`deepseek-super` is an experimental compatibility gateway for people who specifically want to use their signed-in DeepSeek web session through Anthropic Messages API-style clients and agent tools. It does not expose DeepSeek's underlying model directly or implement Anthropic's native tool protocol. It translates requests into prompt instructions, automates the website with Playwright, reads the response from the UI, and maps recognized `<TOOL_CALL>` output back to Anthropic-style responses.
+
+**This approach may conflict with DeepSeek's web-service terms.** The [current DeepSeek Terms of Use](https://cdn.deepseek.com/policies/en-US/deepseek-terms-of-use.html) (last updated March 27, 2026) include restrictions in Section 3.5 concerning copying/capturing service content and using robots, spiders, or other automated setups. This project uses browser automation, so users should review the terms and obtain any needed permission before use or redistribution. This README is a technical disclosure, not legal advice or a determination that a specific use is permitted. CAPTCHA, rate limits, account restrictions, or UI changes may interrupt operation.
+
+For supported, more reliable agent integrations, consider the [official DeepSeek API](https://api-docs.deepseek.com/api/responses), which documents an Anthropic-compatible base URL at `https://api.deepseek.com/anthropic` and integrations with coding-agent clients. This project is not a replacement for that official API and is not intended to promise production reliability or real API-token accounting.
+
 ## Requirements
 
 - Node.js 18 or later
@@ -54,7 +62,7 @@ The server uses the same `deepseek-profile/` directory. Do not run `node deepsee
 
 Default endpoint: `http://127.0.0.1:8787`
 
-## Configuration
+## Configuration and local security
 
 Configuration is read from environment variables:
 
@@ -63,23 +71,45 @@ Configuration is read from environment variables:
 | `PORT` | `8787` | Local HTTP server port |
 | `MODEL_NAME` | `deepseek-super` | Virtual model name reported by the API |
 | `PROFILE_DIR` | `./deepseek-profile` | Persistent Chrome profile directory |
-| `DEEPSEEK_SUPER_TOKEN` | Empty | Optional API authentication token |
+| `DEEPSEEK_SUPER_TOKEN` | Unset | Optional explicit token override; if unset, a random token is created and stored in `.deepseek-super-token` |
 | `POLL_MS` | `200` | UI polling interval in milliseconds |
-| `STABLE_MS` | `4000` | Required no-change period before a turn is considered complete |
-| `MAX_TURN_MS` | `300000` | Maximum duration of one turn |
-| `MAX_REPLAY` | `60000` | Maximum number of characters replayed from conversation history |
+| `STABLE_MS` | `4000` | Completion fallback idle period, used only if a UI completion signal was not observed |
+| `MAX_TURN_MS` | `300000` | Hard maximum duration of a single turn; a timeout is reported as a failure rather than success |
+| `MAX_REPLAY` | `60000` | Maximum replay prompt length in **characters**, not tokens |
+| `MAX_PENDING_TURNS` | `8` | Maximum active-plus-queued browser turns before new requests are rejected as overloaded |
+| `CORS_ALLOWED_ORIGINS` | Empty | Optional comma-separated list of exact extra browser origins allowed to access the local gateway |
 
-When `DEEPSEEK_SUPER_TOKEN` is set, send it using the `x-api-key` header or `Authorization: Bearer <token>`. Without a token, the server binds only to `127.0.0.1`.
+### Authentication is always required
 
-Example client environment:
+The server binds to `127.0.0.1` and requires a token for every endpoint, including the health endpoint. On first startup, if `DEEPSEEK_SUPER_TOKEN` is not set, the app generates a random local token and stores it in `.deepseek-super-token`. The file is listed in `.gitignore`; do not commit, publish, or share it. If `DEEPSEEK_SUPER_TOKEN` is set, that environment variable takes precedence over the local token file.
 
-```bash
-ANTHROPIC_BASE_URL=http://127.0.0.1:8787
-ANTHROPIC_AUTH_TOKEN=any
-ANTHROPIC_MODEL=deepseek-super
+When using the default local token file, load the same value in a **second PowerShell terminal** before running an SDK or client command:
+
+```powershell
+$env:ANTHROPIC_AUTH_TOKEN = (Get-Content -Raw .deepseek-super-token).Trim()
 ```
 
-If server authentication is enabled, set `ANTHROPIC_AUTH_TOKEN` to the same value as `DEEPSEEK_SUPER_TOKEN`.
+In Git Bash:
+
+```bash
+export ANTHROPIC_AUTH_TOKEN="$(tr -d '\\r\\n' < .deepseek-super-token)"
+```
+
+If you explicitly set `DEEPSEEK_SUPER_TOKEN` for the server, set `ANTHROPIC_AUTH_TOKEN` to the same secret in client processes. Never paste secrets into source files or commit them.
+
+### Host and browser-origin protection
+
+Requests with unexpected `Host` headers are rejected to reduce DNS-rebinding exposure. Browser-origin requests are accepted only from the same local loopback origin/port or from an exact origin listed in `CORS_ALLOWED_ORIGINS`; CORS does not use a wildcard. Ordinary Node.js clients normally omit `Origin` and do not need CORS configuration. For example, to allow a trusted local frontend, set `CORS_ALLOWED_ORIGINS=http://localhost:3000` before starting the server. Only allow origins you control.
+
+### Client base URL
+
+For Claude Code CLI, the local base URL is:
+
+```text
+http://127.0.0.1:8787/v1
+```
+
+The official Anthropic SDK's `baseURL` is the server root without `/v1`, for example `http://127.0.0.1:8787`; the SDK appends the API path itself.
 
 ## Using the Anthropic SDK
 
@@ -135,30 +165,32 @@ for await (const event of stream) {
 
 ### Compatibility limitations
 
-The request contract validates `model`, `messages`, `max_tokens`, message roles and content, tool schemas, `tool_choice`, and `stream`. The `count_tokens` endpoint estimates input based on `system`, `messages`, and tool schemas. This is a character-length-based estimate, not a count from DeepSeek's actual tokenizer.
+The request contract validates `model`, `messages`, `max_tokens`, message roles and content, tool schemas, `tool_choice`, and `stream`. The `/v1/messages/count_tokens` endpoint estimates input length using a local character-based formula; it does not invoke DeepSeek's actual tokenizer.
+
+The gateway's response `usage.input_tokens` and `usage.output_tokens`, and the `/count_tokens` result, are **estimates**, not upstream measurements. Responses include the header `X-Token-Usage-Estimated: true` to make this explicit. The estimate can differ substantially from actual model tokenization, hidden website prompt context, and any provider/router billing counters. Do not rely on these values for billing or precise context-window management.
 
 HTTP compatibility with the Anthropic SDK does not imply full semantic support for Anthropic model features. This gateway automates the DeepSeek website. For example, `max_tokens`, sampling parameters, prompt caching, images/documents, and Anthropic-specific options that are not mapped to the web UI may not behave like the official Anthropic API. Do not rely on undocumented options as supported features.
 
 ## Anthropic SDK integration test
 
-The `@anthropic-ai/sdk` test dependency is included as a dev dependency. To test the local gateway with the real SDK, start the server first:
+The `@anthropic-ai/sdk` test dependency is included as a dev dependency. Sign in to DeepSeek first using the manual login helper documented above, then start the local gateway:
 
-```bash
-npm install
+```powershell
+node deepseek-login.js
 npm start
 ```
 
-Sign in to DeepSeek in the Chrome window opened by Playwright. Then open a second terminal in the repository root and run:
+Open a second terminal at the repository root and run:
 
-```bash
+```powershell
 npm run test:sdk
 ```
 
-The smoke test checks non-streaming requests, SSE streaming events consumed by the SDK, tool calls, and a follow-up request with `tool_result`. The test requires the server to be running and the DeepSeek browser session to be signed in. If `DEEPSEEK_SUPER_TOKEN` is configured, set `ANTHROPIC_AUTH_TOKEN` to the same value. The endpoint can be changed with `DEEPSEEK_SUPER_BASE_URL`, and the model name with `ANTHROPIC_MODEL`.
+For the default local endpoint, the smoke test reads the ignored `.deepseek-super-token` file automatically. If the server was started with an explicit `DEEPSEEK_SUPER_TOKEN`, set `ANTHROPIC_AUTH_TOKEN` to the same value in the second terminal. The endpoint can be changed with `DEEPSEEK_SUPER_BASE_URL`, and the model name with `ANTHROPIC_MODEL`; custom endpoints require a matching token.
 
-The tool-use part of this test checks the payload only; it does not execute the generated command. Tool results in the follow-up request are synthetic. The test sends several requests to DeepSeek and therefore requires access to your signed-in DeepSeek web account.
+The smoke test checks non-streaming requests, SSE streaming events consumed by the SDK, tool calls, and a follow-up request with `tool_result`. The tool-use part checks the payload only; it does not execute the generated command. Tool results in the follow-up request are synthetic. These requests go through the signed-in DeepSeek web session and may be subject to web-app limits.
 
-Run unit tests and syntax checks without a running DeepSeek server:
+Run unit tests and syntax checks without a logged-in DeepSeek session or a running gateway:
 
 ```bash
 npm test
@@ -167,40 +199,50 @@ npm run check
 
 ## Claude Code CLI integration test
 
-This test uses the real Claude Code CLI through a local 9Router instance. The defaults are:
+By default, `npm run test:claude-code` tests **this repository's local gateway**, not a separate router:
 
-- Base URL: `http://localhost:20128/v1`
-- Model: `byv-flash-2410`
-- API key: read from `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY`
+- Base URL: `http://127.0.0.1:8787/v1`
+- Model: `deepseek-super`
+- Token: read automatically from the ignored `.deepseek-super-token` file when using the default local endpoint
 
-Run the following commands from the repository root. Choose the instructions for your terminal. The API key is not displayed while entering it and should never be committed to the repository.
-
-**Windows PowerShell:**
+First complete manual Google sign-in and start the gateway in one terminal:
 
 ```powershell
-$secure = Read-Host "9Router API key" -AsSecureString
+node deepseek-login.js
+npm start
+```
+
+Then, in a second terminal at the repository root:
+
+```powershell
+npm run test:claude-code
+```
+
+The test requires six tools to be called sequentially and each to return a result: `Read`, `Glob`, `Grep`, `Edit`, `Write`, and `Bash(pwd)`. It also exercises multi-step tool calling. File edits and writes are restricted to a temporary workspace, not the repository. The only allowed Bash command is `pwd`; the workspace is deleted after the test finishes.
+
+### Optional: run the CLI test through 9Router
+
+An external endpoint can be selected explicitly. In PowerShell, enter its API key without displaying it and pass the model alias:
+
+```powershell
+$secure = Read-Host "External gateway API key" -AsSecureString
 $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
 try {
   $env:ANTHROPIC_AUTH_TOKEN = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
 } finally {
   [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
 }
+$env:DEEPSEEK_SUPER_BASE_URL = "http://localhost:20128/v1"
+$env:ANTHROPIC_MODEL = "byv-flash-2410"
 npm run test:claude-code
 Remove-Item Env:ANTHROPIC_AUTH_TOKEN
+Remove-Item Env:DEEPSEEK_SUPER_BASE_URL
+Remove-Item Env:ANTHROPIC_MODEL
 ```
 
-**Git Bash:**
+**Model routing note:** `byv-flash-2410` is a user-configured 9Router combo/alias, not a model implemented by this repository. For the setup described here, configure that combo with exactly one target: `deepseek-super`. Do not add secondary models or fallbacks if the intent is to exercise only this project's DeepSeek-backed gateway. That combo routing is configured in 9Router and cannot be verified by this repository's code. When testing through an external 9Router endpoint, this repo's gateway is exercised only if the combo is actually configured to route to it; the default local test avoids that ambiguity.
 
-```bash
-read -rsp "9Router API key: " ANTHROPIC_AUTH_TOKEN; echo
-export ANTHROPIC_AUTH_TOKEN
-npm run test:claude-code
-unset ANTHROPIC_AUTH_TOKEN
-```
-
-The test requires six tools to be called sequentially and each to return a result: `Read`, `Glob`, `Grep`, `Edit`, `Write`, and `Bash(pwd)`. It also exercises multi-step tool calling. File edits and writes are restricted to a temporary workspace, not the repository. The only allowed Bash command is `pwd`; other tools are not available to the test. The temporary workspace is deleted when the test finishes.
-
-Override the endpoint with `DEEPSEEK_SUPER_BASE_URL` and the model with `ANTHROPIC_MODEL`. When using the 9Router endpoint above, you do not need to run `npm start` for this repository; only 9Router needs to be running. Keep API keys in local environment variables and never commit them to a public repository.
+The external route is optional and is not the CI test. Keep API keys in local environment variables and never commit them to a public repository.
 
 ## Endpoints
 
@@ -209,11 +251,51 @@ Override the endpoint with `DEEPSEEK_SUPER_BASE_URL` and the model with `ANTHROP
 - `POST /v1/messages/count_tokens`
 - `HEAD /api/hello`
 
-`POST /v1/messages` supports both SSE streaming responses and non-streaming JSON responses, as well as mapping `tool_use` and `tool_result` blocks to the prompt format used by the gateway.
+All endpoints require the API token. `POST /v1/messages` supports SSE streaming and non-streaming JSON responses, plus the local mapping of `tool_use`/`tool_result` blocks.
+
+## End-to-end architecture and trust boundaries
+
+The request path is:
+
+```text
+Anthropic-compatible client / AI agent (for example, Claude Code)
+        |
+        | POST /v1/messages (authenticated HTTP request)
+        v
+Local deepseek-super gateway
+  - validates and normalizes the request
+  - renders system instructions, chat history, and tool schemas as prompt text
+  - serializes access to a single Playwright Chrome profile
+        |
+        v
+Playwright + your signed-in Chrome profile
+        |
+        v
+https://chat.deepseek.com/ (DeepSeek web UI)
+        |
+        | assistant text is read back from the page
+        v
+Parser converts recognized <TOOL_CALL> JSON to Anthropic-style tool_use
+        |
+        v
+Client/agent executes its own tools and sends tool_result back
+        |
+        +---- the gateway resumes the same DeepSeek chat when possible
+```
+
+Tool calling is prompt-based rather than a native tool protocol offered by the website. Tool names, schemas, and the JSON format are described in prompts; the gateway parses the resulting text. Model-generated tool arguments are untrusted input and must be validated by the client before any tool is executed. DeepSeek's web UI does not report the same telemetry as a dedicated API, so local token usage and caching fields cannot be treated as provider billing data.
+
+The browser is a single shared resource. Requests are serialized through a bounded queue; when the queue is full, the server reports overload instead of allowing an unbounded backlog. If a client disconnects while a turn is running, the poll loop stops and releases the queue. Completion detection first uses the UI's observable stop/send controls when detected; `STABLE_MS` is an inactivity fallback only when the explicit signal has not been observed. UI changes can break these selectors, and the `MAX_TURN_MS` deadline is reported as a failure rather than a completed answer.
+
+Initial prompt replay is capped by `MAX_REPLAY` characters. If the cap is exceeded, the gateway preserves the prompt head and tail, inserts a clear truncation warning into the prompt, and logs the lengths. Some middle context is still lost; long agent sessions may therefore need compaction or a fresh session. The cap is character-based, not a token count.
+
+The local API token, Host validation, and CORS allowlist protect the local gateway endpoint. They do not protect or anonymize data submitted to DeepSeek: the browser session and prompts are still processed by the DeepSeek web service under the service's own terms and privacy policy. Do not submit data you are not comfortable sending to that service.
 
 ## DeepSeek / Anthropic compatibility notes
 
 This gateway implements part of the Anthropic Messages API contract so clients such as Claude Code can communicate with the DeepSeek web interface. It does not connect directly to `https://api.deepseek.com/anthropic`: prompts, tool calls, streaming, and token usage are handled by the local adapter and browser automation.
+
+For a supported API path, the [official DeepSeek API documentation](https://api-docs.deepseek.com/api/responses) describes an Anthropic-compatible API endpoint and agent integrations. This web-automation project is separate from that official API.
 
 ### Tool use and round trips
 
