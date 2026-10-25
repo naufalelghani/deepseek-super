@@ -202,8 +202,15 @@
                      this.mode = 'text';
                      continue;
                  }
-                 this.toolBuf += this.buf;
-                 this.buf = '';
+                 // Keep a short suffix in the buffer: the closing marker can be split
+                 // across successive DOM polls (for example, '</TOOL_' + 'CALL>').
+                 // Without this holdback, a partial delimiter is mistaken for JSON data.
+                 const hold = Math.min(this.buf.length, 32);
+                 const cut = this.buf.length - hold;
+                 if (cut > 0) {
+                     this.toolBuf += this.buf.slice(0, cut);
+                     this.buf = this.buf.slice(cut);
+                 }
                  return;
              }
          }
@@ -213,9 +220,17 @@
              this._emitText(this.buf);
              this.buf = '';
          } else if (this.mode === 'tool') {
-             // Preserve an unterminated payload for parsing/retry, not as user-facing text.
-             this.incompleteToolBlock = true;
-             this.toolBlocks.push(this.toolBuf);
+             // Combine the holdback suffix with accumulated payload before final parsing.
+             const raw = this.toolBuf + this.buf;
+             const close = raw.match(CLOSE_RE);
+             if (close && close.index + close[0].length === raw.length) {
+                 this.toolBlocks.push(raw.slice(0, close.index));
+                 this.incompleteToolBlock = false;
+             } else {
+                 // Preserve an unterminated payload for parsing/retry, not as user-facing text.
+                 this.incompleteToolBlock = true;
+                 this.toolBlocks.push(raw);
+             }
              this.toolBuf = '';
              this.buf = '';
              this.mode = 'text';
