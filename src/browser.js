@@ -148,12 +148,37 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
      });
  }
 
- async function clickSend() {
-     await page.waitForFunction(() => {
-         const b = document.querySelector('.bf38813a .ds-button--primary');
-         return b && !b.classList.contains('ds-button--disabled');
-     }, null, { timeout: 15000 }).catch(() => {});
-     await page.locator('.bf38813a .ds-button--primary').first().click();
+ async function clickSend(isCancelled = () => false) {
+     const timeoutAt = Date.now() + 15000;
+     for (;;) {
+         if (isCancelled()) {
+             const error = new Error('The client disconnected before the request was sent.');
+             error.name = 'AbortError';
+             throw error;
+         }
+
+         const isEnabled = await page.evaluate(() => {
+             const button = document.querySelector('.bf38813a .ds-button--primary');
+             return Boolean(button &&
+                 !button.classList.contains('ds-button--disabled') &&
+                 !button.hasAttribute('disabled') &&
+                 button.getAttribute('aria-disabled') !== 'true');
+         });
+         if (isEnabled) {
+             if (isCancelled()) {
+                 const error = new Error('The client disconnected before the request was sent.');
+                 error.name = 'AbortError';
+                 throw error;
+             }
+             await page.locator('.bf38813a .ds-button--primary').first().click();
+             return;
+         }
+
+         if (Date.now() >= timeoutAt) {
+             throw new Error('The DeepSeek send button did not become available within 15 seconds.');
+         }
+         await page.waitForTimeout(100);
+     }
  }
  async function currentUrl() {
      const u = page.url();
@@ -240,7 +265,9 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
      await textarea.click();
      await textarea.fill(prompt);
      await page.waitForTimeout(250);
-     await clickSend();
+     await abortIfCancelled();
+     await clickSend(isCancelled);
+     await abortIfCancelled();
 
      const parser = new StreamParser((t) => {
          if (bufferText || !sink) return;
