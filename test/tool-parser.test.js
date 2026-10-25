@@ -36,11 +36,15 @@ test('extractToolCallsFromText removes tool-call markup and returns normalized c
 
 test('parser exposes invalid tool-call markup so the handler can retry instead of silently dropping it', () => {
   const parser = new StreamParser(() => {});
-  parser.feed('Before <TOOL_CALL>{"tool":"Bash","arguments":{"command":}}</TOOL_CALL> After');
+  const invalidPayload = '{"tool":"Bash","arguments":{"command":}}';
+  parser.feed('Before <TOOL_CALL>' + invalidPayload + '</TOOL_CALL> After');
   parser.finish();
   assert.equal(parser.sawToolMarkup, true);
   assert.equal(parser.incompleteToolBlock, false);
   assert.deepEqual(parser.toolCalls(), []);
+  assert.equal(parser.parseErrors.length, 1);
+  assert.equal(parser.parseErrors[0].chars, invalidPayload.length);
+  assert.ok(parser.parseErrors[0].reason);
 });
 
 test('parser can recover a valid JSON tool payload even if the closing marker is missing', () => {
