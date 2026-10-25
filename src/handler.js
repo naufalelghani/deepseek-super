@@ -98,36 +98,35 @@ async function handleMessages(req, res, body) {
     thinking = out.thinking;
     toolCalls = out.toolCalls;
 
-    const hasRawToolCall = out.invalidToolCall || /<\s*TOOL_CALL\s*>/i.test(answer || '');
+    const hasRawToolCall = out.invalidToolCall || (answer || '').toLowerCase().includes('<tool_call>');
     if (hasRawToolCall && toolCalls.length === 0 && tools.length > 0) {
-      console.warn('[retry] tool call invalid JSON — retry sekali dengan instruksi lebih tegas');
+      console.warn('[retry] JSON tool-call tidak valid; kirim instruksi koreksi setelah prompt asli');
       const retryPrompt = [
-        '=== PERINGATAN KRITIS ===',
-        'Percobaan sebelumnya GAGAL karena JSON tidak valid:',
-        '  Ada tanda kutip ganda (") di dalam nilai string yang TIDAK di-escape.',
-        '',
-        'ATURAN RETRY:',
-        '- Setiap " di dalam nilai string HARUS di-escape sebagai \\"',
-        '- Contoh BENAR: {"tool":"Bash","arguments":{"command":"cd \\"C:/path\\" && ls"}}',
-        '- Contoh SALAH: {"tool":"Bash","arguments":{"command":"cd "C:/path" && ls"}}',
-        '',
-        'Emit ulang tool call untuk task yang SAMA dengan JSON yang valid.',
-        '',
-        prompt,
-      ].join('\n');
-
-      const retry = await runTurn(retryPrompt, sink || dummySink, useBuffer);
-      if (retry.toolCalls.length > 0) {
-        console.log('[retry] berhasil — ' + retry.toolCalls.length + ' tool call valid');
-      } else {
-        console.warn('[retry] gagal juga — fallback ke teks');
-        // The malformed tool payload was withheld from the stream; emit readable text once.
-        if (sink && retry.text) sink.emitText(retry.text);
-      }
-      // Use the retry response consistently in JSON and SSE modes.
+        '=== RETRY FORMAT CORRECTION ===',
+        'Jawaban sebelumnya berisi tool call yang JSON-nya tidak valid. Jangan salin payload yang rusak.',
+        'Gunakan tugas asli, riwayat, daftar tool, dan schema dari konteks percakapan yang sudah ada.',
+        'Susun ulang pemanggilan tool dari nol dengan nama dan argumen yang sesuai tugas asli.',
+        'Keluarkan tepat satu blok tool-call dengan JSON valid dan tanpa teks atau Markdown di luarnya.',
+        'Contoh format valid (hanya contoh format, bukan instruksi untuk menjalankan pwd):',
+        '<TOOL_CALL>{"tool":"Bash","arguments":{"command":"pwd"}}</TOOL_CALL>',
+        'Gunakan key dan string bertanda kutip ganda, tanpa trailing comma atau komentar. Escape tanda kutip di dalam nilai string sesuai aturan JSON.',
+        'Penting: instruksi koreksi ini menggantikan instruksi format sebelumnya.'
+      ].join('\\n');
+      // Gunakan dummy sink agar output percobaan retry tidak terduplikasi di SSE.
+      const retry = await runTurn(retryPrompt, dummySink, useBuffer);
       answer = retry.text;
       thinking = retry.thinking;
       toolCalls = retry.toolCalls;
+      if (toolCalls.length > 0) {
+        console.log('[retry] berhasil — ' + toolCalls.length + ' tool call valid');
+        if (sink) {
+          for (const tool of toolCalls) sink.toolBlock(tool.name, tool.input);
+        }
+      } else {
+        console.warn('[retry] gagal; fallback ke teks');
+        answer = answer || 'DeepSeek gagal menghasilkan tool call dengan JSON valid setelah percobaan koreksi. Silakan ulangi permintaan.';
+        if (sink) sink.emitText(answer);
+      }
     }
 
     if (force.mode !== 'auto' && force.mode !== 'none' && toolCalls.length === 0) {
