@@ -154,7 +154,7 @@ npm run test:claude-code
 
 Tes ini mengarahkan variabel lingkungan Claude Code ke gateway lokal dan menjalankan Claude Code CLI asli dalam restricted mode. Skrip mendaftarkan `deepseek-super` sebagai custom model Claude Code supaya CLI tidak menolak ID model sebelum request dikirim ke gateway.
 
-Tes ini mengharuskan enam tool dipanggil dan menerima hasil: `Read`, `Glob`, `Grep`, `Edit`, `Write`, dan `Bash(pwd)`. Operasi tulis/edit hanya dilakukan di workspace sementara di folder temp, bukan di repo. Perintah Bash yang diizinkan hanya `pwd`; tool lain tidak tersedia. Workspace pengujian dihapus setelah selesai.
+Tes ini mengharuskan enam tool dipanggil secara berurutan dan menerima hasil masing-masing: `Read`, `Glob`, `Grep`, `Edit`, `Write`, dan `Bash(pwd)`. Ini juga menguji bahwa gateway melanjutkan chat yang sama di antara beberapa putaran tool. Operasi tulis/edit hanya dilakukan di workspace sementara di folder temp, bukan di repo. Perintah Bash yang diizinkan hanya `pwd`; tool lain tidak tersedia. Workspace pengujian dihapus setelah selesai.
 
 Persyaratan: Claude Code CLI harus terpasang serta dapat dijalankan sebagai `claude` dari terminal. Jika autentikasi server gateway diaktifkan, tetapkan `DEEPSEEK_SUPER_TOKEN` pada terminal yang menjalankan tes dengan nilai token yang sama seperti server. Base URL dapat diubah melalui `DEEPSEEK_SUPER_BASE_URL`, model melalui `ANTHROPIC_MODEL`, dan timeout melalui `CLAUDE_CODE_TEST_TIMEOUT_MS`.
 
