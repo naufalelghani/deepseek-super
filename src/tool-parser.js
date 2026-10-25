@@ -37,28 +37,28 @@
      // 1. Coba langsung
      try { return JSON.parse(str); } catch (e) {}
 
-     // 2. Fix backslash Windows path: \X (X bukan escape valid) → \\X
+     // 2. Repair Windows paths: \\X is invalid JSON when X is not a valid escape character.
      //    Valid JSON escapes: \" \\ \/ \b \f \n \r \t \uXXXX
      try {
          const fixed = str.replace(/\\([^"\\\/bfnrtu])/g, '\\\\$1');
          return JSON.parse(fixed);
      } catch (e) {}
 
-     // 3. Quote keys yang tidak di-quote + backslash fix
+     // 3. Quote unquoted object keys and repair backslashes.
      try {
          let s = str.replace(/\\([^"\\\/bfnrtu])/g, '\\\\$1');
          s = s.replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:/g, '$1"$2":');
          return JSON.parse(s);
      } catch (e) {}
 
-     // 4. Strip trailing comma + backslash fix
+     // 4. Remove trailing commas and repair backslashes.
      try {
          let s = str.replace(/\\([^"\\\/bfnrtu])/g, '\\\\$1');
          s = s.replace(/,\s*([}\]])/g, '$1');
          return JSON.parse(s);
      } catch (e) {}
 
-     // 5. Heuristic: escape quote di tengah string (untuk kasus `echo "hi"`)
+     // 5. Heuristic: escape quotes inside strings (for example, `echo \"hi\"`).
      try {
          let s = str.replace(/\\([^"\\\/bfnrtu])/g, '\\\\$1');
          let out = '';
@@ -104,7 +104,7 @@
  function sanitizeToolCall(tc) {
      const fixed = { name: tc.name, input: Object.assign({}, tc.input || {}) };
 
-     // Fix Glob: pattern tanpa * → tambah *
+     // Fix Glob: prepend a wildcard when the pattern has no asterisk.
      if (fixed.name === 'Glob' && typeof fixed.input.pattern === 'string' && fixed.input.pattern.indexOf('*') < 0) {
          const p = fixed.input.pattern.trim();
          if (p.startsWith('.')) {
@@ -114,12 +114,12 @@
          }
      }
 
-     // Fix Grep: pattern kosong → tolak
+     // Fix Grep: reject an empty pattern.
      if (fixed.name === 'Grep' && (!fixed.input.pattern || fixed.input.pattern === '')) {
          return null;
      }
 
-     // Fix Bash: forward slash untuk Windows path (Claude Code terima keduanya)
+     // Fix Bash: use forward slashes in Windows paths (Claude Code accepts either form).
      if (fixed.name === 'Bash' && typeof fixed.input.command === 'string') {
          fixed.input.command = fixed.input.command.replace(/C:\\\\/g, 'C:/').replace(/C:\\/g, 'C:/');
      }
@@ -243,8 +243,8 @@
              const payload = raw.trim();
              const parsed = tryParseJSON(payload);
              if (parsed === null) {
-                 let reason = 'JSON parser tidak dapat memulihkan payload';
-                 try { JSON.parse(payload); reason = 'JSON valid, tetapi bukan payload tool yang didukung'; }
+                 let reason = 'The JSON parser could not recover the payload';
+                 try { JSON.parse(payload); reason = 'Valid JSON, but not a supported tool payload'; }
                  catch (e) { reason = e.message || reason; }
                  this.parseErrors.push({ chars: raw.length, reason });
                  continue;
@@ -271,7 +271,7 @@
                  }
              }
              if (!foundToolName) {
-                 this.parseErrors.push({ chars: raw.length, reason: 'JSON tidak memiliki field tool atau name berupa string' });
+                 this.parseErrors.push({ chars: raw.length, reason: 'JSON must include a tool field or a string name' });
              }
          }
          return out;
