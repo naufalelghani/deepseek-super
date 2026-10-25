@@ -90,3 +90,37 @@ test('tool-result resume prompt includes schemas and allows the next tool step',
   assert.ok(prompt.includes('Jika tugas belum selesai, gunakan tool berikutnya'));
   assert.ok(!prompt.includes('JANGAN memanggil tool apa pun.'));
 });
+
+test('full prompt retains tool schemas on a tool_result fallback turn', () => {
+  const prompt = buildFullPrompt('', [
+    {
+      role: 'user',
+      content: 'Read fixture.txt and then edit another fixture.',
+    },
+    {
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: 'toolu_read', name: 'Read', input: { file_path: 'fixture.txt' } }],
+    },
+    {
+      role: 'user',
+      content: [{ type: 'tool_result', tool_use_id: 'toolu_read', content: 'EDIT_BEFORE' }],
+    },
+  ], [{
+    name: 'Edit',
+    description: 'Edit a file',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string' },
+        old_string: { type: 'string' },
+        new_string: { type: 'string' },
+      },
+      required: ['file_path', 'old_string', 'new_string'],
+    },
+  }]);
+
+  assert.ok(prompt.includes('### TOOLS'));
+  assert.ok(prompt.includes('Edit(file_path*: string'));
+  assert.ok(prompt.includes('Jika tugas masih memerlukan tindakan'));
+  assert.ok(prompt.includes('<TOOL_CALL>...</TOOL_CALL>'));
+});
