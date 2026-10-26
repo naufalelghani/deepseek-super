@@ -291,15 +291,15 @@ function buildDeepSeekWebToolContinuationPrompt(results, tools) {
 
 function getTurnLinks(output) {
   // Only accept URLs in the explicit result schema requested from the isolated
-  // Search turn. Arbitrary hyperlinks in a refusal/explanation (for example,
-  // links to the requested domains) are not proof that Search surfaced a result.
+  // Search turn. Arbitrary hyperlinks in a refusal/explanation are not proof
+  // that Search surfaced a result.
   const text = String(output && output.text || '');
-  if (!/^\\s*(?:\\*\\*)?FOUND(?:\\*\\*)?\\s*$/im.test(text)) return [];
+  if (!/^\s*(?:\*\*)?FOUND(?:\*\*)?\s*$/im.test(text)) return [];
 
   const sourceLinks = output && Array.isArray(output.sourceLinks) ? output.sourceLinks : [];
-  const titleMatch = text.match(/^\\s*Title:\\s*(.+?)\\s*$/im);
+  const titleMatch = text.match(/^\s*Title:\s*(.+?)\s*$/im);
   const title = titleMatch ? titleMatch[1].trim() : '';
-  const matches = [...text.matchAll(/^\\s*URL:\\s*(https?:\\/\\/\\S+)/gim)];
+  const matches = [...text.matchAll(/^\s*URL:\s*(https?:\/\/\S+)/gim)];
   const links = [];
   const seen = new Set();
 
@@ -317,6 +317,22 @@ function getTurnLinks(output) {
         : (title || url),
       url,
     });
+  }
+
+  // A DeepSeek UI variant may render the source as an anchor without printing
+  // the href in visible text. Use those rendered links only after the response
+  // positively identifies itself as a FOUND result.
+  if (links.length === 0) {
+    for (const link of sourceLinks) {
+      if (!link || typeof link.url !== 'string' || !/^https?:\/\//i.test(link.url)) continue;
+      const url = link.url.replace(/[.,;:!?]+$/, '');
+      if (seen.has(url)) continue;
+      seen.add(url);
+      links.push({
+        text: typeof link.text === 'string' && link.text.trim() ? link.text.trim() : (title || url),
+        url,
+      });
+    }
   }
   return links;
 }
