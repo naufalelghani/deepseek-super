@@ -207,6 +207,41 @@ test('execution rejects tool markup from a Search-mode result but still restores
 });
 
 
+test('isolated Search retries once when DeepSeek returns tool-call markup', async () => {
+  const prompts = [];
+  const result = await executeDeepSeekWebTool({
+    name: DEEPSEEK_WEB_SEARCH,
+    input: { query: 'official Node.js downloads', sites: ['nodejs.org'], max_results: 1 },
+  }, {
+    ensureTogglesOn: async () => {
+      throw new Error('the isolated executor must manage Search toggles');
+    },
+    runTurn: async () => {
+      throw new Error('the regular chat runner must not be used');
+    },
+    runIsolatedTurn: async (prompt) => {
+      prompts.push(prompt);
+      if (prompts.length === 1) {
+        return {
+          text: '',
+          toolCalls: [{ name: 'DeepSeekWebSearch', input: { query: 'retry' } }],
+          invalidToolCall: false,
+        };
+      }
+      return {
+        text: 'FOUND\nTitle: Node.js downloads\nURL: https://nodejs.org/en/download\nEvidence: official downloads.',
+        sourceLinks: [{ text: 'Node.js downloads', url: 'https://nodejs.org/en/download' }],
+        toolCalls: [],
+        invalidToolCall: false,
+      };
+    },
+  });
+
+  assert.equal(prompts.length, 2);
+  assert.match(prompts[1], /PLAIN-TEXT WEB RESULT RECOVERY/);
+  assert.ok(result.result.includes('https://nodejs.org/en/download'));
+});
+
 test('execution isolates native Search turns from the client DSML tool context', async () => {
   const prompts = [];
   const result = await executeDeepSeekWebTool({
