@@ -162,7 +162,7 @@ async function handleMessages(req, res, body) {
     let validation = toolCalls.length > 0
       ? validateToolCalls(toolCalls, tools)
       : { valid: !hasRawToolCall, error: null };
-    const needsRecovery = (hasRawToolCall && toolCalls.length === 0) ||
+    const needsRecovery = (hasRawToolCall && (out.invalidToolCall || toolCalls.length === 0)) ||
       (toolCalls.length > 0 && !validation.valid);
 
     if (needsRecovery) {
@@ -205,13 +205,15 @@ async function handleMessages(req, res, body) {
 
         const retryHasRawToolCall = retry.invalidToolCall ||
           (answer || '').toLowerCase().includes('<tool_call>');
-        validation = toolCalls.length > 0
-          ? validateToolCalls(toolCalls, tools)
-          : { valid: false, error: retryHasRawToolCall
-              ? 'The retried tool-call JSON is still malformed or incomplete.'
-              : 'The retry did not return a tool call.' };
+        validation = retry.invalidToolCall
+          ? { valid: false, error: 'The retry returned a partially malformed or invalid tool-call batch.' }
+          : toolCalls.length > 0
+            ? validateToolCalls(toolCalls, tools)
+            : { valid: false, error: retryHasRawToolCall
+                ? 'The retried tool-call JSON is still malformed or incomplete.'
+                : 'The retry did not return a tool call.' };
 
-        if (toolCalls.length > 0 && validation.valid) {
+        if (toolCalls.length > 0 && validation.valid && !retry.invalidToolCall) {
           recovered = true;
           console.log('[retry] recovered on attempt ' + attempt +
             ' — schema-valid tool calls=' + toolCalls.length);
