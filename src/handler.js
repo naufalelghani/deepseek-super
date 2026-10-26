@@ -192,7 +192,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
       abortIfCancelled();
       const recoveryHasToolMarkup = recovery.invalidToolCall ||
         (recovery.text || '').toLowerCase().includes('<tool_call>');
-      if (recovery.toolCalls.length > 0 || recoveryHasToolMarkup || !recovery.text.trim()) {
+      if (recovery.toolCalls.length > 0 || recoveryHasToolMarkup || !(recovery.text || '').trim()) {
         throw createToolCallRecoveryError(
           'DeepSeek continued to emit tool-call output despite a text-only recovery request. No tool was forwarded.',
           1
