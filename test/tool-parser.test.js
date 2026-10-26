@@ -81,3 +81,18 @@ test('parser can recover a valid JSON tool payload even if the closing marker is
   assert.equal(parser.incompleteToolBlock, true);
   assert.deepEqual(parser.toolCalls(), [{ name: 'Bash', input: { command: 'pwd' } }]);
 });
+
+
+test('parser rejects scalar or array tool arguments instead of coercing them into objects', () => {
+  const parser = new StreamParser(() => {});
+  parser.feed('<TOOL_CALL>{"tool":"Bash","arguments":"pwd"}</TOOL_CALL>');
+  parser.finish();
+  assert.deepEqual(parser.toolCalls(), []);
+  assert.equal(parser.parseErrors.length, 1);
+
+  const arrayParser = new StreamParser(() => {});
+  arrayParser.feed('<TOOL_CALL>{"tool":"Read","arguments":["file.txt"]}</TOOL_CALL>');
+  arrayParser.finish();
+  assert.deepEqual(arrayParser.toolCalls(), []);
+  assert.equal(arrayParser.parseErrors.length, 1);
+});
