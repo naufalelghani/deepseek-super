@@ -168,3 +168,30 @@ test('truncated long replay retains tool schemas and the latest user request', (
   assert.match(replay, /LATEST_REQUEST_MARKER/);
   assert.match(replay, /WARNING: conversation replay was truncated/);
 });
+
+
+test('bounded resumed prompt preserves tool schemas after an oversized tool result', () => {
+  const { truncateReplay } = require('../src/content');
+  const prompt = buildResumePrompt('', [{
+    role: 'user',
+    content: [{
+      type: 'tool_result',
+      tool_use_id: 'toolu_large',
+      content: 'LARGE_RESULT_' + 'r'.repeat(70000),
+    }],
+  }], [{
+    name: 'Read',
+    description: 'Read a file',
+    input_schema: {
+      type: 'object',
+      properties: { file_path: { type: 'string' } },
+      required: ['file_path'],
+    },
+  }], true);
+
+  const replay = truncateReplay(prompt);
+  assert.ok(replay.length <= require('../src/config').MAX_REPLAY);
+  assert.match(replay, /Read\(file_path\*: string/);
+  assert.match(replay, /If the task is not complete, use the next required tool/);
+  assert.match(replay, /WARNING: conversation replay was truncated/);
+});
