@@ -106,3 +106,16 @@ test('parser exposes errors in mixed valid and invalid tool batches', () => {
   assert.deepEqual(parser.toolCalls(), [{ name: 'Read', input: { file_path: 'a.txt' } }]);
   assert.equal(parser.parseErrors.length, 1);
 });
+
+
+test('tool argument normalization does not mutate prototypes from JSON input', () => {
+  const parser = new StreamParser(() => {});
+  parser.feed('<TOOL_CALL>{"tool":"Bash","arguments":{"__proto__":{"polluted":true},"command":"pwd"}}</TOOL_CALL>');
+  parser.finish();
+
+  const calls = parser.toolCalls();
+  assert.equal(calls.length, 1);
+  assert.equal(Object.getPrototypeOf(calls[0].input), Object.prototype);
+  assert.equal(Object.prototype.polluted, undefined);
+  assert.equal(Object.prototype.hasOwnProperty.call(calls[0].input, '__proto__'), true);
+});
