@@ -385,7 +385,7 @@ async function executeDeepSeekWebTool(call, dependencies) {
         'Your previous response emitted gateway tool-call markup instead of the requested plain-text result.',
         'This temporary chat has no gateway tool schemas. Do not emit DSML calls/invoke/parameter tags, legacy TOOL_CALL JSON, or any tool-call markup.',
         'Perform the requested operation directly with the visible DeepSeek Search UI, then follow the plain-text result format above exactly.',
-      ].join('\\n');
+      ].join('\n');
       output = await performTurn(retryPrompt, sink, true, isCancelled || (() => false), true);
     }
 
