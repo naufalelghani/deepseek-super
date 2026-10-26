@@ -474,13 +474,14 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      } else if (invalidToolCall) {
          const detail = parser.parseErrors[0];
          console.warn('[tool-parser] tool-call markup detected, but no valid tool input parsed' +
-             ' legacy_payloads=' + parser.toolBlocks.length +
+             ' disallowed_legacy_payloads=' + parser.disallowedLegacyBlocks.length +
              ' dsml_payloads=' + parser.dsmlToolBlocks.length +
              ' incomplete=' + parser.incompleteToolBlock +
              (detail ? ' chars=' + detail.chars + ' reason=' + detail.reason : '') +
              (extractionErrors.length ? ' extraction_errors=' + extractionErrors.join('; ') : ''));
-         if (process.env.DEBUG_TOOL_PARSER === '1' && parser.toolBlocks[0]) {
-             console.warn('[tool-parser] payload preview=' + parser.toolBlocks[0].slice(0, 240).replace(/\s+/g, ' '));
+         const debugPayload = parser.dsmlToolBlocks[0] || parser.disallowedLegacyBlocks[0];
+         if (process.env.DEBUG_TOOL_PARSER === '1' && debugPayload) {
+             console.warn('[tool-parser] payload preview=' + debugPayload.slice(0, 240).replace(/\s+/g, ' '));
          }
      }
 

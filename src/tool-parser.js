@@ -5,7 +5,7 @@
  const DSML_CALLS_OPEN_RE = /<\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls)\s*>/i;
  const DSML_CALLS_CLOSE_RE = /<\s*\/\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls)\s*>/i;
  const OPEN_RE = /<\s*TOOL_CALL\s*>|<\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls)\s*>/i;
- const CLOSE_RE = LEGACY_CLOSE_RE;
+ const CLOSE_RE = DSML_CALLS_CLOSE_RE;
  const DSML_CALLS_BLOCK_RE = /<\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls)\s*>([\s\S]*?)<\s*\/\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls)\s*>/gi;
  const DSML_INVOKE_RE_SOURCE = '<\\s*[｜|]{1,2}\\s*DSML\\s*[｜|]{1,2}\\s*invoke\\b([^>]*)>([\\s\\S]*?)<\\s*\\/\\s*[｜|]{1,2}\\s*DSML\\s*[｜|]{1,2}\\s*invoke\\s*>';
  const DSML_PARAMETER_RE_SOURCE = '<\\s*[｜|]{1,2}\\s*DSML\\s*[｜|]{1,2}\\s*parameter\\b([^>]*)>([\\s\\S]*?)<\\s*\\/\\s*[｜|]{1,2}\\s*DSML\\s*[｜|]{1,2}\\s*parameter\\s*>';
@@ -250,23 +250,12 @@
          }
      };
 
-     const legacyRegex = /<\s*TOOL_CALL\s*>\s*([\s\S]*?)\s*<\s*\/\s*TOOL_CALL\s*>/gi;
-     let cleaned = text.replace(legacyRegex, (_, payload) => {
-         const parsed = tryParseJSON(payload.trim());
-         if (parsed !== null) {
-             const entries = Array.isArray(parsed) ? parsed : [parsed];
-             for (const entry of entries) {
-                 if (entry && typeof entry === 'object') {
-                     const sanitized = sanitizeToolCall({
-                         name: entry.tool || entry.name,
-                         input: entry.arguments || entry.input || {},
-                     });
-                     if (sanitized) addCall(sanitized);
-                 }
-             }
-         }
+     const legacyRegex = /<\s*TOOL_CALL\s*>[\s\S]*?(?:<\s*\/\s*TOOL_CALL\s*>|$)/gi;
+     let cleaned = text.replace(legacyRegex, () => {
+         errors.push('Legacy <TOOL_CALL> JSON is disabled; use DeepSeek DSML calls/invoke/parameter tags.');
          return '';
      });
+     cleaned = cleaned.replace(/<\s*\/\s*TOOL_CALL\s*>/gi, '');
 
      let completeCallsBlocks = 0;
      cleaned = cleaned.replace(DSML_CALLS_BLOCK_RE, (_, payload) => {
@@ -306,13 +295,14 @@
          this.buf = '';
          this.mode = 'text';
          this.toolBuf = '';
-         this.toolBlocks = [];
          this.dsmlToolBlocks = [];
-         this.blockFormat = 'legacy';
+         this.disallowedLegacyBlocks = [];
+         this.blockFormat = 'dsml';
          this._toolCallsCache = null;
          this.parseErrors = [];
          this.textOut = '';
          this.sawToolMarkup = false;
+         this.sawUnsupportedToolMarkup = false;
          this.incompleteToolBlock = false;
      }
      feed(chunk) {
@@ -352,16 +342,24 @@
                  if (m) {
                      this.toolBuf += this.buf.slice(0, m.index);
                      this.buf = this.buf.slice(m.index + m[0].length);
-                     if (this.blockFormat === 'dsml') this.dsmlToolBlocks.push(this.toolBuf);
-                     else this.toolBlocks.push(this.toolBuf);
+                     if (this.blockFormat === 'dsml') {
+                         this.dsmlToolBlocks.push(this.toolBuf);
+                     } else {
+                         this.disallowedLegacyBlocks.push(this.toolBuf);
+                         this.sawUnsupportedToolMarkup = true;
+                         this.parseErrors.push({
+                             chars: this.toolBuf.length,
+                             reason: 'Legacy <TOOL_CALL> JSON is disabled; use DeepSeek DSML calls/invoke/parameter tags.',
+                         });
+                     }
                      this.toolBuf = '';
-                     this.blockFormat = 'legacy';
+                     this.blockFormat = 'dsml';
                      this.mode = 'text';
                      continue;
                  }
-                 // Keep a short suffix in the buffer: the closing marker can be split
-                 // across successive DOM polls (for example, '</TOOL_' + 'CALL>').
-                 // Without this holdback, a partial delimiter is mistaken for JSON data.
+                 // Keep a suffix buffered because a DSML closing marker can be split
+                 // across successive DOM polls. Without this holdback, a partial delimiter
+                 // may be mistaken for argument content.
                  const hold = Math.min(this.buf.length, 32);
                  const cut = this.buf.length - hold;
                  if (cut > 0) {
@@ -382,12 +380,20 @@
              const close = raw.match(closingRe);
              const isClosed = Boolean(close && close.index + close[0].length === raw.length);
              const payload = isClosed ? raw.slice(0, close.index) : raw;
-             if (this.blockFormat === 'dsml') this.dsmlToolBlocks.push(payload);
-             else this.toolBlocks.push(payload);
+             if (this.blockFormat === 'dsml') {
+                 this.dsmlToolBlocks.push(payload);
+             } else {
+                 this.disallowedLegacyBlocks.push(payload);
+                 this.sawUnsupportedToolMarkup = true;
+                 this.parseErrors.push({
+                     chars: payload.length,
+                     reason: 'Legacy <TOOL_CALL> JSON is disabled; use DeepSeek DSML calls/invoke/parameter tags.',
+                 });
+             }
              this.incompleteToolBlock = !isClosed;
              this.toolBuf = '';
              this.buf = '';
-             this.blockFormat = 'legacy';
+             this.blockFormat = 'dsml';
              this.mode = 'text';
          }
      }
@@ -406,35 +412,6 @@
                  out.push(call);
              }
          };
-
-         for (const raw of this.toolBlocks) {
-             const payload = raw.trim();
-             const parsed = tryParseJSON(payload);
-             if (parsed === null) {
-                 let reason = 'The JSON parser could not recover the payload';
-                 try { JSON.parse(payload); reason = 'Valid JSON, but not a supported tool payload'; }
-                 catch (error) { reason = error.message || reason; }
-                 this.parseErrors.push({ chars: raw.length, reason });
-                 continue;
-             }
-
-             const entries = Array.isArray(parsed) ? parsed : [parsed];
-             let foundToolName = false;
-             for (const entry of entries) {
-                 if (!entry || typeof entry !== 'object') continue;
-                 const name = entry.tool || entry.name;
-                 const input = entry.arguments || entry.input || {};
-                 if (typeof name === 'string' && name) {
-                     foundToolName = true;
-                     const sanitized = sanitizeToolCall({ name, input });
-                     if (sanitized) addCall(sanitized);
-                     else this.parseErrors.push({ chars: raw.length, reason: 'tool input ditolak oleh sanitizer' });
-                 }
-             }
-             if (!foundToolName) {
-                 this.parseErrors.push({ chars: raw.length, reason: 'JSON must include a tool field or a string name' });
-             }
-         }
 
          for (const raw of this.dsmlToolBlocks) {
              const parsed = parseDsmlToolBlock(raw);

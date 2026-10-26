@@ -6,7 +6,7 @@ A local gateway that exposes an **Anthropic Messages API-compatible** interface 
 
 ## Project positioning and policy risks
 
-`deepseek-super` is an experimental compatibility gateway for people who specifically want to use their signed-in DeepSeek web session through Anthropic Messages API-style clients and agent tools. It does not expose DeepSeek's underlying model directly or implement Anthropic's native tool protocol. It translates requests into prompt instructions, automates the website with Playwright, reads the response from the UI, asks DeepSeek for DSML tool-call markup, and maps parsed calls to Anthropic-style responses. Legacy `<TOOL_CALL>` JSON remains supported as a compatibility fallback.
+`deepseek-super` is an experimental compatibility gateway for people who specifically want to use their signed-in DeepSeek web session through Anthropic Messages API-style clients and agent tools. It does not expose DeepSeek's underlying model directly or implement Anthropic's native tool protocol. It translates requests into prompt instructions, automates the website with Playwright, reads the response from the UI, asks DeepSeek for DSML tool-call markup, and maps parsed calls to Anthropic-style responses. Legacy `<TOOL_CALL>` JSON wrappers are deliberately rejected and trigger DSML-format recovery instead of being parsed as tool calls.
 
 **This approach may conflict with DeepSeek's web-service terms.** The [current DeepSeek Terms of Use](https://cdn.deepseek.com/policies/en-US/deepseek-terms-of-use.html) (last updated March 27, 2026) include restrictions in Section 3.5 concerning copying/capturing service content and using robots, spiders, or other automated setups. This project uses browser automation, so users should review the terms and obtain any needed permission before use or redistribution. This README is a technical disclosure, not legal advice or a determination that a specific use is permitted. CAPTCHA, rate limits, account restrictions, or UI changes may interrupt operation.
 
@@ -300,7 +300,7 @@ HTTP compatibility with the Anthropic SDK does not imply full semantic support f
 
 ### Tool-call and browser recovery
 
-The gateway prompts DeepSeek to emit DSML calls using `<｜DSML｜ calls>`, `<｜DSML｜ invoke>`, and `<｜DSML｜ parameter>` blocks. String parameters are read as raw text with `string="true"`; non-string values are parsed as JSON with `string="false"`. The parser accepts DeepSeek V4 `tool_calls` and V4.1 `calls` spellings, and retains the legacy `<TOOL_CALL>` JSON wrapper as a fallback. Parsed tool names and arguments are then validated against the schemas supplied by the client using common JSON Schema constraints (types, required/properties, additional properties, enum/const, arrays, and common string/number bounds). This is a deliberately limited validator, not a complete implementation of every JSON Schema keyword. Multi-tool responses are validated as a whole before tool blocks are emitted, so a partially invalid batch is not forwarded. Malformed or schema-invalid output receives a bounded correction attempt; if recovery fails, the gateway returns an upstream API error rather than disguising the failure as a successful \`end_turn\`.
+The gateway prompts DeepSeek to emit DSML calls using `<｜DSML｜ calls>`, `<｜DSML｜ invoke>`, and `<｜DSML｜ parameter>` blocks. String parameters are read as raw text with `string="true"`; non-string values are parsed as JSON with `string="false"`. The parser accepts DeepSeek V4 `tool_calls` and V4.1 `calls` spellings, and rejects legacy `<TOOL_CALL>` JSON wrappers rather than treating them as tool calls. Parsed tool names and arguments are then validated against the schemas supplied by the client using common JSON Schema constraints (types, required/properties, additional properties, enum/const, arrays, and common string/number bounds). This is a deliberately limited validator, not a complete implementation of every JSON Schema keyword. Multi-tool responses are validated as a whole before tool blocks are emitted, so a partially invalid batch is not forwarded. Malformed or schema-invalid output receives a bounded correction attempt; if recovery fails, the gateway returns an upstream API error rather than disguising the failure as a successful \`end_turn\`.
 
 At 41 or more conversation messages, the gateway starts a fresh DeepSeek browser thread and builds a bounded replay instead of continuing to grow the existing browser thread. The replay truncation limit is character-based, not a model-token limit; the latest request and tool schemas are placed near the replay tail to improve their chance of being retained. Oversized individual tool results retain both their beginning and ending, with an explicit truncation marker.
 
@@ -410,7 +410,7 @@ https://chat.deepseek.com/ (DeepSeek web UI)
         |
         | assistant text is read back from the page
         v
-Parser converts DeepSeek DSML calls (with legacy <TOOL_CALL> JSON fallback) to Anthropic-style tool_use
+Parser converts DeepSeek DSML calls to JSON argument objects and Anthropic-style tool_use
         |
         v
 Client/agent executes its own tools and sends tool_result back
@@ -477,7 +477,7 @@ deepseek-super/
 │   ├── config.js              # Environment variables and defaults
 │   ├── content.js             # Message-block normalization and session keys
 │   ├── prompts.js             # Prompt building, tool_choice, and tool schemas
-│   ├── tool-parser.js         # Streaming DSML and legacy tool-call parsing
+│   ├── tool-parser.js         # Streaming DSML parsing and normalization
 │   ├── session-store.js       # Conversation URL cache
 │   ├── browser.js             # Playwright, polling, and browser turn runner
 │   ├── turn-state.js          # Turn state detection
@@ -502,7 +502,7 @@ For normal shutdown when using `createServer()` directly, close the HTTP server 
 
 ## Troubleshooting tool calls
 
-If DeepSeek generates invalid DSML tool markup or a malformed legacy JSON block inside `<TOOL_CALL>`, the gateway sends up to two correction prompts in the same conversation, using DSML for the recovery format. The parser processes only the newest assistant response, not the user message that was just added to the UI. Logs record the payload length, whether the block was truncated, and the parsing failure reason.
+If DeepSeek generates invalid DSML markup or attempts the disallowed legacy `<TOOL_CALL>` JSON wrapper, the gateway sends up to two correction prompts in the same conversation. Recovery prompts require DSML and never parse or forward legacy-format calls. The parser processes only the newest assistant response, not the user message that was just added to the UI. Logs record the payload length, whether the block was truncated, and the parsing failure reason.
 
 For one diagnostic session, start the server with `DEBUG_TOOL_PARSER=1` to log an initial excerpt of a malformed payload. This excerpt may contain shell commands or prompt content. Keep these logs private and disable the flag after diagnosis.
 

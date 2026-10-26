@@ -25,6 +25,11 @@ const { ensurePage: defaultEnsurePage, ensureTogglesOn: defaultEnsureTogglesOn, 
 const { getSession: defaultGetSession, setSession: defaultSetSession } = require('./session-store');
 const { StreamSink } = require('./sse-sink');
 const { jsonError } = require('./http-utils');
+
+function containsToolMarkup(value) {
+  return typeof value === 'string' &&
+    /<\s*(?:TOOL_CALL\b|[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls|invoke|parameter)\b)/i.test(value);
+}
 const { estimateInputTokens, estimateOutputTokens } = require('./anthropic-contract');
 
 function detectToolLoop(messages, threshold = 3) {
@@ -177,7 +182,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
     thinking = out.thinking;
     toolCalls = out.toolCalls;
 
-    const hasRawToolCall = out.invalidToolCall || (answer || '').toLowerCase().includes('<tool_call>');
+    let hasRawToolCall = out.invalidToolCall || containsToolMarkup(answer);
     if (force.mode === 'none' && (hasRawToolCall || toolCalls.length > 0)) {
       console.warn('[tool-recovery] model ignored the no-tool policy; requesting one text-only recovery');
       const textOnlyPrompt = [
@@ -191,7 +196,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
       const recovery = await runTurn(textOnlyPrompt, dummySink, true, isCancelled);
       abortIfCancelled();
       const recoveryHasToolMarkup = recovery.invalidToolCall ||
-        (recovery.text || '').toLowerCase().includes('<tool_call>');
+        containsToolMarkup(recovery.text);
       if (recovery.toolCalls.length > 0 || recoveryHasToolMarkup || !(recovery.text || '').trim()) {
         throw createToolCallRecoveryError(
           'DeepSeek continued to emit tool-call output despite a text-only recovery request. No tool was forwarded.',
@@ -201,6 +206,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
       answer = recovery.text;
       thinking = recovery.thinking;
       toolCalls = [];
+      hasRawToolCall = false;
     }
 
     let validation = toolCalls.length > 0
@@ -220,7 +226,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
       const maxRetries = 2;
       let recovered = false;
       let recoveryIssue = validation.error ||
-        'The previous tool-call JSON was malformed or incomplete.';
+        'The previous DSML tool-call markup was malformed or incomplete.';
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         console.warn('[retry] attempt=' + attempt + '/' + maxRetries +
           ' — repairing tool-call output: ' + recoveryIssue);
@@ -249,13 +255,13 @@ async function handleMessages(req, res, body, dependencies = {}) {
         toolCalls = retry.toolCalls;
 
         const retryHasRawToolCall = retry.invalidToolCall ||
-          (answer || '').toLowerCase().includes('<tool_call>');
+          containsToolMarkup(answer);
         validation = retry.invalidToolCall
           ? { valid: false, error: 'The retry returned a partially malformed or invalid tool-call batch.' }
           : toolCalls.length > 0
             ? validateToolCallsForChoice(toolCalls, tools, force)
             : { valid: false, error: retryHasRawToolCall
-                ? 'The retried tool-call JSON is still malformed or incomplete.'
+                ? 'The retried DSML tool-call markup is still malformed or incomplete.'
                 : 'The retry did not return a tool call.' };
 
         if (toolCalls.length > 0 && validation.valid && !retry.invalidToolCall) {
