@@ -124,6 +124,9 @@ test('tool prompts clearly request DeepSeek Search mode and prohibit fabricated 
   const oneFetchTurn = buildDeepSeekWebFetchTurnPrompt('https://nodejs.org/en/download', 1, 3);
   assert.match(oneFetchTurn, /Inspect only this exact public URL/i);
   assert.match(oneFetchTurn, /https:\/\/nodejs\.org\/en\/download/);
+  assert.match(oneFetchTurn, /literal fields on separate lines/i);
+  assert.match(oneFetchTurn, /Fact:/);
+  assert.match(oneFetchTurn, /Status: OPENED/);
 });
 
 test('continuation prompt feeds internal results back as tool results and retains tool schemas', () => {
@@ -419,6 +422,43 @@ test('search batch reports explicit NO_SOURCES_FOUND when Search exposes no rend
     runTurn: async () => ({ text: 'NO_RESULT', sourceLinks: [], toolCalls: [], invalidToolCall: false }),
   });
   assert.match(result.result, /^NO_SOURCES_FOUND:/);
+});
+
+test('isolated Fetch retries once when the response omits required structured fact fields', async () => {
+  const url = 'https://nodejs.org/en/download';
+  const prompts = [];
+  const result = await executeDeepSeekWebTool({
+    name: DEEPSEEK_WEB_FETCH,
+    input: { url },
+  }, {
+    ensureTogglesOn: async () => {
+      throw new Error('the isolated executor must manage Search toggles');
+    },
+    runTurn: async () => {
+      throw new Error('the regular chat runner must not be used');
+    },
+    runIsolatedTurn: async (prompt) => {
+      prompts.push(prompt);
+      if (prompts.length === 1) {
+        return {
+          text: 'Status: OPENED\nRequested URL: ' + url + '\nTitle: Node.js downloads\nSummary: The download page describes current installers.',
+          sourceLinks: [],
+          toolCalls: [],
+          invalidToolCall: false,
+        };
+      }
+      return {
+        text: 'Status: OPENED\nRequested URL: ' + url + '\nTitle: Node.js downloads\nFact: Official downloads are provided for supported operating systems.\nSummary: The page provides Node.js installers.',
+        sourceLinks: [],
+        toolCalls: [],
+        invalidToolCall: false,
+      };
+    },
+  });
+
+  assert.equal(prompts.length, 2);
+  assert.match(prompts[1], /PLAIN-TEXT WEB RESULT RECOVERY/);
+  assert.match(result.result, /Fact: Official downloads/);
 });
 
 test('fetch batch inspects each exact URL in a separate turn', async () => {
