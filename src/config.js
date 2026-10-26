@@ -84,7 +84,7 @@ const POLL_MS = readIntegerEnv('POLL_MS', 200, 50, 5000);
 const STABLE_MS = readIntegerEnv('STABLE_MS', 4000, 500, 60000);
 const MAX_TURN_MS = readIntegerEnv('MAX_TURN_MS', 300000, 1000, 3600000);
 const HOLD_CHARS = 10;
-const MAX_REPLAY = readIntegerEnv('MAX_REPLAY', 60000, 1024, 1000000);
+const MAX_REPLAY = readIntegerEnv('MAX_REPLAY', 60000, 8192, 1000000);
 const SESSION_TTL = 30 * 60 * 1000;
 const MAX_PENDING_TURNS = readIntegerEnv('MAX_PENDING_TURNS', 8, 1, 64);
 
