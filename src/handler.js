@@ -32,8 +32,8 @@ function isConversationTooLong(messages) {
 
 // Reuse the saved DeepSeek thread for every continuation, including tool_result
 // turns. A tool result is a continuation of the same assistant turn, not a new chat.
-function shouldResumeSession(cached, messages) {
-  return Boolean(cached && Array.isArray(messages) && messages.length > 1);
+function shouldResumeSession(cached, messages, forceFresh = false) {
+  return Boolean(!forceFresh && cached && Array.isArray(messages) && messages.length > 1);
 }
 
 async function handleMessages(req, res, body) {
@@ -100,7 +100,7 @@ async function handleMessages(req, res, body) {
     abortIfCancelled();
 
     let resumed = false;
-    if (shouldResumeSession(cached, messages) && !conversationTooLong) {
+    if (shouldResumeSession(cached, messages, conversationTooLong)) {
       try {
         resumed = await resumeUrl(cached.url);
       } catch (error) {
