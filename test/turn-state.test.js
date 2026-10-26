@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback } = require('../src/turn-state');
+const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, isIdleCompletionCandidate } = require('../src/turn-state');
 
 test('a user-message count increase alone is not a fresh assistant response', () => {
   assert.equal(hasNewAssistantResponse({ answerKey: 'assistant-1', answer: 'bad output', count: 4 }, { answerKey: 'assistant-1', answer: 'bad output', count: 5 }), false);
@@ -50,4 +50,18 @@ test('stable fallback waits longer and is disabled when a completion signal is a
   assert.equal(shouldUseStableFallback(unavailable, false, 4000, 2000), true);
   assert.equal(shouldUseStableFallback({ completionSignalAvailable: true }, false, 9000, 2000), false);
   assert.equal(shouldUseStableFallback(unavailable, true, 9000, 2000), false);
+});
+
+
+test('idle completion can be inferred from available UI controls after a stable interval', () => {
+  const complete = {
+    completionSignalAvailable: true,
+    isGenerating: false,
+    sendButtonEnabled: true,
+  };
+  assert.equal(isIdleCompletionCandidate(complete, false, 3999, 2000), false);
+  assert.equal(isIdleCompletionCandidate(complete, false, 4000, 2000), true);
+  assert.equal(isIdleCompletionCandidate({ ...complete, isGenerating: true }, false, 9000, 2000), false);
+  assert.equal(isIdleCompletionCandidate({ ...complete, sendButtonEnabled: false }, false, 9000, 2000), false);
+  assert.equal(isIdleCompletionCandidate(complete, true, 9000, 2000), false);
 });
