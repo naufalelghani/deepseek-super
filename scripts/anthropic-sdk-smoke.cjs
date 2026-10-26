@@ -339,7 +339,7 @@ async function main() {
   console.log('PASS DeepSeekWebFetch SDK: 3/3 URLs with titles and facts');
 
   } else {
-    console.log('\nSKIP DeepSeek web-tool tests: the selected endpoint is not this repository's local gateway.');
+    console.log("\nSKIP DeepSeek web-tool tests: the selected endpoint is not this repository's local gateway.");
   }
 
   console.log('\nALL SDK AND DEEPSEEK WEB-TOOL SMOKE TESTS PASSED');
