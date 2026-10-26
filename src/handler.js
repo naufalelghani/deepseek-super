@@ -5,8 +5,8 @@ const { blocksOf, sessionKey, renderMessage, truncateReplay } = require('./conte
 const { buildFullPrompt, buildResumePrompt, parseToolChoice, applyForcedTool } = require('./prompts');
 const { createToolCallRecoveryError } = require('./tool-recovery');
 const { validateToolCalls } = require('./tool-validation');
-const { ensurePage, ensureTogglesOn, resumeUrl, gotoNewChat, runTurn, currentUrl, locked } = require('./browser');
-const { getSession, setSession } = require('./session-store');
+const { ensurePage: defaultEnsurePage, ensureTogglesOn: defaultEnsureTogglesOn, resumeUrl: defaultResumeUrl, gotoNewChat: defaultGotoNewChat, runTurn: defaultRunTurn, currentUrl: defaultCurrentUrl, locked: defaultLocked } = require('./browser');
+const { getSession: defaultGetSession, setSession: defaultSetSession } = require('./session-store');
 const { StreamSink } = require('./sse-sink');
 const { jsonError } = require('./http-utils');
 const { estimateInputTokens, estimateOutputTokens } = require('./anthropic-contract');
@@ -37,7 +37,16 @@ function shouldResumeSession(cached, messages, forceFresh = false) {
   return Boolean(!forceFresh && cached && Array.isArray(messages) && messages.length > 1);
 }
 
-async function handleMessages(req, res, body) {
+async function handleMessages(req, res, body, dependencies = {}) {
+  const ensurePage = dependencies.ensurePage || defaultEnsurePage;
+  const ensureTogglesOn = dependencies.ensureTogglesOn || defaultEnsureTogglesOn;
+  const resumeUrl = dependencies.resumeUrl || defaultResumeUrl;
+  const gotoNewChat = dependencies.gotoNewChat || defaultGotoNewChat;
+  const runTurn = dependencies.runTurn || defaultRunTurn;
+  const currentUrl = dependencies.currentUrl || defaultCurrentUrl;
+  const locked = dependencies.locked || defaultLocked;
+  const getSession = dependencies.getSession || defaultGetSession;
+  const setSession = dependencies.setSession || defaultSetSession;
   let clientDisconnected = false;
   const onResponseClose = () => {
     if (!res.writableEnded) clientDisconnected = true;
