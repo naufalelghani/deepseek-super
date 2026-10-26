@@ -325,10 +325,13 @@ async function executeDeepSeekWebTool(call, dependencies) {
   const input = normalizeWebToolInput(call);
   const setSearchEnabled = dependencies && dependencies.ensureTogglesOn;
   const runTurn = dependencies && dependencies.runTurn;
+  const runIsolatedTurn = dependencies && dependencies.runIsolatedTurn;
+  const useIsolatedTurns = typeof runIsolatedTurn === 'function';
+  const performTurn = useIsolatedTurns ? runIsolatedTurn : runTurn;
   const sink = dependencies && dependencies.sink;
   const isCancelled = dependencies && dependencies.isCancelled;
 
-  if (typeof setSearchEnabled !== 'function' || typeof runTurn !== 'function') {
+  if (typeof setSearchEnabled !== 'function' || typeof performTurn !== 'function') {
     throw new TypeError('DeepSeek web tool execution requires toggle and runTurn dependencies.');
   }
 
@@ -346,7 +349,11 @@ async function executeDeepSeekWebTool(call, dependencies) {
   let result = '';
   let operationError = null;
   try {
-    await setInternalSearchMode(true);
+    // Production runs each native Search turn in a clean temporary chat. This
+    // prevents the original gateway prompt (which advertises DSML tools) from
+    // causing DeepSeek to call the gateway tool again recursively. Keep the
+    // original toggle lifecycle for tests and custom adapters without isolation.
+    if (!useIsolatedTurns) await setInternalSearchMode(true);
     if (call.name === DEEPSEEK_WEB_SEARCH) {
       const queries = [input.query, ...(input.additional_queries || [])];
       const sites = input.sites || [];
@@ -358,10 +365,10 @@ async function executeDeepSeekWebTool(call, dependencies) {
       const seenUrls = new Set();
 
       for (let index = 0; index < plan.length; index++) {
-        if (index > 0) await setInternalSearchMode(true);
+        if (index > 0 && !useIsolatedTurns) await setInternalSearchMode(true);
         const item = plan[index];
         const prompt = buildDeepSeekWebSearchTurnPrompt(item.query, item.site, index + 1, plan.length);
-        const output = await runTurn(prompt, sink, true, isCancelled || (() => false), true);
+        const output = await performTurn(prompt, sink, true, isCancelled || (() => false), true);
         assertPlainTurnOutput(output);
         const rawLinks = getTurnLinks(output).filter((link) =>
           link && typeof link.url === 'string' && /^https?:\/\//i.test(link.url)
@@ -407,10 +414,10 @@ async function executeDeepSeekWebTool(call, dependencies) {
       const urls = [input.url, ...(input.additional_urls || [])];
       const sections = [];
       for (let index = 0; index < urls.length; index++) {
-        if (index > 0) await setSearchEnabled(false);
+        if (index > 0 && !useIsolatedTurns) await setInternalSearchMode(true);
         const url = urls[index];
         const prompt = buildDeepSeekWebFetchTurnPrompt(url, index + 1, urls.length);
-        const output = await runTurn(prompt, sink, true, isCancelled || (() => false), true);
+        const output = await performTurn(prompt, sink, true, isCancelled || (() => false), true);
         assertPlainTurnOutput(output);
         sections.push([
           '--- Page inspection ' + (index + 1) + ' of ' + urls.length + ' ---',
@@ -425,11 +432,13 @@ async function executeDeepSeekWebTool(call, dependencies) {
     throw error;
   } finally {
     // Restore Search OFF before the model resumes tool planning or answers the user.
-    try {
-      await setInternalSearchMode(false);
-    } catch (restoreError) {
-      if (!operationError) throw restoreError;
-      console.warn('[DeepSeekWebTool] Search OFF restoration also failed: ' + (restoreError.message || String(restoreError)));
+    if (!useIsolatedTurns) {
+      try {
+        await setInternalSearchMode(false);
+      } catch (restoreError) {
+        if (!operationError) throw restoreError;
+        console.warn('[DeepSeekWebTool] Search OFF restoration also failed: ' + (restoreError.message || String(restoreError)));
+      }
     }
   }
 
