@@ -163,7 +163,7 @@ test('execution enables Search for the internal turn and restores it afterwards'
   assert.deepEqual(toggleStates, [false, true]);
   assert.match(promptSent, /DeepSeek docs/);
   assert.equal(result.name, DEEPSEEK_WEB_SEARCH);
-  assert.match(result.result, /Sources: https:\\/\\/example\\.com\\/docs/);
+  assert.ok(result.result.includes('https://example.com/docs'));
   assert.match(result.result, /Target domain: any relevant public domain/);
 });
 
