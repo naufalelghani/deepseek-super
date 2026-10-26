@@ -2,7 +2,8 @@
 
 const { MODEL_NAME, MAX_REPLAY, sha, uuid } = require('./config');
 const { blocksOf, sessionKey, renderMessage, truncateReplay } = require('./content');
-const { buildFullPrompt, buildResumePrompt, parseToolChoice, applyForcedTool, synthesizeToolCall } = require('./prompts');
+const { buildFullPrompt, buildResumePrompt, parseToolChoice, applyForcedTool } = require('./prompts');
+const { createToolCallRecoveryError } = require('./tool-recovery');
 const { ensurePage, ensureTogglesOn, resumeUrl, gotoNewChat, runTurn, currentUrl, locked } = require('./browser');
 const { getSession, setSession } = require('./session-store');
 const { StreamSink } = require('./sse-sink');
@@ -146,7 +147,14 @@ async function handleMessages(req, res, body) {
     toolCalls = out.toolCalls;
 
     const hasRawToolCall = out.invalidToolCall || (answer || '').toLowerCase().includes('<tool_call>');
-    if (hasRawToolCall && toolCalls.length === 0 && tools.length > 0) {
+    if (hasRawToolCall && toolCalls.length === 0) {
+      if (tools.length === 0) {
+        throw createToolCallRecoveryError(
+          'DeepSeek emitted malformed tool-call markup, but this request did not provide any tools.',
+          0
+        );
+      }
+
       const maxRetries = 2;
       let recoveredByRetry = false;
       for (let attempt = 1; attempt <= maxRetries && toolCalls.length === 0; attempt++) {
@@ -163,7 +171,7 @@ async function handleMessages(req, res, body) {
           attempt === 1
             ? 'Correct the format only; preserve the intent and arguments of the original task.'
             : 'Final recovery attempt: do not copy the previous output. Rebuild the simplest arguments that still complete the original task.'
-        ].join('\n');
+        ].join('\\n');
         // Use a dummy sink so failed retry output is not leaked or duplicated in the SSE stream.
         const retry = await runTurn(retryPrompt, dummySink, useBuffer, isCancelled);
         abortIfCancelled();
@@ -180,19 +188,28 @@ async function handleMessages(req, res, body) {
       if (recoveredByRetry && sink) {
         for (const tool of toolCalls) sink.toolBlock(tool.name, tool.input);
       } else if (!recoveredByRetry) {
-        console.error('[retry] both attempts failed; falling back to text so the client does not receive an empty response');
-        answer = answer || 'DeepSeek could not produce valid tool-call JSON after two correction attempts. Please retry the request.';
-        if (sink) sink.emitText(answer);
+        console.error('[retry] exhausted; returning an explicit gateway error instead of a false end_turn');
+        throw createToolCallRecoveryError(
+          'DeepSeek could not produce valid tool-call JSON after ' + maxRetries + ' recovery attempts. Retry the request or simplify the tool arguments.',
+          maxRetries
+        );
       }
     }
 
     if (force.mode !== 'auto' && force.mode !== 'none' && toolCalls.length === 0) {
-      const synthesized = synthesizeToolCall(force, tools);
-      if (synthesized) {
-        console.warn('[force-tool] synthesized tool call:', synthesized.name, JSON.stringify(synthesized.input));
-        toolCalls = [synthesized];
-        if (sink) sink.toolBlock(synthesized.name, synthesized.input);
-      }
+      throw createToolCallRecoveryError(
+        'DeepSeek did not return the tool call required by tool_choice=' + force.mode + '.',
+        0
+      );
+    }
+
+    const declaredToolNames = new Set(tools.map((tool) => tool.name));
+    const undeclaredTool = toolCalls.find((tool) => !declaredToolNames.has(tool.name));
+    if (undeclaredTool) {
+      throw createToolCallRecoveryError(
+        'DeepSeek returned an undeclared tool name: ' + undeclaredTool.name + '. The call was not forwarded to the client.',
+        0
+      );
     }
 
     abortIfCancelled();
