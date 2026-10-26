@@ -134,7 +134,7 @@ async function main() {
 
   console.log('\nALL DEEPSEEK WEB-TOOL SMOKE TESTS PASSED');
   console.log('For routing confirmation, inspect the gateway terminal for parsed DeepSeekWebSearch / DeepSeekWebFetch calls.');
-  console.log('The batch runs in one Search-enabled browser turn per internal tool call; it is not parallel HTTP fetching.');
+  console.log('Each query/domain pair and each URL is inspected in its own sequential Search-enabled browser turn; the batch is not parallel HTTP fetching.');
 }
 
 main().catch((error) => {
