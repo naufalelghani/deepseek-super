@@ -97,7 +97,7 @@ test('tool prompts clearly request DeepSeek Search mode and prohibit fabricated 
   assert.match(searchPrompt, /target domain: nodejs\.org latest release/i);
   assert.match(searchPrompt, /target domain: github\.com release history/i);
   assert.doesNotMatch(searchPrompt, /site:nodejs\.org latest release/);
-  assert.match(searchPrompt, /up to 3 distinct source entries/);
+  assert.match(searchPrompt, /Maximum source entries across this batch: 3/);
   assert.match(searchPrompt, /Never fabricate URLs, source titles/);
 
   const fetchPrompt = buildDeepSeekWebToolPrompt({
@@ -140,6 +140,7 @@ test('continuation prompt feeds internal results back as tool results and retain
   assert.match(prompt, /Source: https:\/\/example\.com/);
   assert.match(prompt, /Bash\(command\*?: string\)/);
   assert.match(prompt, /CONTINUE THE ORIGINAL USER TASK/i);
+  assert.match(prompt, /do not call DeepSeekWebFetch merely to replace the missing search evidence/i);
 });
 
 test('execution enables Search for the internal turn and restores it afterwards', async () => {
@@ -162,7 +163,8 @@ test('execution enables Search for the internal turn and restores it afterwards'
   assert.deepEqual(toggleStates, [false, true]);
   assert.match(promptSent, /DeepSeek docs/);
   assert.equal(result.name, DEEPSEEK_WEB_SEARCH);
-  assert.equal(result.result, 'Sources: https://example.com/docs');
+  assert.match(result.result, /Sources: https:\\/\\/example\\.com\\/docs/);
+  assert.match(result.result, /Target domain: any relevant public domain/);
 });
 
 test('execution rejects tool markup from a Search-mode result but still restores Search OFF', async () => {
