@@ -44,12 +44,14 @@ test('explicit UI completion requires a known signal, no active generation, and 
 });
 
 
-test('stable fallback waits longer and is disabled when a completion signal is available or generation was observed', () => {
+test('stable fallback waits longer and defers to available completion controls', () => {
   const unavailable = { completionSignalAvailable: false };
   assert.equal(shouldUseStableFallback(unavailable, false, 3999, 2000), false);
   assert.equal(shouldUseStableFallback(unavailable, false, 4000, 2000), true);
   assert.equal(shouldUseStableFallback({ completionSignalAvailable: true }, false, 9000, 2000), false);
   assert.equal(shouldUseStableFallback(unavailable, true, 9000, 2000), false);
+  assert.equal(shouldUseStableFallback({ completionSignalAvailable: false, isGenerating: false }, true, 4000, 2000), true);
+  assert.equal(shouldUseStableFallback({ completionSignalAvailable: false, isGenerating: true }, true, 9000, 2000), false);
 });
 
 
