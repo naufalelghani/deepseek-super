@@ -28,25 +28,66 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
  }
 
  async function ensurePage() {
-     if (page) return;
+     if (page && !page.isClosed()) return;
+
      if (!initPromise) {
          initPromise = (async() => {
-             ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
+             // A page can close while its persistent context remains healthy.
+             // Prefer reviving that context before launching another Chrome instance.
+             if (ctx) {
+                 try {
+                     const candidate = ctx.pages().find((p) => !p.isClosed()) || await ctx.newPage();
+                     await candidate.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded' });
+                     const candidateTextarea = candidate.locator('textarea[placeholder="Message DeepSeek"]');
+                     await candidateTextarea.waitFor({ state: 'visible', timeout: 60000 });
+                     page = candidate;
+                     textarea = candidateTextarea;
+                     return;
+                 } catch (error) {
+                     try { await ctx.close(); } catch (closeError) {}
+                     ctx = null;
+                     page = null;
+                     textarea = null;
+                 }
+             }
+
+             const newContext = await chromium.launchPersistentContext(PROFILE_DIR, {
                  headless: false,
                  channel: 'chrome',
                  viewport: { width: 1280, height: 900 },
                  args: ['--disable-blink-features=AutomationControlled'],
                  ignoreDefaultArgs: ['--enable-automation'],
              });
-             page = ctx.pages()[0] || (await ctx.newPage());
-             await page.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded' });
-             textarea = page.locator('textarea[placeholder="Message DeepSeek"]');
-             await textarea.waitFor({ state: 'visible', timeout: 60000 });
+
+             try {
+                 const newPage = newContext.pages()[0] || await newContext.newPage();
+                 await newPage.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded' });
+                 const newTextarea = newPage.locator('textarea[placeholder="Message DeepSeek"]');
+                 await newTextarea.waitFor({ state: 'visible', timeout: 60000 });
+                 ctx = newContext;
+                 page = newPage;
+                 textarea = newTextarea;
+             } catch (error) {
+                 try { await newContext.close(); } catch (closeError) {}
+                 throw error;
+             }
          })();
      }
-     await initPromise;
- }
 
+     const pending = initPromise;
+     try {
+         await pending;
+     } catch (error) {
+         if (initPromise === pending) initPromise = null;
+         throw error;
+     }
+
+     // A close can race with initialization completing. Do not return a stale handle.
+     if (!page || page.isClosed()) {
+         if (initPromise === pending) initPromise = null;
+         return ensurePage();
+     }
+ }
  async function ensureTogglesOn(toolsProvided) {
      await page.evaluate((n) => {
          const aria = 'aria-pressed';
