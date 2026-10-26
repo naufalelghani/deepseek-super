@@ -111,9 +111,9 @@ async function handleMessages(req, res, body) {
       }
     }
 
-    let prompt;
+    let untruncatedPrompt;
     if (resumed) {
-      prompt = buildResumePrompt(system, messages, tools, lastHasToolResult);
+      untruncatedPrompt = buildResumePrompt(system, messages, tools, lastHasToolResult);
     } else {
       if (cached) {
         console.warn(conversationTooLong
@@ -121,15 +121,16 @@ async function handleMessages(req, res, body) {
           : '[session] cached conversation unavailable; creating a new conversation');
       }
       await gotoNewChat();
-      const untruncatedPrompt = buildFullPrompt(system, messages, tools);
-      if (untruncatedPrompt.length > MAX_REPLAY) {
-        console.warn('[prompt-truncate] input_chars=' + untruncatedPrompt.length +
-          ' cap_chars=' + MAX_REPLAY +
-          ' omitted_chars=' + (untruncatedPrompt.length - MAX_REPLAY) +
-          '; the replay includes an explicit warning marker');
-      }
-      prompt = truncateReplay(untruncatedPrompt);
+      untruncatedPrompt = buildFullPrompt(system, messages, tools);
     }
+
+    if (untruncatedPrompt.length > MAX_REPLAY) {
+      console.warn('[prompt-truncate] input_chars=' + untruncatedPrompt.length +
+        ' cap_chars=' + MAX_REPLAY +
+        ' omitted_chars=' + (untruncatedPrompt.length - MAX_REPLAY) +
+        '; the replay includes an explicit warning marker');
+    }
+    let prompt = truncateReplay(untruncatedPrompt);
     prompt = applyForcedTool(prompt, force);
     abortIfCancelled();
 
