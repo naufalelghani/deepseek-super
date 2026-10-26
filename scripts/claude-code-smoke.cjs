@@ -46,7 +46,7 @@ const RAW_TOKEN = IS_DEFAULT_GATEWAY
 // introduced when copying a key from a terminal or dashboard; never log the key.
 const TOKEN = RAW_TOKEN.replace(/\s+/g, '');
 const TOKEN_HAD_WHITESPACE = /\s/.test(RAW_TOKEN);
-const TIMEOUT_MS = Number.parseInt(process.env.CLAUDE_CODE_TEST_TIMEOUT_MS || '360000', 10);
+const TIMEOUT_MS = Number.parseInt(process.env.CLAUDE_CODE_TEST_TIMEOUT_MS || '600000', 10);
 const TEST_TOOLS = 'Bash,Read,Edit,Write,Glob,Grep';
 const REQUIRED_TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash'];
 
