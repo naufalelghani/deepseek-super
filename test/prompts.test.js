@@ -143,3 +143,28 @@ test('project identity and first-user-language policy are included in every prom
     assert.ok(prompt.includes('https://chat.deepseek.com/'));
   }
 });
+
+
+test('truncated long replay retains tool schemas and the latest user request', () => {
+  const { truncateReplay } = require('../src/content');
+  const messages = Array.from({ length: 24 }, (_, index) => ({
+    role: index % 2 === 0 ? 'user' : 'assistant',
+    content: 'HISTORY_' + index + '_' + 'x'.repeat(5000),
+  }));
+  messages.push({ role: 'user', content: 'LATEST_REQUEST_MARKER: continue the task with Bash.' });
+
+  const tools = [{
+    name: 'Bash',
+    description: 'Run shell commands',
+    input_schema: {
+      type: 'object',
+      properties: { command: { type: 'string' } },
+      required: ['command'],
+    },
+  }];
+
+  const replay = truncateReplay(buildFullPrompt('system instructions', messages, tools));
+  assert.match(replay, /Bash\(command\*: string/);
+  assert.match(replay, /LATEST_REQUEST_MARKER/);
+  assert.match(replay, /WARNING: conversation replay was truncated/);
+});
