@@ -186,37 +186,11 @@ function applyForcedTool(prompt, force) {
     return prompt;
 }
 
-function synthesizeToolCall(force, tools) {
-    const makeInput = (spec) => {
-        const input = {};
-        const properties = (spec.input_schema && spec.input_schema.properties) || {};
-        for (const key of Object.keys(properties)) {
-            const type = properties[key].type;
-            input[key] = type === 'number' ? 0 :
-                type === 'boolean' ? false :
-                type === 'array' ? [] :
-                type === 'object' ? {} : '';
-        }
-        return input;
-    };
-
-    if (force.mode === 'tool') {
-        const spec = tools.find((tool) => tool.name === force.name);
-        if (!spec) return null;
-        return { name: force.name, input: makeInput(spec) };
-    }
-    if (force.mode === 'any' && tools.length > 0) {
-        const spec = tools[0];
-        return { name: spec.name, input: makeInput(spec) };
-    }
-    return null;
-}
 
 module.exports = {
     toolsToPrompt,
     buildFullPrompt,
     buildResumePrompt,
     parseToolChoice,
-    applyForcedTool,
-    synthesizeToolCall
+    applyForcedTool
 };
