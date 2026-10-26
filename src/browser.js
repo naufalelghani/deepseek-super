@@ -177,11 +177,16 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
 
          const tEl = last ? last.querySelector('.ds-think-content .ds-markdown') : null;
          const aEl = last ? last.querySelector('.ds-assistant-message-main-content') : null;
+         const answerLinks = aEl ? Array.from(aEl.querySelectorAll('a[href]')).map((anchor) => ({
+             text: (anchor.innerText || anchor.getAttribute('aria-label') || anchor.getAttribute('title') || '').trim(),
+             url: anchor.href || anchor.getAttribute('href') || ''
+         })).filter((link) => /^https?:\/\//i.test(link.url)) : [];
          return {
              count: items.length,
              answerKey: last ? (last.getAttribute('data-virtual-list-item-key') || null) : null,
              think: tEl ? tEl.innerText : '',
              answer: aEl ? aEl.innerText : '',
+             answerLinks,
              isGenerating,
              sendButtonEnabled,
              completionSignalAvailable
@@ -292,7 +297,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      }
  }
 
- async function runTurn(prompt, sink, bufferText, isCancelled = () => false) {
+ async function runTurn(prompt, sink, bufferText, isCancelled = () => false, includeLinks = false) {
      const abortIfCancelled = async () => {
          if (!isCancelled()) return;
          await stopGenerationBestEffort();
@@ -322,6 +327,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
 
      let emittedAnswer = '';
      let emittedThink = '';
+     let uiAnswerLinks = [];
      let lastChange = Date.now();
      const start = Date.now();
      let sawNewMessage = false;
@@ -431,6 +437,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      // Flush the remaining text after the UI has reported completion.
      try {
          const fin = await readState();
+         if (includeLinks && Array.isArray(fin.answerLinks)) uiAnswerLinks = fin.answerLinks;
          if (fin.answer && fin.answer.startsWith(emittedAnswer) && fin.answer.length > emittedAnswer.length) {
              parser.feed(fin.answer.slice(emittedAnswer.length));
              emittedAnswer = fin.answer;
@@ -468,6 +475,23 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      // block to the handler. It must validate the complete tool batch before emitting
      // or forwarding any part of it, otherwise a failed recovery can leak partial output.
      if (sink && (thinkOpened || textOpened)) sink.stopBlock();
+
+     if (includeLinks && finalTools.length === 0 && uiAnswerLinks.length > 0) {
+         const seenLinks = new Set();
+         const uniqueLinks = uiAnswerLinks.filter((link) => {
+             const url = typeof link.url === 'string' ? link.url.trim() : '';
+             if (!/^https?:\/\//i.test(url) || seenLinks.has(url)) return false;
+             seenLinks.add(url);
+             return true;
+         }).slice(0, 20).map((link) => {
+             const url = link.url.trim();
+             const label = typeof link.text === 'string' && link.text ? link.text : url;
+             return '- ' + label + ': ' + url;
+         });
+         if (uniqueLinks.length > 0) {
+             finalText = [finalText, 'Links surfaced by the DeepSeek UI:\n' + uniqueLinks.join('\n')].filter(Boolean).join('\n\n');
+         }
+     }
 
      if (finalTools.length > 0) {
          console.log('[tool-parser] parsed tool call(s): ' + finalTools.map((t) => t.name).join(', '));
