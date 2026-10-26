@@ -105,7 +105,7 @@
      if (!tc || typeof tc.name !== 'string' || !tc.name.trim()) return null;
      if (tc.input !== undefined &&
          (tc.input === null || typeof tc.input !== 'object' || Array.isArray(tc.input))) return null;
-     const fixed = { name: tc.name, input: Object.assign({}, tc.input || {}) };
+     const fixed = { name: tc.name, input: { ...(tc.input || {}) } };
 
      // Fix Glob: prepend a wildcard when the pattern has no asterisk.
      if (fixed.name === 'Glob' && typeof fixed.input.pattern === 'string' && fixed.input.pattern.indexOf('*') < 0) {
