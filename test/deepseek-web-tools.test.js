@@ -168,6 +168,25 @@ test('execution enables Search for the internal turn and restores it afterwards'
   assert.match(result.result, /Target domain: any relevant public domain/);
 });
 
+
+test('execution fails fast when the browser cannot verify Search mode is enabled', async () => {
+  let runTurnCalled = false;
+  await assert.rejects(
+    executeDeepSeekWebTool({
+      name: DEEPSEEK_WEB_SEARCH,
+      input: { query: 'official docs' },
+    }, {
+      ensureTogglesOn: async () => false,
+      runTurn: async () => {
+        runTurnCalled = true;
+        return { text: 'unverified', sourceLinks: [], toolCalls: [], invalidToolCall: false };
+      },
+    }),
+    /Could not verify that DeepSeek Search mode is enabled/
+  );
+  assert.equal(runTurnCalled, false, 'must not claim to search if Search mode is disabled');
+});
+
 test('execution rejects tool markup from a Search-mode result but still restores Search OFF', async () => {
   const toggleStates = [];
   await assert.rejects(
