@@ -449,8 +449,11 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      let finalTools = parser.toolCalls();
      let finalText = parser.textOut;
      let extractionErrors = [];
-     if (finalTools.length === 0 && finalText) {
-         const ex = extractToolCallsFromText(finalText);
+     if (finalTools.length === 0 && (finalText || sawDsmlMarkup)) {
+         // Use the original text for malformed/naked DSML blocks: toolCalls() scrubs
+         // orphan protocol tags from user-facing text after its primary parse pass.
+         const extractionSource = sawDsmlMarkup ? rawFinalText : finalText;
+         const ex = extractToolCallsFromText(extractionSource);
          if (ex.calls.length > 0) finalTools = ex.calls;
          finalText = ex.text;
          extractionErrors = Array.isArray(ex.errors) ? ex.errors : [];
