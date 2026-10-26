@@ -158,3 +158,29 @@ test('handler consumes internal web calls but returns client-owned calls in a mi
   })), [{ name: 'Bash', input: { command: 'pwd' } }]);
   assert.equal(message.content.some((block) => block.name === DEEPSEEK_WEB_SEARCH), false);
 });
+
+
+test('tool_choice=none hides internal web tools and keeps Search disabled', async () => {
+  const response = new FakeResponse();
+  const toggleStates = [];
+  let promptText = '';
+  const runTurn = async (prompt) => {
+    promptText = prompt;
+    return {
+      text: 'Answering from the available context.',
+      thinking: '',
+      toolCalls: [],
+      invalidToolCall: false,
+    };
+  };
+
+  await handleMessages(makeRequest(), response, makeBody({ tool_choice: 'none' }), makeDependencies(runTurn, {
+    ensureTogglesOn: async (toolsProvided) => toggleStates.push(toolsProvided),
+  }));
+
+  const message = JSON.parse(response.output);
+  assert.deepEqual(toggleStates, [true]);
+  assert.doesNotMatch(promptText, /DeepSeekWebSearch|DeepSeekWebFetch/);
+  assert.equal(message.stop_reason, 'end_turn');
+  assert.match(message.content.find((block) => block.type === 'text').text, /available context/);
+});
