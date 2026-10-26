@@ -11,7 +11,7 @@ const { jsonError } = require('./http-utils');
 const { estimateInputTokens, estimateOutputTokens } = require('./anthropic-contract');
 
 function detectToolLoop(messages, threshold = 3) {
-  if (messages.length < threshold * 2 + 1) return false;
+  if (threshold < 1) return false;
   const signatures = [];
   for (const message of messages) {
     for (const block of blocksOf(message.content)) {
@@ -73,9 +73,10 @@ async function handleMessages(req, res, body) {
     console.warn('[loop-detect] three identical tool calls detected; forcing a text response');
     force = { mode: 'none' };
   }
-  if (isConversationTooLong(messages)) {
-    console.warn('[long-conv] message_count=' + messages.length + '; forcing a text response');
-    force = { mode: 'none' };
+  const conversationTooLong = isConversationTooLong(messages);
+  if (conversationTooLong) {
+    console.warn('[long-conv] message_count=' + messages.length +
+      '; starting a fresh DeepSeek thread with a bounded replay so tool use can continue');
   }
 
   const key = sessionKey(system, messages);
@@ -99,7 +100,7 @@ async function handleMessages(req, res, body) {
     abortIfCancelled();
 
     let resumed = false;
-    if (shouldResumeSession(cached, messages)) {
+    if (shouldResumeSession(cached, messages) && !conversationTooLong) {
       try {
         resumed = await resumeUrl(cached.url);
       } catch (error) {
@@ -115,7 +116,9 @@ async function handleMessages(req, res, body) {
       prompt = buildResumePrompt(system, messages, tools, lastHasToolResult);
     } else {
       if (cached) {
-        console.warn('[session] cached conversation unavailable; creating a new conversation');
+        console.warn(conversationTooLong
+          ? '[session] conversation exceeded the replay threshold; creating a fresh thread'
+          : '[session] cached conversation unavailable; creating a new conversation');
       }
       await gotoNewChat();
       const untruncatedPrompt = buildFullPrompt(system, messages, tools);
@@ -147,6 +150,12 @@ async function handleMessages(req, res, body) {
     toolCalls = out.toolCalls;
 
     const hasRawToolCall = out.invalidToolCall || (answer || '').toLowerCase().includes('<tool_call>');
+    if (force.mode === 'none' && (hasRawToolCall || toolCalls.length > 0)) {
+      throw createToolCallRecoveryError(
+        'DeepSeek attempted a tool call despite tool_choice=none or the gateway loop guard. The call was not forwarded.',
+        0
+      );
+    }
     if (hasRawToolCall && toolCalls.length === 0) {
       if (tools.length === 0) {
         throw createToolCallRecoveryError(
