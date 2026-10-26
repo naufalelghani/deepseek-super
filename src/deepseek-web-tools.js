@@ -206,11 +206,11 @@ function buildDeepSeekWebSearchTurnPrompt(query, site, turnIndex, turnCount) {
   return [
     '=== INTERNAL TOOL: DeepSeekWebSearch ===',
     'This is search batch item ' + turnIndex + ' of ' + turnCount + '. DeepSeek Search mode is enabled.',
-    'Perform exactly ONE focused web search in this turn. Do not answer from memory.',
-    'Search query: ' + JSON.stringify(query),
+    'Actually invoke DeepSeek Search/web search in the UI for this turn. Do not merely describe how to search and do not answer from memory.',
+    'Search request: ' + JSON.stringify(site ? query + ' official source on ' + site : query),
     site
-      ? 'Target domain: ' + site + '. Prioritize a relevant source hosted on this exact domain or one of its subdomains. Phrase the domain naturally in the search request; do not rely on a literal site: query operator.'
-      : 'No target domain was specified. Find the best relevant public web source.',
+      ? 'Required target domain: ' + site + '. Return only a result whose visible URL hostname is this domain or a subdomain. If Search does not show a matching result, return NO_RESULT. Do not substitute another domain.'
+      : 'No target domain was specified. Find the best relevant public web source and include the exact source URL surfaced by Search.',
     'Return at most one source that was actually surfaced by Search, using this format:',
     'FOUND',
     'Title: exact visible page title',
