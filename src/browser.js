@@ -509,7 +509,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
          }
      }
 
-     return { text: finalText, thinking: emittedThink, toolCalls: finalTools, invalidToolCall };
+     return { text: finalText, thinking: emittedThink, toolCalls: finalTools, invalidToolCall, sourceLinks: includeLinks ? uiAnswerLinks : [] };
  }
 
 async function shutdownBrowser() {
