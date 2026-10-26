@@ -90,12 +90,12 @@ test('tool prompts clearly request DeepSeek Search mode and prohibit fabricated 
       max_results: 3,
     },
   });
-  assert.match(searchPrompt, /DeepSeek Search mode has been enabled/);
+  assert.match(searchPrompt, /Search-mode browser turns/i);
   assert.match(searchPrompt, /latest release/);
   assert.match(searchPrompt, /release history/);
   assert.match(searchPrompt, /separate focused Search-mode browser turns/i);
-  assert.match(searchPrompt, /target domain: nodejs\.org latest release/i);
-  assert.match(searchPrompt, /target domain: github\.com release history/i);
+  assert.match(searchPrompt, /Query: latest release \| target domain: nodejs\.org/i);
+  assert.match(searchPrompt, /Query: release history \| target domain: github\.com/i);
   assert.doesNotMatch(searchPrompt, /site:nodejs\.org latest release/);
   assert.match(searchPrompt, /Maximum source entries across this batch: 3/);
   assert.match(searchPrompt, /Never fabricate URLs, source titles/);
