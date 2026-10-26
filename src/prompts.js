@@ -68,7 +68,7 @@ function toolsToPrompt(tools) {
     lines.push('');
     lines.push('EXAMPLE — TOOL REQUIRED:');
     lines.push(`User: "Please help me use ${tools[0].name}."`);
-    lines.push(`Assistant: <TOOL_CALL>{"tool":"${tools[0].name}","arguments":{...}}</TOOL_CALL>`);
+    lines.push('Assistant: Use the single DSML calls block shown above, with the exact selected tool name and its declared parameter names/types.');
     lines.push('');
     lines.push('EXAMPLE — NO TOOL NEEDED:');
     lines.push('User: "Who are you? Please answer in my language."');
@@ -107,7 +107,7 @@ function buildFullPrompt(system, messages, tools) {
         ].join('\n'));
     } else {
         parts.push('### LATEST USER MESSAGE\n' + renderMessage(last));
-        parts.push('Respond as the assistant. If calling a tool, output only the <TOOL_CALL>...</TOOL_CALL> format.');
+        parts.push('Respond as the assistant. If calling a tool, output only one DeepSeek DSML calls block using invoke and parameter tags, as defined above.');
     }
 
     return parts.join('\n\n');
