@@ -47,6 +47,17 @@ const { sha, MAX_REPLAY } = require('./config');
          u1: firstUser ? flattenContent(firstUser.content) : '',
      }));
  }
+
+ function truncateTextPreservingEnds(text, maxLength, marker = '[...content truncated...]\n') {
+     if (typeof text !== 'string') return '';
+     if (!Number.isInteger(maxLength) || maxLength < 1 || text.length <= maxLength) return text;
+     if (maxLength <= marker.length) return text.slice(0, maxLength);
+     const available = maxLength - marker.length;
+     const headLength = Math.ceil(available * 0.4);
+     const tailLength = available - headLength;
+     return text.slice(0, headLength) + marker + (tailLength ? text.slice(-tailLength) : '');
+ }
+
  function truncateReplay(text) {
       if (text.length <= MAX_REPLAY) return text;
       const marker = '\n\n[WARNING: conversation replay was truncated; middle content was omitted and earlier context may be missing.]\n\n';
@@ -57,4 +68,4 @@ const { sha, MAX_REPLAY } = require('./config');
       return head + marker + tail;
   }
 
-module.exports = { blocksOf, flattenContent, renderMessage, sessionKey, truncateReplay };
+module.exports = { blocksOf, flattenContent, renderMessage, sessionKey, truncateReplay, truncateTextPreservingEnds };
