@@ -27,7 +27,7 @@ const { uuid } = require('./config');
      }
      send(event, data) {
          if (this.res.destroyed || this.res.writableEnded) return false;
-         return this.res.write(\`event: \${event}\ndata: \${JSON.stringify(data)}\n\n\`);
+         return this.res.write('event: ' + event + '\ndata: ' + JSON.stringify(data) + '\n\n');
      }
      _closeOpen() {
          if (this.open !== null) {
