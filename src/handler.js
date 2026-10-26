@@ -28,7 +28,7 @@ function validateToolCallsForChoice(toolCalls, tools, force) {
   return validation;
 }
 
-const { ensurePage: defaultEnsurePage, ensureTogglesOn: defaultEnsureTogglesOn, resumeUrl: defaultResumeUrl, gotoNewChat: defaultGotoNewChat, runTurn: defaultRunTurn, currentUrl: defaultCurrentUrl, locked: defaultLocked } = require('./browser');
+const { ensurePage: defaultEnsurePage, ensureTogglesOn: defaultEnsureTogglesOn, resumeUrl: defaultResumeUrl, gotoNewChat: defaultGotoNewChat, runTurn: defaultRunTurn, runIsolatedTurn: defaultRunIsolatedTurn, currentUrl: defaultCurrentUrl, locked: defaultLocked } = require('./browser');
 const { getSession: defaultGetSession, setSession: defaultSetSession } = require('./session-store');
 const { StreamSink } = require('./sse-sink');
 const { jsonError } = require('./http-utils');
@@ -71,6 +71,11 @@ async function handleMessages(req, res, body, dependencies = {}) {
   const resumeUrl = dependencies.resumeUrl || defaultResumeUrl;
   const gotoNewChat = dependencies.gotoNewChat || defaultGotoNewChat;
   const runTurn = dependencies.runTurn || defaultRunTurn;
+  // Tests/custom adapters that inject runTurn keep their existing turn behavior unless
+  // they explicitly provide an isolated callback. Production uses a clean chat for
+  // native DeepSeek Search so client DSML instructions do not leak into that turn.
+  const runIsolatedTurn = dependencies.runIsolatedTurn ||
+    (dependencies.runTurn ? null : defaultRunIsolatedTurn);
   const currentUrl = dependencies.currentUrl || defaultCurrentUrl;
   const locked = dependencies.locked || defaultLocked;
   const getSession = dependencies.getSession || defaultGetSession;
@@ -319,6 +324,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
           internalResults.push(await executeDeepSeekWebTool(call, {
             ensureTogglesOn,
             runTurn,
+            runIsolatedTurn,
             sink: dummySink,
             isCancelled,
           }));
