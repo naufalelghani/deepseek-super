@@ -269,6 +269,7 @@ async function main() {
   }));
 
 
+  if (isDefaultLocalGateway(baseURL)) {
   // 5. DeepSeek-native web search through the public Anthropic Messages SDK.
   // The gateway handles DeepSeekWebSearch internally; it must not leak as tool_use.
   console.log('\n[5/6] DeepSeekWebSearch batch through the SDK ...');
@@ -336,6 +337,10 @@ async function main() {
   assert.ok((fetchText.match(/Fact\s*:/gi) || []).length >= 3,
     'DeepSeekWebFetch SDK: expected a fact for each URL');
   console.log('PASS DeepSeekWebFetch SDK: 3/3 URLs with titles and facts');
+
+  } else {
+    console.log('\nSKIP DeepSeek web-tool tests: the selected endpoint is not this repository's local gateway.');
+  }
 
   console.log('\nALL SDK AND DEEPSEEK WEB-TOOL SMOKE TESTS PASSED');
 }
