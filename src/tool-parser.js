@@ -240,6 +240,7 @@
 
  function extractToolCallsFromText(text) {
      const calls = [];
+     const errors = [];
      const seen = new Set();
      const addCall = (call) => {
          const signature = call.name + '|' + JSON.stringify(call.input || {});
@@ -267,15 +268,37 @@
          return '';
      });
 
+     let completeCallsBlocks = 0;
      cleaned = cleaned.replace(DSML_CALLS_BLOCK_RE, (_, payload) => {
+         completeCallsBlocks++;
          const parsed = parseDsmlToolBlock(payload);
          for (const call of parsed.calls) addCall(call);
+         errors.push(...parsed.errors);
          return '';
      });
 
+     // Recover invoke blocks even when the model omits the outer calls wrapper.
+     // Such output is still flagged as a malformed DSML attempt by the caller.
+     let nakedInvokeCount = 0;
+     const invokeRe = new RegExp(DSML_INVOKE_RE_SOURCE, 'gi');
+     cleaned = cleaned.replace(invokeRe, (wholeInvoke) => {
+         nakedInvokeCount++;
+         const parsed = parseDsmlToolBlock(wholeInvoke);
+         for (const call of parsed.calls) addCall(call);
+         errors.push(...parsed.errors);
+         return '';
+     });
+     if (nakedInvokeCount > 0 && /<\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls)\s*>/i.test(cleaned)) {
+         errors.push('DSML calls wrapper was opened but not closed.');
+     }
+     if (nakedInvokeCount === 0 && /<\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls|invoke|parameter)\b/i.test(cleaned)) {
+         errors.push('DSML markup was present but no complete invoke could be parsed.');
+     }
+
      cleaned = stripDsmlTags(cleaned);
-     return { calls, text: cleaned.trim() };
+     return { calls, text: cleaned.trim(), errors, completeCallsBlocks };
  }
+
 
  class StreamParser {
      constructor(onText) {
