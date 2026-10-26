@@ -171,7 +171,7 @@ async function handleMessages(req, res, body) {
           attempt === 1
             ? 'Correct the format only; preserve the intent and arguments of the original task.'
             : 'Final recovery attempt: do not copy the previous output. Rebuild the simplest arguments that still complete the original task.'
-        ].join('\\n');
+        ].join('\n');
         // Use a dummy sink so failed retry output is not leaked or duplicated in the SSE stream.
         const retry = await runTurn(retryPrompt, dummySink, useBuffer, isCancelled);
         abortIfCancelled();
