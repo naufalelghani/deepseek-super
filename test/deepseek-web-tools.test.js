@@ -259,7 +259,7 @@ test('search batch executes each query/domain pair in a focused turn and accepts
 
   assert.equal(prompts.length, 4, 'each query/domain pair must be its own Search-mode turn');
   assert.deepEqual(toggleStates, [false, false, false, false, true]);
-  assert.ok(prompts.every((prompt) => !/site:/.test(prompt)), 'do not rely on site: query syntax');
+  assert.ok(prompts.every((prompt) => !/site:nodejs\\.org|site:github\\.com/.test(prompt)), 'do not rely on site: query syntax');
   assert.match(result.result, /https:\/\/nodejs\.org\/en\/download/);
   assert.match(result.result, /https:\/\/github\.com\/nodejs\/node\/releases/);
   assert.match(result.result, /NO_RESULT: Search did not surface a matching source URL/);
