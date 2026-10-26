@@ -334,7 +334,7 @@ async function main() {
       const searchSectionMatch = webFinalText.match(/SEARCH RESULTS([\s\S]*?)(?:FETCH RESULTS|$)/i);
       assert.ok(searchSectionMatch, 'Claude Code web-tools test: could not isolate Search results');
       assert.doesNotMatch(searchSectionMatch[1], /NO_SOURCES_FOUND/i,
-        'Claude Code web-tools test: DeepSeekWebSearch returned no verifiable sources');
+        'Claude Code web-tools test: DeepSeekWebSearch returned no verifiable sources. Response: ' + searchSectionMatch[1].slice(0, 1800));
       const sourceHosts = [...searchSectionMatch[1].matchAll(/https?:\/\/([^/\s?#]+)/gi)]
         .map((match) => match[1].toLowerCase());
       const expectedDomains = ['nodejs.org', 'github.com', 'docs.npmjs.com'];
