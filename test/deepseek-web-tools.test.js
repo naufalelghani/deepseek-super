@@ -207,6 +207,43 @@ test('execution rejects tool markup from a Search-mode result but still restores
 });
 
 
+test('execution isolates native Search turns from the client DSML tool context', async () => {
+  const prompts = [];
+  const result = await executeDeepSeekWebTool({
+    name: DEEPSEEK_WEB_SEARCH,
+    input: {
+      query: 'official Node.js downloads',
+      sites: ['nodejs.org'],
+      max_results: 1,
+    },
+  }, {
+    // These are normally browser-side toggle controls. The isolated callback
+    // owns Search enable/disable and therefore the outer executor must not toggle.
+    ensureTogglesOn: async () => {
+      throw new Error('outer Search toggle must not be used for isolated turns');
+    },
+    runTurn: async () => {
+      throw new Error('the regular conversation runner must not be used for isolated turns');
+    },
+    runIsolatedTurn: async (prompt, sink, buffer, isCancelled, includeLinks) => {
+      prompts.push(prompt);
+      assert.equal(buffer, true);
+      assert.equal(typeof isCancelled, 'function');
+      assert.equal(includeLinks, true);
+      return {
+        text: 'FOUND\\nTitle: Node.js downloads\\nURL: https://nodejs.org/en/download\\nEvidence: Official downloads are available.',
+        sourceLinks: [{ text: 'Node.js downloads', url: 'https://nodejs.org/en/download' }],
+        toolCalls: [],
+        invalidToolCall: false,
+      };
+    },
+  });
+
+  assert.equal(prompts.length, 1);
+  assert.match(result.result, /https:\\/\\/nodejs\\.org\\/en\\/download/);
+  assert.match(result.result, /Evidence: FOUND/);
+});
+
 test('search batch normalizes several queries and public target domains', () => {
   assert.deepEqual(normalizeWebToolInput({
     name: DEEPSEEK_WEB_SEARCH,
