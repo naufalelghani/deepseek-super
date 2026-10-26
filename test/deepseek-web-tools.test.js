@@ -115,10 +115,11 @@ test('tool prompts clearly request DeepSeek Search mode and prohibit fabricated 
   assert.match(fetchPrompt, /identifying whether it opened/i);
 
   const oneSearchTurn = buildDeepSeekWebSearchTurnPrompt('official Node.js download', 'nodejs.org', 1, 2);
-  assert.match(oneSearchTurn, /exactly ONE focused web search/i);
-  assert.match(oneSearchTurn, /Target domain: nodejs.org/);
+  assert.match(oneSearchTurn, /Actually invoke DeepSeek Search\/web search/i);
+  assert.match(oneSearchTurn, /Required target domain: nodejs.org/);
   assert.doesNotMatch(oneSearchTurn, /site:nodejs\.org/);
   assert.match(oneSearchTurn, /Do not use DeepSeekWebFetch/i);
+  assert.match(oneSearchTurn, /official source on nodejs.org/i);
 
   const oneFetchTurn = buildDeepSeekWebFetchTurnPrompt('https://nodejs.org/en/download', 1, 3);
   assert.match(oneFetchTurn, /Inspect only this exact public URL/i);
