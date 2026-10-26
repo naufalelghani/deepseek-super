@@ -5,6 +5,22 @@ const { blocksOf, sessionKey, renderMessage, truncateReplay } = require('./conte
 const { buildFullPrompt, buildResumePrompt, parseToolChoice, applyForcedTool } = require('./prompts');
 const { createToolCallRecoveryError } = require('./tool-recovery');
 const { validateToolCalls } = require('./tool-validation');
+
+function validateToolCallsForChoice(toolCalls, tools, force) {
+  const validation = validateToolCalls(toolCalls, tools);
+  if (!validation.valid) return validation;
+  if (force && force.mode === 'tool') {
+    const mismatch = toolCalls.find((call) => call.name !== force.name);
+    if (mismatch) {
+      return {
+        valid: false,
+        error: 'tool_choice requires "' + force.name + '", but DeepSeek returned "' + mismatch.name + '".',
+      };
+    }
+  }
+  return validation;
+}
+
 const { ensurePage: defaultEnsurePage, ensureTogglesOn: defaultEnsureTogglesOn, resumeUrl: defaultResumeUrl, gotoNewChat: defaultGotoNewChat, runTurn: defaultRunTurn, currentUrl: defaultCurrentUrl, locked: defaultLocked } = require('./browser');
 const { getSession: defaultGetSession, setSession: defaultSetSession } = require('./session-store');
 const { StreamSink } = require('./sse-sink');
@@ -169,7 +185,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
     }
 
     let validation = toolCalls.length > 0
-      ? validateToolCalls(toolCalls, tools)
+      ? validateToolCallsForChoice(toolCalls, tools, force)
       : { valid: !hasRawToolCall, error: null };
     const needsRecovery = (hasRawToolCall && (out.invalidToolCall || toolCalls.length === 0)) ||
       (toolCalls.length > 0 && !validation.valid);
@@ -217,7 +233,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
         validation = retry.invalidToolCall
           ? { valid: false, error: 'The retry returned a partially malformed or invalid tool-call batch.' }
           : toolCalls.length > 0
-            ? validateToolCalls(toolCalls, tools)
+            ? validateToolCallsForChoice(toolCalls, tools, force)
             : { valid: false, error: retryHasRawToolCall
                 ? 'The retried tool-call JSON is still malformed or incomplete.'
                 : 'The retry did not return a tool call.' };
@@ -251,7 +267,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
     }
 
     if (toolCalls.length > 0) {
-      validation = validateToolCalls(toolCalls, tools);
+      validation = validateToolCallsForChoice(toolCalls, tools, force);
       if (!validation.valid) {
         throw createToolCallRecoveryError(
           'Tool calls failed schema validation and were not forwarded: ' + validation.error,
