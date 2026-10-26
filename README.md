@@ -302,12 +302,12 @@ HTTP compatibility with the Anthropic SDK does not imply full semantic support f
 
 When `tool_choice` is `auto`, the gateway offers two internal tools to DeepSeek:
 
-- `DeepSeekWebSearch({ query, additional_queries?, sites?, max_results? })` — executes one internal batch as separate, focused Search-mode turns for each query/domain combination (up to 12 combinations). It verifies that the Search toggle is enabled, prefers rendered source links, and falls back to explicit URLs in visible response text only if the UI exposes no link anchors. Site-scoped results are credited only when the hostname matches the requested domain.
+- `DeepSeekWebSearch({ query, additional_queries?, sites?, max_results? })` — executes one internal batch as separate, focused Search-mode turns for each query/domain combination (up to 12 combinations). Each Search turn runs in a clean temporary chat so the original prompt's DSML tool schemas cannot trigger recursive gateway tool calls. It prefers rendered source links and falls back to explicit URLs in visible response text only if the UI exposes no link anchors. Site-scoped results are credited only when the hostname matches the requested domain.
 - `DeepSeekWebFetch({ url, additional_urls? })` — inspects up to 5 public HTTP(S) URLs in separate turns within one internal batch, returning a best-effort per-page summary and visible evidence for each requested URL.
 
-These are **gateway-internal tools**. Their calls are parsed from DSML, executed inside the existing DeepSeek browser conversation, and their results are fed back to DeepSeek as tool-result context. They are not returned as client-facing `tool_use` blocks. Any client-owned calls in the same batch (for example, `Read` or `Bash`) are returned normally after the internal web call finishes. Internal web-tool loops are bounded to three rounds per request.
+These are **gateway-internal tools**. Their calls are parsed from DSML, executed in isolated temporary DeepSeek chats, and their results are fed back to the restored original conversation as tool-result context. The gateway preserves the original chat URL and returns to it before the model continues. Internal calls are not returned as client-facing `tool_use` blocks. Any client-owned calls in the same batch (for example, `Read` or `Bash`) are returned normally after the internal web call finishes. Internal web-tool loops are bounded to three rounds per request.
 
-DeepThink is still enabled through the UI toggle. Search is turned off for normal tool planning and enabled for each focused internal web-tool turn, then turned off before the model continues. Toggle control depends on the DeepSeek website DOM and is best-effort.
+DeepThink is still enabled through the UI toggle. Search is turned off for normal tool planning, enabled in each isolated temporary chat, then turned off again after restoring the original conversation. Toggle control depends on the DeepSeek website DOM and is verified before a native Search turn is attempted.
 
 Safety and limitations:
 
