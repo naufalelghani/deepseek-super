@@ -444,19 +444,22 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      parser.finish();
 
      // Post-process: recover tool calls if the parser did not find them but the text contains markup.
+     const rawFinalText = parser.textOut;
+     const sawDsmlMarkup = /<\s*\/?\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls|invoke|parameter)\b/i.test(rawFinalText);
      let finalTools = parser.toolCalls();
      let finalText = parser.textOut;
+     let extractionErrors = [];
      if (finalTools.length === 0 && finalText) {
          const ex = extractToolCallsFromText(finalText);
-         if (ex.calls.length > 0) {
-             finalTools = ex.calls;
-             finalText = ex.text;
-         }
+         if (ex.calls.length > 0) finalTools = ex.calls;
+         finalText = ex.text;
+         extractionErrors = Array.isArray(ex.errors) ? ex.errors : [];
      }
      // A partially valid batch is still invalid: forwarding only its valid subset
      // would silently omit requested actions and could leave the client out of sync.
-     const invalidToolCall = parser.sawToolMarkup &&
-         (finalTools.length === 0 || parser.parseErrors.length > 0);
+     const invalidToolCall = (parser.sawToolMarkup &&
+         (finalTools.length === 0 || parser.parseErrors.length > 0)) ||
+         (sawDsmlMarkup && (finalTools.length === 0 || parser.parseErrors.length > 0 || extractionErrors.length > 0));
 
      // Close any live thinking/text block, but defer buffered text and every tool
      // block to the handler. It must validate the complete tool batch before emitting
@@ -467,10 +470,12 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
          console.log('[tool-parser] parsed tool call(s): ' + finalTools.map((t) => t.name).join(', '));
      } else if (invalidToolCall) {
          const detail = parser.parseErrors[0];
-         console.warn('[tool-parser] TOOL_CALL markup detected, but no valid tool input parsed' +
-             ' payloads=' + parser.toolBlocks.length +
+         console.warn('[tool-parser] tool-call markup detected, but no valid tool input parsed' +
+             ' legacy_payloads=' + parser.toolBlocks.length +
+             ' dsml_payloads=' + parser.dsmlToolBlocks.length +
              ' incomplete=' + parser.incompleteToolBlock +
-             (detail ? ' chars=' + detail.chars + ' reason=' + detail.reason : ''));
+             (detail ? ' chars=' + detail.chars + ' reason=' + detail.reason : '') +
+             (extractionErrors.length ? ' extraction_errors=' + extractionErrors.join('; ') : ''));
          if (process.env.DEBUG_TOOL_PARSER === '1' && parser.toolBlocks[0]) {
              console.warn('[tool-parser] payload preview=' + parser.toolBlocks[0].slice(0, 240).replace(/\s+/g, ' '));
          }
