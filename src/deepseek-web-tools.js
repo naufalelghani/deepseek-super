@@ -344,6 +344,7 @@ async function executeDeepSeekWebTool(call, dependencies) {
   }
 
   let result = '';
+  let operationError = null;
   try {
     await setInternalSearchMode(true);
     if (call.name === DEEPSEEK_WEB_SEARCH) {
@@ -419,9 +420,17 @@ async function executeDeepSeekWebTool(call, dependencies) {
       }
       result = sections.join('\n\n');
     }
+  } catch (error) {
+    operationError = error;
+    throw error;
   } finally {
     // Restore Search OFF before the model resumes tool planning or answers the user.
-    await setInternalSearchMode(false);
+    try {
+      await setInternalSearchMode(false);
+    } catch (restoreError) {
+      if (!operationError) throw restoreError;
+      console.warn('[DeepSeekWebTool] Search OFF restoration also failed: ' + (restoreError.message || String(restoreError)));
+    }
   }
 
   return {
