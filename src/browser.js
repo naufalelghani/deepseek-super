@@ -527,6 +527,12 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
          }
      }
 
+     if (includeLinks) {
+         const textURLCount = (finalText.match(/https?:\/\/[^\s<>"'`)\]]+/gi) || []).length;
+         console.log('[web-turn] captured_ui_links=' + uiAnswerLinks.length +
+             ' visible_text_urls=' + textURLCount +
+             ' answer_chars=' + finalText.length);
+     }
      return { text: finalText, thinking: emittedThink, toolCalls: finalTools, invalidToolCall, sourceLinks: includeLinks ? uiAnswerLinks : [] };
  }
 
