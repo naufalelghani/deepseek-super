@@ -332,7 +332,18 @@ async function executeDeepSeekWebTool(call, dependencies) {
     throw new TypeError('DeepSeek web tool execution requires toggle and runTurn dependencies.');
   }
 
-  await setSearchEnabled(false);
+  async function setInternalSearchMode(enabled) {
+    // The browser adapter returns a verified boolean. Test doubles and custom
+    // adapters may return undefined; only reject an explicit failure/unknown state.
+    const state = await setSearchEnabled(!enabled);
+    if (state === null || (typeof state === 'boolean' && state !== enabled)) {
+      throw new Error(enabled
+        ? 'Could not verify that DeepSeek Search mode is enabled; check the Search toggle selector and signed-in UI.'
+        : 'Could not verify that DeepSeek Search mode is disabled after the internal web-tool turn.');
+    }
+  }
+
+  await setInternalSearchMode(true);
   let result = '';
   try {
     if (call.name === DEEPSEEK_WEB_SEARCH) {
@@ -346,7 +357,7 @@ async function executeDeepSeekWebTool(call, dependencies) {
       const seenUrls = new Set();
 
       for (let index = 0; index < plan.length; index++) {
-        if (index > 0) await setSearchEnabled(false);
+        if (index > 0) await setInternalSearchMode(true);
         const item = plan[index];
         const prompt = buildDeepSeekWebSearchTurnPrompt(item.query, item.site, index + 1, plan.length);
         const output = await runTurn(prompt, sink, true, isCancelled || (() => false), true);
@@ -402,7 +413,7 @@ async function executeDeepSeekWebTool(call, dependencies) {
     }
   } finally {
     // Restore Search OFF before the model resumes tool planning or answers the user.
-    await setSearchEnabled(true);
+    await setInternalSearchMode(false);
   }
 
   return {
