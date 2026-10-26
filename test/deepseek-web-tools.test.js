@@ -306,11 +306,10 @@ test('fetch batch inspects each exact URL in a separate turn', async () => {
   assert.equal(prompts.length, 3);
   assert.deepEqual(toggleStates, [false, true]);
   for (let index = 0; index < urls.length; index++) {
-    const escapeRegExp = (value) => value.replace(/[|\\{}()[\]^$+*?.]/g, '\\$&');
-    assert.match(prompts[index], new RegExp(escapeRegExp(urls[index])));
+    assert.ok(prompts[index].includes(urls[index]));
     assert.equal((prompts[index].match(/https?:\/\//g) || []).length, 1,
       'each fetch turn should contain only one requested URL');
-    assert.match(result.result, new RegExp(escapeRegExp(urls[index])));
+    assert.ok(result.result.includes(urls[index]));
   }
 });
 
