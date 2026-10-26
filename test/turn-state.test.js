@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { hasNewAssistantResponse, isResponseComplete } = require('../src/turn-state');
+const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback } = require('../src/turn-state');
 
 test('a user-message count increase alone is not a fresh assistant response', () => {
   assert.equal(hasNewAssistantResponse({ answerKey: 'assistant-1', answer: 'bad output', count: 4 }, { answerKey: 'assistant-1', answer: 'bad output', count: 5 }), false);
@@ -41,4 +41,13 @@ test('explicit UI completion requires a known signal, no active generation, and 
     isGenerating: false,
     sendButtonEnabled: false,
   }, true), false);
+});
+
+
+test('stable fallback waits longer and is disabled when a completion signal is available or generation was observed', () => {
+  const unavailable = { completionSignalAvailable: false };
+  assert.equal(shouldUseStableFallback(unavailable, false, 3999, 2000), false);
+  assert.equal(shouldUseStableFallback(unavailable, false, 4000, 2000), true);
+  assert.equal(shouldUseStableFallback({ completionSignalAvailable: true }, false, 9000, 2000), false);
+  assert.equal(shouldUseStableFallback(unavailable, true, 9000, 2000), false);
 });
