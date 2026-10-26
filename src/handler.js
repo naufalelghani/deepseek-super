@@ -106,16 +106,16 @@ async function handleMessages(req, res, body, dependencies = {}) {
   const lastHasToolResult = blocksOf(last.content).some((block) => block.type === 'tool_result');
   // Respect the caller's tool_choice after tool results too; the model may need another tool step.
   let force = parseToolChoice(body.tool_choice);
-  // Keep client-enforced tool_choice semantics intact. DeepSeek-backed web tools
-  // are internal orchestration tools for automatic tool selection only.
-  const tools = force.mode === 'auto'
-    ? clientTools.concat(DEEPSEEK_WEB_TOOLS)
-    : clientTools;
-
   if (detectToolLoop(messages, 3)) {
     console.warn('[loop-detect] three identical tool calls detected; forcing a text response');
     force = { mode: 'none' };
   }
+
+  // Keep client-enforced tool_choice and loop-recovery semantics intact.
+  // DeepSeek-backed web tools are internal orchestration tools for auto selection only.
+  const tools = force.mode === 'auto'
+    ? clientTools.concat(DEEPSEEK_WEB_TOOLS)
+    : clientTools;
   const conversationTooLong = isConversationTooLong(messages);
   if (conversationTooLong) {
     console.warn('[long-conv] message_count=' + messages.length +
