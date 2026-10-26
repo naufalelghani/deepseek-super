@@ -554,6 +554,11 @@ async function runIsolatedTurn(prompt, sink, bufferText, isCancelled = () => fal
     let operationError = null;
     try {
         await gotoNewChat();
+        const isolatedUrl = await currentUrl();
+        if (!isolatedUrl || isolatedUrl === originalUrl) {
+            throw new Error('DeepSeek did not open a distinct temporary chat for the isolated Search turn.');
+        }
+        console.log('[web-isolation] original_chat_changed=true');
         const searchState = await ensureTogglesOn(false);
         if (searchState !== true) {
             throw new Error('Could not verify that DeepSeek Search mode is enabled in the isolated chat.');
