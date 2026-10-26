@@ -1,6 +1,7 @@
 'use strict';
 
-const { blocksOf, flattenContent, renderMessage } = require('./content');
+const { blocksOf, flattenContent, renderMessage, truncateTextPreservingEnds } = require('./content');
+const { MAX_REPLAY } = require('./config');
 
 const PROJECT_AND_LANGUAGE_INSTRUCTIONS = [
     '### PROJECT IDENTITY',
@@ -117,7 +118,13 @@ function buildResumePrompt(system, messages, tools, isToolResultTurn) {
         parts.push('The client has executed a tool and provided its result. Continue the original task using the conversation context.');
         parts.push('');
         parts.push('=== LATEST TOOL RESULTS ===');
-        parts.push(renderMessage(last));
+        const renderedToolResult = renderMessage(last);
+        // Keep both the beginning and end of huge tool outputs. Important diagnostics
+        // often appear at either boundary; the outer replay cap still bounds total size.
+        parts.push(truncateTextPreservingEnds(
+            renderedToolResult,
+            Math.max(1024, Math.floor(MAX_REPLAY * 0.6))
+        ));
         parts.push('');
         // Put the tool contract after potentially large results so bounded replay
         // truncation keeps the schemas needed for the next action.
