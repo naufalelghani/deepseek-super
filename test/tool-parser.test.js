@@ -6,7 +6,7 @@ const { StreamParser, tryParseJSON, extractToolCallsFromText } = require('../src
 
 test('tryParseJSON parses valid JSON and repairs common invalid backslashes', () => {
   assert.deepEqual(tryParseJSON('{"tool":"Bash","arguments":{"command":"pwd"}}'), { tool: 'Bash', arguments: { command: 'pwd' } });
-  assert.deepEqual(tryParseJSON('{tool:"Bash",arguments:{command:"C:\\\\work"}}'), { tool: 'Bash', arguments: { command: 'C:\\\\work' } });
+  assert.deepEqual(tryParseJSON('{tool:"Bash",arguments:{command:"C:\\work"}}'), { tool: 'Bash', arguments: { command: 'C:\\work' } });
 });
 
 test('tryParseJSON recovers unescaped quotes embedded inside a shell command', () => {
