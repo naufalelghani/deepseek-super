@@ -266,6 +266,24 @@ test('search batch executes each query/domain pair in a focused turn and accepts
   assert.doesNotMatch(result.result, /Target domain: nodejs\.org\n  Source: Node\.js releases/);
 });
 
+
+test('search batch falls back to explicit URL text when the UI supplied an empty link list', async () => {
+  const result = await executeDeepSeekWebTool({
+    name: DEEPSEEK_WEB_SEARCH,
+    input: { query: 'official Node.js downloads' },
+  }, {
+    ensureTogglesOn: async () => {},
+    runTurn: async () => ({
+      text: 'FOUND\nTitle: Node.js download\nURL: https://nodejs.org/en/download\nEvidence: Official download page.',
+      sourceLinks: [],
+      toolCalls: [],
+      invalidToolCall: false,
+    }),
+  });
+  assert.ok(result.result.includes('https://nodejs.org/en/download'));
+  assert.doesNotMatch(result.result, /^NO_SOURCES_FOUND:/);
+});
+
 test('search batch reports explicit NO_SOURCES_FOUND when Search exposes no rendered URLs', async () => {
   const result = await executeDeepSeekWebTool({
     name: DEEPSEEK_WEB_SEARCH,
