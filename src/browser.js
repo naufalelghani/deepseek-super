@@ -442,7 +442,6 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
      // Post-process: recover tool calls if the parser did not find them but the text contains markup.
      let finalTools = parser.toolCalls();
      let finalText = parser.textOut;
-     const invalidToolCall = parser.sawToolMarkup && finalTools.length === 0;
      if (finalTools.length === 0 && finalText) {
          const ex = extractToolCallsFromText(finalText);
          if (ex.calls.length > 0) {
@@ -450,6 +449,10 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
              finalText = ex.text;
          }
      }
+     // A partially valid batch is still invalid: forwarding only its valid subset
+     // would silently omit requested actions and could leave the client out of sync.
+     const invalidToolCall = parser.sawToolMarkup &&
+         (finalTools.length === 0 || parser.parseErrors.length > 0);
 
      // Close any live thinking/text block, but defer buffered text and every tool
      // block to the handler. It must validate the complete tool batch before emitting
