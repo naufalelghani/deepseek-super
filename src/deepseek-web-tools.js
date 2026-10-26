@@ -362,12 +362,20 @@ async function executeDeepSeekWebTool(call, dependencies) {
         const prompt = buildDeepSeekWebSearchTurnPrompt(item.query, item.site, index + 1, plan.length);
         const output = await runTurn(prompt, sink, true, isCancelled || (() => false), true);
         assertPlainTurnOutput(output);
-        const links = getTurnLinks(output).filter((link) =>
-          link && typeof link.url === 'string' && /^https?:\/\//i.test(link.url) &&
-          linkMatchesDomain(link, item.site)
+        const rawLinks = getTurnLinks(output).filter((link) =>
+          link && typeof link.url === 'string' && /^https?:\/\//i.test(link.url)
         );
+        const links = rawLinks.filter((link) => linkMatchesDomain(link, item.site));
         const link = links.find((candidate) => !seenUrls.has(candidate.url));
+        console.log('[DeepSeekWebSearch] item=' + (index + 1) + '/' + plan.length +
+          ' target=' + (item.site || '*') +
+          ' captured_urls=' + rawLinks.length +
+          ' matching_urls=' + links.length);
         if (!link) {
+          console.warn('[DeepSeekWebSearch] no matching source URL for query item ' + (index + 1) +
+            (item.site ? ' on ' + item.site : '') +
+            '; see [web-turn] diagnostics for Search UI link/text capture counts.');
+
           noResults.push('- Query: ' + item.query +
             (item.site ? ' | target domain: ' + item.site : '') +
             ' | NO_RESULT: Search did not surface a matching source URL.');
