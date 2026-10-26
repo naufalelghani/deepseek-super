@@ -9,6 +9,7 @@ class FakePage {
   constructor(options = {}) {
     this.closed = false;
     this.failWait = options.failWait === true;
+    this.waitGate = options.waitGate || null;
     this.urlValue = 'about:blank';
   }
   isClosed() { return this.closed; }
@@ -21,6 +22,7 @@ class FakePage {
       waitFor: async () => {
         if (this.closed) throw new Error('Target page has been closed');
         if (this.failWait) throw new Error('composer did not appear');
+        if (this.waitGate) await this.waitGate;
       },
     };
   }
@@ -107,5 +109,26 @@ test('ensurePage replaces a closed context rather than reusing stale handles', a
 
     assert.equal(launches, 2);
     assert.equal(firstContext.closed, true);
+  });
+});
+
+
+test('concurrent ensurePage calls share one initialization promise', async () => {
+  let launches = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const context = new FakeContext(new FakePage({ waitGate: gate }));
+
+  await withLauncher(async () => {
+    launches++;
+    return context;
+  }, async () => {
+    const first = ensurePage();
+    const second = ensurePage();
+    release();
+    await Promise.all([first, second]);
+
+    assert.equal(launches, 1);
+    assert.equal(context.pageList.length, 1);
   });
 });
