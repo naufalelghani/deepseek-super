@@ -25,6 +25,11 @@ const { ensurePage: defaultEnsurePage, ensureTogglesOn: defaultEnsureTogglesOn, 
 const { getSession: defaultGetSession, setSession: defaultSetSession } = require('./session-store');
 const { StreamSink } = require('./sse-sink');
 const { jsonError } = require('./http-utils');
+
+function containsToolMarkup(value) {
+  return typeof value === 'string' &&
+    /<\s*(?:TOOL_CALL\b|[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls|invoke|parameter)\b)/i.test(value);
+}
 const { estimateInputTokens, estimateOutputTokens } = require('./anthropic-contract');
 
 function detectToolLoop(messages, threshold = 3) {
@@ -177,13 +182,13 @@ async function handleMessages(req, res, body, dependencies = {}) {
     thinking = out.thinking;
     toolCalls = out.toolCalls;
 
-    const hasRawToolCall = out.invalidToolCall || (answer || '').toLowerCase().includes('<tool_call>');
+    let hasRawToolCall = out.invalidToolCall || containsToolMarkup(answer);
     if (force.mode === 'none' && (hasRawToolCall || toolCalls.length > 0)) {
       console.warn('[tool-recovery] model ignored the no-tool policy; requesting one text-only recovery');
       const textOnlyPrompt = [
         '=== TEXT-ONLY RECOVERY ===',
         'Your previous response attempted to call a tool even though tools are disabled for this turn.',
-        'Do not call tools, do not emit <TOOL_CALL> tags, and do not output JSON.',
+        'Do not emit DSML calls/invoke/parameter tags, legacy <TOOL_CALL> tags, or tool-call JSON.',
         'Use only the conversation and tool results already available to provide the best possible plain-text answer now.',
         'If the task cannot be completed from available information, state the limitation clearly.',
         'Output only the final user-facing answer.'
@@ -191,7 +196,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
       const recovery = await runTurn(textOnlyPrompt, dummySink, true, isCancelled);
       abortIfCancelled();
       const recoveryHasToolMarkup = recovery.invalidToolCall ||
-        (recovery.text || '').toLowerCase().includes('<tool_call>');
+        containsToolMarkup(recovery.text);
       if (recovery.toolCalls.length > 0 || recoveryHasToolMarkup || !(recovery.text || '').trim()) {
         throw createToolCallRecoveryError(
           'DeepSeek continued to emit tool-call output despite a text-only recovery request. No tool was forwarded.',
@@ -201,6 +206,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
       answer = recovery.text;
       thinking = recovery.thinking;
       toolCalls = [];
+      hasRawToolCall = false;
     }
 
     let validation = toolCalls.length > 0
@@ -220,7 +226,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
       const maxRetries = 2;
       let recovered = false;
       let recoveryIssue = validation.error ||
-        'The previous tool-call JSON was malformed or incomplete.';
+        'The previous DSML tool-call markup was malformed or incomplete.';
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         console.warn('[retry] attempt=' + attempt + '/' + maxRetries +
           ' — repairing tool-call output: ' + recoveryIssue);
@@ -231,10 +237,11 @@ async function handleMessages(req, res, body, dependencies = {}) {
           'Use the original task, conversation history, available tools, and their schemas.',
           'Correct this issue: ' + recoveryIssue,
           'Rebuild the necessary tool call(s) from scratch. All arguments must be valid JSON objects and satisfy the declared schemas.',
-          'Output only valid tool-call markup, with no prose or Markdown outside it.',
+          'Output only one DeepSeek DSML calls block, with no prose or Markdown outside it.',
+          'Use one invoke block per tool, and one parameter block per argument. For string values use string="true" and raw text; for non-string values use string="false" and valid JSON.',
           'Valid formatting example only; this is not an instruction to execute pwd:',
-          '<TOOL_CALL>{"tool":"Bash","arguments":{"command":"pwd"}}</TOOL_CALL>',
-          'Use double-quoted JSON keys and strings, no trailing commas or comments, and escape quotes and backslashes using standard JSON rules.',
+          '<｜DSML｜ calls><｜DSML｜ invoke name="Bash"><｜DSML｜ parameter name="command" string="true">pwd</｜DSML｜ parameter></｜DSML｜ invoke></｜DSML｜ calls>',
+          'Do not use the legacy <TOOL_CALL> wrapper or JSON-encoded arguments for string parameters.',
           attempt === 1
             ? 'Preserve the original task intent and do not invent arguments.'
             : 'This is the final recovery attempt. Rebuild the simplest valid arguments that still satisfy the original task.'
@@ -248,13 +255,13 @@ async function handleMessages(req, res, body, dependencies = {}) {
         toolCalls = retry.toolCalls;
 
         const retryHasRawToolCall = retry.invalidToolCall ||
-          (answer || '').toLowerCase().includes('<tool_call>');
+          containsToolMarkup(answer);
         validation = retry.invalidToolCall
           ? { valid: false, error: 'The retry returned a partially malformed or invalid tool-call batch.' }
           : toolCalls.length > 0
             ? validateToolCallsForChoice(toolCalls, tools, force)
             : { valid: false, error: retryHasRawToolCall
-                ? 'The retried tool-call JSON is still malformed or incomplete.'
+                ? 'The retried DSML tool-call markup is still malformed or incomplete.'
                 : 'The retry did not return a tool call.' };
 
         if (toolCalls.length > 0 && validation.valid && !retry.invalidToolCall) {

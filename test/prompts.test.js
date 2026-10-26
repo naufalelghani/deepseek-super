@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { toolsToPrompt, buildFullPrompt, buildResumePrompt } = require('../src/prompts');
 
-test('tool prompt contains an unambiguous valid JSON example', () => {
+test('tool prompt instructs DeepSeek to use DSML calls and typed parameters', () => {
   const prompt = toolsToPrompt([{
     name: 'Bash',
     description: 'Run shell commands',
@@ -14,14 +14,12 @@ test('tool prompt contains an unambiguous valid JSON example', () => {
       required: ['command'],
     },
   }]);
-  const marker = '<TOOL_CALL>{"tool":"Bash","arguments":{"command":"pwd"}}</TOOL_CALL>';
-  assert.ok(prompt.includes(marker));
-  const start = marker.indexOf('<TOOL_CALL>') + '<TOOL_CALL>'.length;
-  const end = marker.indexOf('</TOOL_CALL>');
-  assert.deepEqual(JSON.parse(marker.slice(start, end)), {
-    tool: 'Bash',
-    arguments: { command: 'pwd' },
-  });
+  assert.ok(prompt.includes('<｜DSML｜ calls>'));
+  assert.ok(prompt.includes('<｜DSML｜ invoke name="Bash">'));
+  assert.ok(prompt.includes('<｜DSML｜ parameter name="command" string="true">pwd</｜DSML｜ parameter>'));
+  assert.ok(prompt.includes('</｜DSML｜ calls>'));
+  assert.ok(prompt.includes('exactly ONE outer calls block'));
+  assert.ok(prompt.includes('string="false"'));
   assert.ok(!prompt.includes('C:/path'));
 });
 
@@ -64,7 +62,7 @@ test('resumed request includes current tool schemas and requires tool use when r
   assert.ok(prompt.includes('Read(file_path*: string'));
   assert.ok(prompt.includes('NEW USER REQUEST'));
   assert.ok(prompt.includes('you MUST call the most appropriate tool now'));
-  assert.ok(prompt.includes('<TOOL_CALL>'));
+  assert.ok(prompt.includes('<｜DSML｜ calls>'));
 });
 
 test('tool-result resume prompt includes schemas and allows the next tool step', () => {
@@ -124,7 +122,8 @@ test('full prompt retains tool schemas on a tool_result fallback turn', () => {
   assert.ok(prompt.includes('### TOOLS'));
   assert.ok(prompt.includes('Edit(file_path*: string'));
   assert.ok(prompt.includes('If the task still requires an action'));
-  assert.ok(prompt.includes('<TOOL_CALL>...</TOOL_CALL>'));
+  assert.ok(prompt.includes('<｜DSML｜ calls>'));
+  assert.ok(prompt.includes('</｜DSML｜ calls>'));
 });
 
 test('project identity and first-user-language policy are included in every prompt path', () => {
