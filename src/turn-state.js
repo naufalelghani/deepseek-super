@@ -32,4 +32,18 @@ function shouldUseStableFallback(state, sawGeneratingSignal, idleMs, stableMs) {
   );
 }
 
-module.exports = { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback };
+
+function isIdleCompletionCandidate(state, sawGeneratingSignal, idleMs, stableMs) {
+  return Boolean(
+    sawGeneratingSignal !== true &&
+    state &&
+    state.completionSignalAvailable === true &&
+    state.isGenerating === false &&
+    state.sendButtonEnabled === true &&
+    Number.isFinite(idleMs) &&
+    Number.isFinite(stableMs) &&
+    idleMs >= stableMs * 2
+  );
+}
+
+module.exports = { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, isIdleCompletionCandidate };
