@@ -331,7 +331,7 @@ test('search accepts rendered source anchors when a FOUND response omits visible
   }, {
     ensureTogglesOn: async () => {},
     runTurn: async () => ({
-      text: 'FOUND\\nTitle: Node.js downloads\\nEvidence: Official source page.',
+      text: 'FOUND\nTitle: Node.js downloads\\nEvidence: Official source page.',
       sourceLinks: [{ text: 'Node.js downloads', url: 'https://nodejs.org/en/download' }],
       toolCalls: [],
       invalidToolCall: false,
