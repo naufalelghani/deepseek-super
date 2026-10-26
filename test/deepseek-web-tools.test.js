@@ -104,7 +104,7 @@ test('tool prompts clearly request DeepSeek Search mode and prohibit fabricated 
       additional_urls: ['https://nodejs.org/en/download', 'https://github.com/nodejs/node/releases'],
     },
   });
-  assert.match(fetchPrompt, /inspect the public URL/i);
+  assert.match(fetchPrompt, /Inspect EVERY public URL/i);
   assert.match(fetchPrompt, /https:\/\/example\.com\/article/);
   assert.match(fetchPrompt, /https:\/\/nodejs\.org\/en\/download/);
   assert.match(fetchPrompt, /https:\/\/github\.com\/nodejs\/node\/releases/);
