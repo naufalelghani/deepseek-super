@@ -227,7 +227,6 @@ function buildDeepSeekWebFetchTurnPrompt(url, turnIndex, turnCount) {
     '=== INTERNAL TOOL: DeepSeekWebFetch ===',
     'This is page-inspection batch item ' + turnIndex + ' of ' + turnCount + '. DeepSeek Search mode is enabled.',
     'Inspect only this exact public URL by actually opening it using the visible DeepSeek Search UI. Do not answer from memory, skip it, or substitute another page.',
-    'Requested URL: ' + url,
     'For a page that opens, return these literal fields on separate lines:',
     'Status: OPENED',
     'Requested URL: ' + url,
