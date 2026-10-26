@@ -105,6 +105,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      }, 'DeepThink').catch(() => {});
      await page.waitForTimeout(150);
 
+     const desiredSearchOn = !toolsProvided;
      await page.evaluate((wantOn) => {
          const aria = 'aria-pressed';
          const cls = 'ds-toggle-button';
@@ -118,10 +119,27 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              const isOn = el.getAttribute(aria) === 'true';
              if (wantOn && !isOn) el.click();
              if (!wantOn && isOn) el.click();
-             return;
+             return true;
          }
-     }, !toolsProvided).catch(() => {});
+         return false;
+     }, desiredSearchOn).catch(() => false);
      await page.waitForTimeout(200);
+     const verifiedSearchState = await page.evaluate(() => {
+         const els = document.querySelectorAll('div.ds-toggle-button[aria-pressed]');
+         for (let i = 0; i < els.length; i++) {
+             const span = els[i].querySelector('span');
+             if (span && span.textContent.trim() === 'Search') {
+                 return els[i].getAttribute('aria-pressed') === 'true';
+             }
+         }
+         return null;
+     }).catch(() => null);
+     if (verifiedSearchState === null) {
+         console.warn('[toggle] Could not verify DeepSeek Search toggle state; internal web tools will reject unverified Search turns.');
+     } else if (verifiedSearchState !== desiredSearchOn) {
+         console.warn('[toggle] DeepSeek Search toggle did not reach requested state=' + desiredSearchOn);
+     }
+     return verifiedSearchState;
  }
 
  async function readState() {
