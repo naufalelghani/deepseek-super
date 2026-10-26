@@ -316,7 +316,7 @@ Safety and limitations:
 - Source links, summaries, and citations depend on what the signed-in DeepSeek Search UI actually returns. The model may provide incomplete results, and this adapter cannot guarantee that a source is accessible or that every citation is correct. Verify important sources independently.
 - If the DeepSeek UI changes, the Search toggle selectors or result rendering may need maintenance.
 
-Unit tests cover argument checks, URL safety, Search-mode prompts, toggle restoration, internal tool-result handoff, and mixed internal/client tool batches. Run `npm test` and `npm run check` to validate these paths without a live DeepSeek session.
+Unit tests cover argument checks, URL safety, Search-mode prompts, toggle restoration, internal tool-result handoff, and mixed internal/client tool batches. Run `npm test` and `npm run check` to validate these paths without a live DeepSeek session. For an optional real-UI check, sign in with `node deepseek-login.js`, start `npm start`, then run `npm run test:web-tools` in a second terminal. That smoke test asks DeepSeek to search for the official Node.js downloads page and inspect that URL; it requires a working signed-in DeepSeek Search UI and can fail when the website, selector, or web-search service is unavailable.
 
 ### Tool-call and browser recovery
 
