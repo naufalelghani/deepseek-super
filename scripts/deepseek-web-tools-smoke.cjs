@@ -111,7 +111,7 @@ async function main() {
     tool_choice: { type: 'auto' },
     messages: [{
       role: 'user',
-      content: 'Use DeepSeekWebFetch to inspect all three exact public URLs in one batch: https://nodejs.org/en/download, https://github.com/nodejs/node/releases, and https://docs.npmjs.com/about-npm. Return a separate subsection per URL with the exact requested URL, page title, one fact supported by the page, and whether it opened. Do not invent content. Keep the results under a FETCH RESULTS heading.',
+      content: 'Use DeepSeekWebFetch to inspect all three exact public URLs in one batch: https://nodejs.org/en/download, https://github.com/nodejs/node/releases, and https://docs.npmjs.com/about-npm. Return a FETCH RESULTS heading and one separate subsection per URL. In each subsection, put these literal labels on separate lines: Status: OPENED (or Status: UNAVAILABLE if it truly cannot be opened), Requested URL: the exact URL from the request, Title: the visible page title, Fact: one concrete fact supported by that page, and Summary: one concise sentence. Do not replace Fact: with an unlabeled paragraph or another label. Do not invent content. If unavailable, give Reason: and do not claim a fact.',
     }],
   });
   const fetchText = assertFinalText(fetched, 'DeepSeekWebFetch');
@@ -124,14 +124,14 @@ async function main() {
   ];
   const fetchedURLCount = requestedURLs.filter((url) => fetchText.includes(url)).length;
   assert.equal(fetchedURLCount, 3,
-    'DeepSeekWebFetch: expected results for all three requested URLs, found ' + fetchedURLCount);
+    'DeepSeekWebFetch: expected results for all three requested URLs, found ' + fetchedURLCount + '. Response: ' + fetchText.slice(0, 2400));
   assert.match(fetchText, /FETCH RESULTS/i, 'DeepSeekWebFetch: separate FETCH RESULTS section is required');
-  assert.doesNotMatch(fetchText, /could not be opened|not opened/i,
-    'DeepSeekWebFetch: at least one requested official page could not be opened');
+  assert.doesNotMatch(fetchText, /could not be opened|not opened|^\s*Status:\s*UNAVAILABLE\b/im,
+    'DeepSeekWebFetch: at least one requested official page could not be opened. Response: ' + fetchText.slice(0, 2400));
   const titleCount = (fetchText.match(/Title\s*:/gi) || []).length;
   const factCount = (fetchText.match(/Fact\s*:/gi) || []).length;
-  assert.ok(titleCount >= 3, 'DeepSeekWebFetch: expected a title for each URL, found ' + titleCount);
-  assert.ok(factCount >= 3, 'DeepSeekWebFetch: expected a fact for each URL, found ' + factCount);
+  assert.ok(titleCount >= 3, 'DeepSeekWebFetch: expected a title for each URL, found ' + titleCount + '. Response: ' + fetchText.slice(0, 2400));
+  assert.ok(factCount >= 3, 'DeepSeekWebFetch: expected a fact for each URL, found ' + factCount + '. Response: ' + fetchText.slice(0, 2400));
   console.log('PASS multi-URL DeepSeekWebFetch (' + fetchedURLCount + '/3 URLs):', fetchText.slice(0, 900));
 
   console.log('\nALL DEEPSEEK WEB-TOOL SMOKE TESTS PASSED');
