@@ -1,18 +1,36 @@
 'use strict';
 
- const OPEN_RE = /<\s*TOOL_CALL\s*>/i;
- const CLOSE_RE = /<\s*\/\s*TOOL_CALL\s*>/i;
+ const LEGACY_OPEN_RE = /<\s*TOOL_CALL\s*>/i;
+ const LEGACY_CLOSE_RE = /<\s*\/\s*TOOL_CALL\s*>/i;
+ const DSML_CALLS_OPEN_RE = /<\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls)\s*>/i;
+ const DSML_CALLS_CLOSE_RE = /<\s*\/\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls)\s*>/i;
+ const OPEN_RE = /<\s*TOOL_CALL\s*>|<\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls)\s*>/i;
+ const CLOSE_RE = LEGACY_CLOSE_RE;
+ const DSML_CALLS_BLOCK_RE = /<\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls)\s*>([\s\S]*?)<\s*\/\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls)\s*>/gi;
+ const DSML_INVOKE_RE_SOURCE = '<\\s*[｜|]{1,2}\\s*DSML\\s*[｜|]{1,2}\\s*invoke\\b([^>]*)>([\\s\\S]*?)<\\s*\\/\\s*[｜|]{1,2}\\s*DSML\\s*[｜|]{1,2}\\s*invoke\\s*>';
+ const DSML_PARAMETER_RE_SOURCE = '<\\s*[｜|]{1,2}\\s*DSML\\s*[｜|]{1,2}\\s*parameter\\b([^>]*)>([\\s\\S]*?)<\\s*\\/\\s*[｜|]{1,2}\\s*DSML\\s*[｜|]{1,2}\\s*parameter\\s*>';
+ const DSML_ORPHAN_TAG_RE = /<\s*\/?\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls|invoke|parameter)\b[^>]*>/gi;
 
  function holdbackLen(s) {
-     const max = Math.min(s.length, 16);
-     const canon = '<tool_call>';
+     const max = Math.min(s.length, 48);
+     const markers = [
+         '<TOOL_CALL>',
+         '<｜DSML｜tool_calls>',
+         '<｜DSML｜ calls>',
+         '<｜DSML｜calls>',
+         '<｜｜DSML｜｜tool_calls>',
+         '<｜｜DSML｜｜ calls>',
+         '<｜｜DSML｜｜calls>',
+         '<|DSML|tool_calls>',
+         '<|DSML| calls>',
+         '<||DSML||tool_calls>',
+         '<||DSML|| calls>',
+     ].map((marker) => marker.toLowerCase().replace(/\s+/g, ''));
      for (let len = max; len > 0; len--) {
          const tail = s.slice(-len).toLowerCase().replace(/\s+/g, '');
-         let ok = true;
-         for (let i = 0; i < tail.length; i++) {
-             if (tail[i] !== canon[i]) { ok = false; break; }
+         if (markers.some((marker) => tail.length <= marker.length && marker.startsWith(tail))) {
+             return len;
          }
-         if (ok) return len;
      }
      return 0;
  }
@@ -130,27 +148,133 @@
      return fixed;
  }
 
- function extractToolCallsFromText(text) {
+ function readDsmlAttribute(attributes, name) {
+     const matches = attributes.matchAll(/([A-Za-z_][A-Za-z0-9_-]*)\s*=\s*("([^"]*)"|'([^']*)')/g);
+     for (const match of matches) {
+         if (match[1].toLowerCase() === name.toLowerCase()) {
+             return match[3] !== undefined ? match[3] : match[4];
+         }
+     }
+     return null;
+ }
+
+ function stripDsmlTags(text) {
+     return typeof text === 'string' ? text.replace(DSML_ORPHAN_TAG_RE, '') : '';
+ }
+
+ function parseDsmlToolBlock(raw) {
      const calls = [];
-     const regex = /<\s*TOOL_CALL\s*>\s*([\s\S]*?)\s*<\s*\/\s*TOOL_CALL\s*>/gi;
-     let m;
-     while ((m = regex.exec(text)) !== null) {
-         const parsed = tryParseJSON(m[1].trim());
-         if (parsed) {
-             const arr = Array.isArray(parsed) ? parsed : [parsed];
-             for (const x of arr) {
-                 if (x && (x.tool || x.name)) {
-                     const sanitized = sanitizeToolCall({
-                         name: x.tool || x.name,
-                         input: x.arguments || x.input || {},
-                     });
-                     if (sanitized) calls.push(sanitized);
+     const errors = [];
+     const invokeRe = new RegExp(DSML_INVOKE_RE_SOURCE, 'gi');
+     let match;
+     let consumed = 0;
+
+     while ((match = invokeRe.exec(raw)) !== null) {
+         if (raw.slice(consumed, match.index).trim()) {
+             errors.push('Unexpected content between DSML invoke blocks.');
+         }
+         consumed = invokeRe.lastIndex;
+         const toolName = readDsmlAttribute(match[1], 'name');
+         if (!toolName || !toolName.trim()) {
+             errors.push('DSML invoke is missing a valid name attribute.');
+             continue;
+         }
+
+         const body = match[2];
+         const parameterRe = new RegExp(DSML_PARAMETER_RE_SOURCE, 'gi');
+         const parameters = [...body.matchAll(parameterRe)];
+         const remainder = body.replace(new RegExp(DSML_PARAMETER_RE_SOURCE, 'gi'), '').trim();
+         const input = Object.create(null);
+         let valid = true;
+         if (remainder) {
+             errors.push('Unexpected content inside DSML invoke for tool "' + toolName + '".');
+             valid = false;
+         }
+
+         for (const parameter of parameters) {
+             const parameterName = readDsmlAttribute(parameter[1], 'name');
+             const stringFlag = readDsmlAttribute(parameter[1], 'string');
+             const rawValue = parameter[2];
+             if (!parameterName || !parameterName.trim()) {
+                 errors.push('DSML parameter is missing a valid name attribute for tool "' + toolName + '".');
+                 valid = false;
+                 continue;
+             }
+             if (Object.prototype.hasOwnProperty.call(input, parameterName)) {
+                 errors.push('Duplicate DSML parameter "' + parameterName + '" for tool "' + toolName + '".');
+                 valid = false;
+                 continue;
+             }
+             if (stringFlag !== 'true' && stringFlag !== 'false') {
+                 errors.push('DSML parameter "' + parameterName + '" must declare string="true" or string="false".');
+                 valid = false;
+                 continue;
+             }
+
+             if (stringFlag === 'true') {
+                 input[parameterName] = rawValue;
+             } else {
+                 try {
+                     input[parameterName] = JSON.parse(rawValue.trim());
+                 } catch (error) {
+                     errors.push('DSML parameter "' + parameterName + '" contains invalid JSON: ' + (error.message || 'parse error'));
+                     valid = false;
                  }
              }
          }
+
+         if (valid) {
+             const sanitized = sanitizeToolCall({ name: toolName, input });
+             if (sanitized) calls.push(sanitized);
+             else errors.push('DSML arguments were rejected by the tool-call sanitizer for tool "' + toolName + '".');
+         }
      }
-     const cleaned = text.replace(regex, '').trim();
-     return { calls, text: cleaned };
+
+     if (consumed === 0) {
+         errors.push('DSML calls block did not contain a complete invoke block.');
+     } else if (raw.slice(consumed).trim()) {
+         errors.push('Unexpected trailing content in DSML calls block.');
+     }
+     return { calls, errors };
+ }
+
+ function extractToolCallsFromText(text) {
+     const calls = [];
+     const seen = new Set();
+     const addCall = (call) => {
+         const signature = call.name + '|' + JSON.stringify(call.input || {});
+         if (!seen.has(signature)) {
+             seen.add(signature);
+             calls.push(call);
+         }
+     };
+
+     const legacyRegex = /<\s*TOOL_CALL\s*>\s*([\s\S]*?)\s*<\s*\/\s*TOOL_CALL\s*>/gi;
+     let cleaned = text.replace(legacyRegex, (_, payload) => {
+         const parsed = tryParseJSON(payload.trim());
+         if (parsed !== null) {
+             const entries = Array.isArray(parsed) ? parsed : [parsed];
+             for (const entry of entries) {
+                 if (entry && typeof entry === 'object') {
+                     const sanitized = sanitizeToolCall({
+                         name: entry.tool || entry.name,
+                         input: entry.arguments || entry.input || {},
+                     });
+                     if (sanitized) addCall(sanitized);
+                 }
+             }
+         }
+         return '';
+     });
+
+     cleaned = cleaned.replace(DSML_CALLS_BLOCK_RE, (_, payload) => {
+         const parsed = parseDsmlToolBlock(payload);
+         for (const call of parsed.calls) addCall(call);
+         return '';
+     });
+
+     cleaned = stripDsmlTags(cleaned);
+     return { calls, text: cleaned.trim() };
  }
 
  class StreamParser {
@@ -160,6 +284,9 @@
          this.mode = 'text';
          this.toolBuf = '';
          this.toolBlocks = [];
+         this.dsmlToolBlocks = [];
+         this.blockFormat = 'legacy';
+         this._toolCallsCache = null;
          this.parseErrors = [];
          this.textOut = '';
          this.sawToolMarkup = false;
@@ -184,6 +311,7 @@
                      this._emitText(this.buf.slice(0, m.index));
                      this.buf = this.buf.slice(m.index + m[0].length);
                      this.mode = 'tool';
+                     this.blockFormat = /DSML/i.test(m[0]) ? 'dsml' : 'legacy';
                      this.toolBuf = '';
                      continue;
                  }
@@ -196,12 +324,15 @@
                  return;
              }
              if (this.mode === 'tool') {
-                 const m = this.buf.match(CLOSE_RE);
+                 const closingRe = this.blockFormat === 'dsml' ? DSML_CALLS_CLOSE_RE : LEGACY_CLOSE_RE;
+                 const m = this.buf.match(closingRe);
                  if (m) {
                      this.toolBuf += this.buf.slice(0, m.index);
                      this.buf = this.buf.slice(m.index + m[0].length);
-                     this.toolBlocks.push(this.toolBuf);
+                     if (this.blockFormat === 'dsml') this.dsmlToolBlocks.push(this.toolBuf);
+                     else this.toolBlocks.push(this.toolBuf);
                      this.toolBuf = '';
+                     this.blockFormat = 'legacy';
                      this.mode = 'text';
                      continue;
                  }
@@ -223,62 +354,78 @@
              this._emitText(this.buf);
              this.buf = '';
          } else if (this.mode === 'tool') {
-             // Combine the holdback suffix with accumulated payload before final parsing.
              const raw = this.toolBuf + this.buf;
-             const close = raw.match(CLOSE_RE);
-             if (close && close.index + close[0].length === raw.length) {
-                 this.toolBlocks.push(raw.slice(0, close.index));
-                 this.incompleteToolBlock = false;
-             } else {
-                 // Preserve an unterminated payload for parsing/retry, not as user-facing text.
-                 this.incompleteToolBlock = true;
-                 this.toolBlocks.push(raw);
-             }
+             const closingRe = this.blockFormat === 'dsml' ? DSML_CALLS_CLOSE_RE : LEGACY_CLOSE_RE;
+             const close = raw.match(closingRe);
+             const isClosed = Boolean(close && close.index + close[0].length === raw.length);
+             const payload = isClosed ? raw.slice(0, close.index) : raw;
+             if (this.blockFormat === 'dsml') this.dsmlToolBlocks.push(payload);
+             else this.toolBlocks.push(payload);
+             this.incompleteToolBlock = !isClosed;
              this.toolBuf = '';
              this.buf = '';
+             this.blockFormat = 'legacy';
              this.mode = 'text';
          }
      }
      toolCalls() {
+         if (this._toolCallsCache) return this._toolCallsCache.map((call) => ({
+             name: call.name,
+             input: { ...call.input },
+         }));
+
          const out = [];
          const seen = new Set();
+         const addCall = (call) => {
+             const signature = call.name + '|' + JSON.stringify(call.input || {});
+             if (!seen.has(signature)) {
+                 seen.add(signature);
+                 out.push(call);
+             }
+         };
+
          for (const raw of this.toolBlocks) {
              const payload = raw.trim();
              const parsed = tryParseJSON(payload);
              if (parsed === null) {
                  let reason = 'The JSON parser could not recover the payload';
                  try { JSON.parse(payload); reason = 'Valid JSON, but not a supported tool payload'; }
-                 catch (e) { reason = e.message || reason; }
+                 catch (error) { reason = error.message || reason; }
                  this.parseErrors.push({ chars: raw.length, reason });
                  continue;
              }
-             const arr = Array.isArray(parsed) ? parsed : [parsed];
+
+             const entries = Array.isArray(parsed) ? parsed : [parsed];
              let foundToolName = false;
-             for (const x of arr) {
-                 if (!x || typeof x !== 'object') continue;
-                 const name = x.tool || x.name;
-                 const input = x.arguments || x.input || {};
+             for (const entry of entries) {
+                 if (!entry || typeof entry !== 'object') continue;
+                 const name = entry.tool || entry.name;
+                 const input = entry.arguments || entry.input || {};
                  if (typeof name === 'string' && name) {
                      foundToolName = true;
                      const sanitized = sanitizeToolCall({ name, input });
-                     if (sanitized) {
-                         // Dedupe: hindari block duplikat dari model
-                         const sig = sanitized.name + '|' + JSON.stringify(sanitized.input);
-                         if (!seen.has(sig)) {
-                             seen.add(sig);
-                             out.push(sanitized);
-                         }
-                     } else {
-                         this.parseErrors.push({ chars: raw.length, reason: 'tool input ditolak oleh sanitizer' });
-                     }
+                     if (sanitized) addCall(sanitized);
+                     else this.parseErrors.push({ chars: raw.length, reason: 'tool input ditolak oleh sanitizer' });
                  }
              }
              if (!foundToolName) {
                  this.parseErrors.push({ chars: raw.length, reason: 'JSON must include a tool field or a string name' });
              }
          }
+
+         for (const raw of this.dsmlToolBlocks) {
+             const parsed = parseDsmlToolBlock(raw);
+             for (const call of parsed.calls) addCall(call);
+             for (const reason of parsed.errors) {
+                 this.parseErrors.push({ chars: raw.length, reason });
+             }
+         }
+
+         this.textOut = stripDsmlTags(this.textOut);
+         this._toolCallsCache = out.map((call) => ({ name: call.name, input: { ...call.input } }));
          return out;
      }
+
  }
 
-module.exports = { StreamParser, tryParseJSON, tryParseJSON_v1, sanitizeToolCall, extractToolCallsFromText, holdbackLen, OPEN_RE, CLOSE_RE };
+module.exports = { StreamParser, tryParseJSON, tryParseJSON_v1, sanitizeToolCall, extractToolCallsFromText, holdbackLen, OPEN_RE, CLOSE_RE, parseDsmlToolBlock, stripDsmlTags };
