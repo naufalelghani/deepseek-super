@@ -451,16 +451,10 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
          }
      }
 
-     // Emit parsed content to the sink.
-     if (sink) {
-         if (thinkOpened || textOpened) sink.stopBlock();
-         // Buffer until parsing completes when tools are available. Do not leak malformed
-         // tool-call payloads as assistant text while the handler is preparing a retry.
-         if (bufferText && finalText && !invalidToolCall) {
-             sink.emitText(finalText);
-         }
-         for (const t of finalTools) sink.toolBlock(t.name, t.input);
-     }
+     // Close any live thinking/text block, but defer buffered text and every tool
+     // block to the handler. It must validate the complete tool batch before emitting
+     // or forwarding any part of it, otherwise a failed recovery can leak partial output.
+     if (sink && (thinkOpened || textOpened)) sink.stopBlock();
 
      if (finalTools.length > 0) {
          console.log('[tool-parser] parsed tool call(s): ' + finalTools.map((t) => t.name).join(', '));
