@@ -240,7 +240,7 @@ test('execution isolates native Search turns from the client DSML tool context',
   });
 
   assert.equal(prompts.length, 1);
-  assert.match(result.result, /https:\\/\\/nodejs\\.org\\/en\\/download/);
+  assert.ok(result.result.includes('https://nodejs.org/en/download'));
   assert.match(result.result, /Evidence: FOUND/);
 });
 
