@@ -170,7 +170,8 @@ async function handleMessages(req, res, body, dependencies = {}) {
       toolBlock() {},
     };
     const useBuffer = tools.length > 0;
-    const out = await runTurn(prompt, sink || dummySink, useBuffer, isCancelled);
+    const bufferResponse = useBuffer || force.mode === 'none';
+    const out = await runTurn(prompt, sink || dummySink, bufferResponse, isCancelled);
     abortIfCancelled();
     answer = out.text;
     thinking = out.thinking;
@@ -178,10 +179,28 @@ async function handleMessages(req, res, body, dependencies = {}) {
 
     const hasRawToolCall = out.invalidToolCall || (answer || '').toLowerCase().includes('<tool_call>');
     if (force.mode === 'none' && (hasRawToolCall || toolCalls.length > 0)) {
-      throw createToolCallRecoveryError(
-        'DeepSeek attempted a tool call despite tool_choice=none or the gateway loop guard. The call was not forwarded.',
-        0
-      );
+      console.warn('[tool-recovery] model ignored the no-tool policy; requesting one text-only recovery');
+      const textOnlyPrompt = [
+        '=== TEXT-ONLY RECOVERY ===',
+        'Your previous response attempted to call a tool even though tools are disabled for this turn.',
+        'Do not call tools, do not emit <TOOL_CALL> tags, and do not output JSON.',
+        'Use only the conversation and tool results already available to provide the best possible plain-text answer now.',
+        'If the task cannot be completed from available information, state the limitation clearly.',
+        'Output only the final user-facing answer.'
+      ].join('\n');
+      const recovery = await runTurn(textOnlyPrompt, dummySink, true, isCancelled);
+      abortIfCancelled();
+      const recoveryHasToolMarkup = recovery.invalidToolCall ||
+        (recovery.text || '').toLowerCase().includes('<tool_call>');
+      if (recovery.toolCalls.length > 0 || recoveryHasToolMarkup || !recovery.text.trim()) {
+        throw createToolCallRecoveryError(
+          'DeepSeek continued to emit tool-call output despite a text-only recovery request. No tool was forwarded.',
+          1
+        );
+      }
+      answer = recovery.text;
+      thinking = recovery.thinking;
+      toolCalls = [];
     }
 
     let validation = toolCalls.length > 0
@@ -279,7 +298,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
     // For tool-enabled requests, emit the response only after parse and schema
     // validation succeeds. This keeps retries atomic and prevents partial/invalid
     // tool batches from reaching the client.
-    if (sink && useBuffer) {
+    if (sink && (useBuffer || force.mode === 'none')) {
       if (answer) sink.emitText(answer);
       for (const tool of toolCalls) sink.toolBlock(tool.name, tool.input);
     }
