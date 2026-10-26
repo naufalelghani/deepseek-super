@@ -302,22 +302,22 @@ HTTP compatibility with the Anthropic SDK does not imply full semantic support f
 
 When `tool_choice` is `auto`, the gateway offers two internal tools to DeepSeek:
 
-- `DeepSeekWebSearch({ query, additional_queries?, sites?, max_results? })` — turns on DeepSeek's Search toggle for one batch turn. It can search up to 6 query phrases against up to 8 target domains (at most 12 query/domain combinations), then captures the visible result and source URLs.
-- `DeepSeekWebFetch({ url, additional_urls? })` — turns on Search mode to inspect up to 5 public HTTP(S) URLs in one batch turn, returning a best-effort per-page summary and visible evidence.
+- `DeepSeekWebSearch({ query, additional_queries?, sites?, max_results? })` — executes one internal batch as separate, focused Search-mode turns for each query/domain combination (up to 12 combinations). It captures only source URLs rendered as links in the DeepSeek UI and only credits a source to a site-scoped query when the hostname matches the requested domain.
+- `DeepSeekWebFetch({ url, additional_urls? })` — inspects up to 5 public HTTP(S) URLs in separate turns within one internal batch, returning a best-effort per-page summary and visible evidence for each requested URL.
 
 These are **gateway-internal tools**. Their calls are parsed from DSML, executed inside the existing DeepSeek browser conversation, and their results are fed back to DeepSeek as tool-result context. They are not returned as client-facing `tool_use` blocks. Any client-owned calls in the same batch (for example, `Read` or `Bash`) are returned normally after the internal web call finishes. Internal web-tool loops are bounded to three rounds per request.
 
-DeepThink is still enabled through the UI toggle. Search is turned off for normal tool planning and re-enabled only for an internal web-tool turn, then turned off again before the model continues. Toggle control depends on the DeepSeek website DOM and is best-effort.
+DeepThink is still enabled through the UI toggle. Search is turned off for normal tool planning and enabled for each focused internal web-tool turn, then turned off before the model continues. Toggle control depends on the DeepSeek website DOM and is best-effort.
 
 Safety and limitations:
 
 - Each search query is capped at 500 characters; a batch supports at most 6 queries, 8 bare target domains, and 12 query/domain combinations. Target-site domains must be public hostnames without a scheme, path, port, or wildcard. `max_results` defaults to 8 and accepts integers from 1 to 12 across the entire batch.
 - Fetch accepts up to 5 public `http://` or `https://` URLs per batch, rejects embedded credentials and common local/private targets, and strips URL fragments. It is not a raw HTTP fetch API and does not guarantee full-page extraction.
-- Each batch uses one Search-enabled DeepSeek UI turn per internal tool call; the single browser session is not issuing independent network fetches in parallel. The prompt asks DeepSeek Search to cover each query/site or URL, but the model/service may still omit sources.
+- A batch is one internal tool call, but its query/domain combinations or URLs are processed in separate sequential Search-enabled UI turns; they are not parallel HTTP requests. Search attempts avoid relying on a literal `site:` query operator and do not count a URL from another domain as a match for a site-scoped search. Results may still be unavailable if the signed-in UI does not surface source links.
 - Source links, summaries, and citations depend on what the signed-in DeepSeek Search UI actually returns. The model may provide incomplete results, and this adapter cannot guarantee that a source is accessible or that every citation is correct. Verify important sources independently.
 - If the DeepSeek UI changes, the Search toggle selectors or result rendering may need maintenance.
 
-Unit tests cover argument checks, URL safety, Search-mode prompts, toggle restoration, internal tool-result handoff, and mixed internal/client tool batches. Run `npm test` and `npm run check` to validate these paths without a live DeepSeek session. For an optional real-UI check, sign in with `node deepseek-login.js`, start `npm start`, then run `npm run test:web-tools` in a second terminal. That smoke test asks DeepSeek to search multiple queries across `nodejs.org`, `github.com`, and `docs.npmjs.com`, then inspect three URLs in one fetch batch. It requires a working signed-in DeepSeek Search UI and can fail when the website, selector, or web-search service is unavailable.
+Unit tests cover argument validation, URL safety, focused search/fetch turns, source-domain matching, toggle restoration, internal tool-result handoff, and mixed internal/client tool batches. Run `npm test` and `npm run check` without a live session. For live checks, sign in with `node deepseek-login.js`, start `npm start`, then run `npm run test:web-tools`, `npm run test:sdk`, and `npm run test:claude-code` in another terminal. The SDK and Claude Code scripts now also test Search and Fetch through the local gateway. The tests deliberately fail when Search has no source URLs from at least two target domains, when direct fetch is used as a fallback for empty search results, or when one of the three requested fetch URLs does not return a title and fact. These tests require the signed-in DeepSeek Search UI and may fail if its search service, selectors, or source links are unavailable. SDK/Claude Code web-tool checks are skipped for external endpoints because they do not necessarily implement this repository's internal tools.
 
 ### Tool-call and browser recovery
 
@@ -344,7 +344,7 @@ npm run test:sdk
 
 For the default local endpoint, the smoke test reads the ignored `.deepseek-super-token` file automatically. If the server was started with an explicit `DEEPSEEK_SUPER_TOKEN`, set `ANTHROPIC_AUTH_TOKEN` to the same value in the second terminal. The endpoint can be changed with `DEEPSEEK_SUPER_BASE_URL`, and the model name with `ANTHROPIC_MODEL`; custom endpoints require a matching token.
 
-The smoke test covers four flows through the official SDK: a non-streaming text response, a streamed text response, a non-streaming `tool_use` followed by a `tool_result` round trip, and a streamed `tool_use` whose `input_json_delta` fragments are reassembled and validated. The tool-use checks assert the returned tool name and fixture command. **No command is executed**; the follow-up tool result is synthetic. These requests go through the signed-in DeepSeek web session and may be subject to web-app limits.
+The smoke test covers four Anthropic SDK compatibility flows plus two local-gateway web-tool flows: focused multi-query/multi-domain `DeepSeekWebSearch` with strict source-domain validation, and `DeepSeekWebFetch` over three exact public URLs with per-page title/fact checks. The tool-use checks assert the returned tool name and fixture command. **No command is executed**; the follow-up tool result is synthetic. The web-tool checks require the local gateway and are skipped for external endpoints. All live requests use the signed-in DeepSeek web session and may be subject to web-app limits.
 
 Run unit tests and syntax checks without a logged-in DeepSeek session or a running gateway:
 
@@ -374,7 +374,7 @@ Then, in a second terminal at the repository root:
 npm run test:claude-code
 ```
 
-The test requires six tools to be called sequentially and each to return a result: `Read`, `Glob`, `Grep`, `Edit`, `Write`, and `Bash(pwd)`. It also exercises multi-step tool calling. File edits and writes are restricted to a temporary workspace, not the repository. The only allowed Bash command is `pwd`; the workspace is deleted after the test finishes.
+The test requires six tools to be called sequentially and each to return a result: `Read`, `Glob`, `Grep`, `Edit`, `Write`, and `Bash(pwd)`. It also exercises multi-step tool calling. File edits and writes are restricted to a temporary workspace, not the repository. The only allowed Bash command is `pwd`; the workspace is deleted after the test finishes. When using this repository's local gateway, it then performs a second Claude Code run that exercises `DeepSeekWebSearch` across three domains and `DeepSeekWebFetch` on three exact URLs, validating separate Search/Fetch sections, actual source URLs, and per-page titles/facts. These web checks are skipped for external gateways.
 
 ### Optional: run the CLI test through 9Router
 
