@@ -4,6 +4,7 @@ const { MODEL_NAME, MAX_REPLAY, sha, uuid } = require('./config');
 const { blocksOf, sessionKey, renderMessage, truncateReplay } = require('./content');
 const { buildFullPrompt, buildResumePrompt, parseToolChoice, applyForcedTool } = require('./prompts');
 const { createToolCallRecoveryError } = require('./tool-recovery');
+const { validateToolCalls } = require('./tool-validation');
 const { ensurePage, ensureTogglesOn, resumeUrl, gotoNewChat, runTurn, currentUrl, locked } = require('./browser');
 const { getSession, setSession } = require('./session-store');
 const { StreamSink } = require('./sse-sink');
@@ -157,50 +158,75 @@ async function handleMessages(req, res, body) {
         0
       );
     }
-    if (hasRawToolCall && toolCalls.length === 0) {
+
+    let validation = toolCalls.length > 0
+      ? validateToolCalls(toolCalls, tools)
+      : { valid: !hasRawToolCall, error: null };
+    const needsRecovery = (hasRawToolCall && toolCalls.length === 0) ||
+      (toolCalls.length > 0 && !validation.valid);
+
+    if (needsRecovery) {
       if (tools.length === 0) {
         throw createToolCallRecoveryError(
-          'DeepSeek emitted malformed tool-call markup, but this request did not provide any tools.',
+          'DeepSeek emitted a tool call that cannot be used because this request did not declare tools.',
           0
         );
       }
 
       const maxRetries = 2;
-      let recoveredByRetry = false;
-      for (let attempt = 1; attempt <= maxRetries && toolCalls.length === 0; attempt++) {
-        console.warn('[retry] attempt=' + attempt + '/' + maxRetries + ' — correcting malformed tool-call output');
+      let recovered = false;
+      let recoveryIssue = validation.error ||
+        'The previous tool-call JSON was malformed or incomplete.';
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        console.warn('[retry] attempt=' + attempt + '/' + maxRetries +
+          ' — repairing tool-call output: ' + recoveryIssue);
         const retryPrompt = [
-          '=== RETRY FORMAT CORRECTION ===',
-          'The previous response contained a malformed tool-call JSON payload. Do not copy the malformed payload.',
-          'Use the original task, conversation history, available tool list, and schemas already present in the conversation.',
-          'Rebuild the tool call from scratch using the tool name and arguments required by the original task.',
-          'Output exactly one tool-call block with valid JSON and no text or Markdown outside it.',
-          'Valid format example only; this is not an instruction to execute pwd:',
+          '=== TOOL CALL RECOVERY ===',
+          'The previous response contained a tool call that was malformed or did not match the declared tool schema.',
+          'Do not copy its malformed JSON or invalid arguments.',
+          'Use the original task, conversation history, available tools, and their schemas.',
+          'Correct this issue: ' + recoveryIssue,
+          'Rebuild the necessary tool call(s) from scratch. All arguments must be valid JSON objects and satisfy the declared schemas.',
+          'Output only valid tool-call markup, with no prose or Markdown outside it.',
+          'Valid formatting example only; this is not an instruction to execute pwd:',
           '<TOOL_CALL>{"tool":"Bash","arguments":{"command":"pwd"}}</TOOL_CALL>',
-          'Use double-quoted JSON keys and strings, with no trailing commas or comments. Escape quotes inside strings using standard JSON rules.',
+          'Use double-quoted JSON keys and strings, no trailing commas or comments, and escape quotes and backslashes using standard JSON rules.',
           attempt === 1
-            ? 'Correct the format only; preserve the intent and arguments of the original task.'
-            : 'Final recovery attempt: do not copy the previous output. Rebuild the simplest arguments that still complete the original task.'
+            ? 'Preserve the original task intent and do not invent arguments.'
+            : 'This is the final recovery attempt. Rebuild the simplest valid arguments that still satisfy the original task.'
         ].join('\n');
-        // Use a dummy sink so failed retry output is not leaked or duplicated in the SSE stream.
+
+        // Keep retry output private until the whole batch passes validation.
         const retry = await runTurn(retryPrompt, dummySink, useBuffer, isCancelled);
         abortIfCancelled();
         answer = retry.text;
         thinking = retry.thinking;
         toolCalls = retry.toolCalls;
-        if (toolCalls.length > 0) {
-          recoveredByRetry = true;
-          console.log('[retry] recovered on attempt ' + attempt + ' — valid tool calls=' + toolCalls.length);
-        } else {
-          console.warn('[retry] attempt ' + attempt + ' did not produce a valid tool call');
+
+        const retryHasRawToolCall = retry.invalidToolCall ||
+          (answer || '').toLowerCase().includes('<tool_call>');
+        validation = toolCalls.length > 0
+          ? validateToolCalls(toolCalls, tools)
+          : { valid: false, error: retryHasRawToolCall
+              ? 'The retried tool-call JSON is still malformed or incomplete.'
+              : 'The retry did not return a tool call.' };
+
+        if (toolCalls.length > 0 && validation.valid) {
+          recovered = true;
+          console.log('[retry] recovered on attempt ' + attempt +
+            ' — schema-valid tool calls=' + toolCalls.length);
+          break;
         }
+
+        recoveryIssue = validation.error || 'The retry did not return a valid tool call.';
+        console.warn('[retry] attempt ' + attempt + ' did not produce schema-valid tool calls');
       }
-      if (recoveredByRetry && sink) {
-        for (const tool of toolCalls) sink.toolBlock(tool.name, tool.input);
-      } else if (!recoveredByRetry) {
+
+      if (!recovered) {
         console.error('[retry] exhausted; returning an explicit gateway error instead of a false end_turn');
         throw createToolCallRecoveryError(
-          'DeepSeek could not produce valid tool-call JSON after ' + maxRetries + ' recovery attempts. Retry the request or simplify the tool arguments.',
+          'DeepSeek could not produce a valid tool call after ' + maxRetries +
+          ' recovery attempts. Last validation issue: ' + recoveryIssue,
           maxRetries
         );
       }
@@ -213,13 +239,22 @@ async function handleMessages(req, res, body) {
       );
     }
 
-    const declaredToolNames = new Set(tools.map((tool) => tool.name));
-    const undeclaredTool = toolCalls.find((tool) => !declaredToolNames.has(tool.name));
-    if (undeclaredTool) {
-      throw createToolCallRecoveryError(
-        'DeepSeek returned an undeclared tool name: ' + undeclaredTool.name + '. The call was not forwarded to the client.',
-        0
-      );
+    if (toolCalls.length > 0) {
+      validation = validateToolCalls(toolCalls, tools);
+      if (!validation.valid) {
+        throw createToolCallRecoveryError(
+          'Tool calls failed schema validation and were not forwarded: ' + validation.error,
+          0
+        );
+      }
+    }
+
+    // For tool-enabled requests, emit the response only after parse and schema
+    // validation succeeds. This keeps retries atomic and prevents partial/invalid
+    // tool batches from reaching the client.
+    if (sink && useBuffer) {
+      if (answer) sink.emitText(answer);
+      for (const tool of toolCalls) sink.toolBlock(tool.name, tool.input);
     }
 
     abortIfCancelled();
