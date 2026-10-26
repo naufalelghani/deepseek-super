@@ -324,6 +324,23 @@ test('search batch executes each query/domain pair in a focused turn and accepts
 });
 
 
+test('search accepts rendered source anchors when a FOUND response omits visible URL text', async () => {
+  const result = await executeDeepSeekWebTool({
+    name: DEEPSEEK_WEB_SEARCH,
+    input: { query: 'official docs', sites: ['nodejs.org'] },
+  }, {
+    ensureTogglesOn: async () => {},
+    runTurn: async () => ({
+      text: 'FOUND\\nTitle: Node.js downloads\\nEvidence: Official source page.',
+      sourceLinks: [{ text: 'Node.js downloads', url: 'https://nodejs.org/en/download' }],
+      toolCalls: [],
+      invalidToolCall: false,
+    }),
+  });
+  assert.ok(result.result.includes('https://nodejs.org/en/download'));
+  assert.match(result.result, /Source: Node\.js downloads/);
+});
+
 test('search batch falls back to explicit URL text when the UI supplied an empty link list', async () => {
   const result = await executeDeepSeekWebTool({
     name: DEEPSEEK_WEB_SEARCH,
