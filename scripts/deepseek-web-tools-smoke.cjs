@@ -81,17 +81,26 @@ async function main() {
     tool_choice: { type: 'auto' },
     messages: [{
       role: 'user',
-      content: 'Use DeepSeekWebSearch in one batch. Main query: official Node.js downloads and supported release versions. Additional queries: ["Node.js release notes on GitHub", "official npm package documentation"]. Target sites: ["nodejs.org", "github.com", "docs.npmjs.com"]. Return a concise report with real source links from at least two of those target domains; state explicitly if a domain has no result. Do not answer from memory.',
+      content: 'Use DeepSeekWebSearch only, in one batch. Main query: official Node.js downloads and supported release versions. Additional queries: ["Node.js release notes on GitHub", "official npm package documentation"]. Target sites: ["nodejs.org", "github.com", "docs.npmjs.com"]. Do not call DeepSeekWebFetch or replace missing search results by opening URLs. Return a section headed SEARCH RESULTS containing source links actually surfaced by Search, with title, exact URL, and one supported fact. If Search yields no sources, say NO_SOURCES_FOUND. Do not answer from memory or invent links.',
     }],
   });
   const searchText = assertFinalText(searched, 'DeepSeekWebSearch');
-  assert.match(searchText, /node(?:js|\.js)|nodejs\.org/i,
-    'DeepSeekWebSearch: answer should identify Node.js or its official site');
-  const searchDomains = ['nodejs\\.org', 'github\\.com', 'docs\\.npmjs\\.com'];
-  const foundDomainCount = searchDomains.filter((domain) => new RegExp(domain, 'i').test(searchText)).length;
+  const searchSectionMatch = searchText.match(/SEARCH RESULTS([\s\S]*?)(?:FETCH RESULTS|$)/i);
+  assert.ok(searchSectionMatch, 'DeepSeekWebSearch: a separate SEARCH RESULTS section is required');
+  const searchSection = searchSectionMatch[1];
+  assert.doesNotMatch(searchSection, /NO_SOURCES_FOUND/i,
+    'DeepSeekWebSearch: the actual search batch reported no sources');
+  assert.doesNotMatch(searchText, /follow-up direct fetch|substitut(?:e|ed|ing) direct fetch|sources came from .*fetch/i,
+    'DeepSeekWebSearch: direct fetch must not be used as a fallback for empty search results');
+  const searchURLs = [...searchSection.matchAll(/https?:\/\/([^/\s?#]+)/gi)]
+    .map((match) => match[1].toLowerCase());
+  const targetDomains = ['nodejs.org', 'github.com', 'docs.npmjs.com'];
+  const foundDomainCount = targetDomains.filter((domain) =>
+    searchURLs.some((host) => host === domain || host.endsWith('.' + domain))
+  ).length;
   assert.ok(foundDomainCount >= 2,
-    'DeepSeekWebSearch: expected source URLs from at least two target sites, found ' + foundDomainCount);
-  console.log('PASS multi-site DeepSeekWebSearch (' + foundDomainCount + ' domains):', searchText.slice(0, 900));
+    'DeepSeekWebSearch: expected actual source URLs from at least two target domains, found ' + foundDomainCount);
+  console.log('PASS multi-site DeepSeekWebSearch (' + foundDomainCount + ' source domains):', searchSection.slice(0, 900));
 
   console.log('\n[2/2] Multi-URL DeepSeekWebFetch batch ...');
   const fetched = await client.messages.create({
@@ -100,7 +109,7 @@ async function main() {
     tool_choice: { type: 'auto' },
     messages: [{
       role: 'user',
-      content: 'Use DeepSeekWebFetch to inspect all three exact public URLs in one batch: https://nodejs.org/en/download, https://github.com/nodejs/node/releases, and https://docs.npmjs.com/about-npm. Return a separate subsection per URL with title, one fact, and the URL. State which pages could not be opened rather than inventing content.',
+      content: 'Use DeepSeekWebFetch to inspect all three exact public URLs in one batch: https://nodejs.org/en/download, https://github.com/nodejs/node/releases, and https://docs.npmjs.com/about-npm. Return a separate subsection per URL with the exact requested URL, page title, one fact supported by the page, and whether it opened. Do not invent content. Keep the results under a FETCH RESULTS heading.',
     }],
   });
   const fetchText = assertFinalText(fetched, 'DeepSeekWebFetch');
@@ -112,8 +121,15 @@ async function main() {
     'https://docs.npmjs.com/about-npm',
   ];
   const fetchedURLCount = requestedURLs.filter((url) => fetchText.includes(url)).length;
-  assert.ok(fetchedURLCount >= 2,
-    'DeepSeekWebFetch: expected results for at least two requested URLs, found ' + fetchedURLCount);
+  assert.equal(fetchedURLCount, 3,
+    'DeepSeekWebFetch: expected results for all three requested URLs, found ' + fetchedURLCount);
+  assert.match(fetchText, /FETCH RESULTS/i, 'DeepSeekWebFetch: separate FETCH RESULTS section is required');
+  assert.doesNotMatch(fetchText, /could not be opened|not opened/i,
+    'DeepSeekWebFetch: at least one requested official page could not be opened');
+  const titleCount = (fetchText.match(/Title\s*:/gi) || []).length;
+  const factCount = (fetchText.match(/Fact\s*:/gi) || []).length;
+  assert.ok(titleCount >= 3, 'DeepSeekWebFetch: expected a title for each URL, found ' + titleCount);
+  assert.ok(factCount >= 3, 'DeepSeekWebFetch: expected a fact for each URL, found ' + factCount);
   console.log('PASS multi-URL DeepSeekWebFetch (' + fetchedURLCount + '/3 URLs):', fetchText.slice(0, 900));
 
   console.log('\nALL DEEPSEEK WEB-TOOL SMOKE TESTS PASSED');
