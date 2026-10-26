@@ -143,3 +143,57 @@ test('project identity and first-user-language policy are included in every prom
     assert.ok(prompt.includes('https://chat.deepseek.com/'));
   }
 });
+
+
+test('truncated long replay retains tool schemas and the latest user request', () => {
+  const { truncateReplay } = require('../src/content');
+  const messages = Array.from({ length: 24 }, (_, index) => ({
+    role: index % 2 === 0 ? 'user' : 'assistant',
+    content: 'HISTORY_' + index + '_' + 'x'.repeat(5000),
+  }));
+  messages.push({ role: 'user', content: 'LATEST_REQUEST_MARKER: continue the task with Bash.' });
+
+  const tools = [{
+    name: 'Bash',
+    description: 'Run shell commands',
+    input_schema: {
+      type: 'object',
+      properties: { command: { type: 'string' } },
+      required: ['command'],
+    },
+  }];
+
+  const replay = truncateReplay(buildFullPrompt('system instructions', messages, tools));
+  assert.match(replay, /Bash\(command\*: string/);
+  assert.match(replay, /LATEST_REQUEST_MARKER/);
+  assert.match(replay, /WARNING: conversation replay was truncated/);
+});
+
+
+test('bounded resumed prompt preserves tool schemas after an oversized tool result', () => {
+  const { truncateReplay } = require('../src/content');
+  const prompt = buildResumePrompt('', [{
+    role: 'user',
+    content: [{
+      type: 'tool_result',
+      tool_use_id: 'toolu_large',
+      content: 'RESULT_BEGIN_MARKER_' + 'r'.repeat(70000) + '_RESULT_END_MARKER',
+    }],
+  }], [{
+    name: 'Read',
+    description: 'Read a file',
+    input_schema: {
+      type: 'object',
+      properties: { file_path: { type: 'string' } },
+      required: ['file_path'],
+    },
+  }], true);
+
+  const replay = truncateReplay(prompt);
+  assert.ok(replay.length <= require('../src/config').MAX_REPLAY);
+  assert.match(replay, /Read\(file_path\*: string/);
+  assert.match(replay, /RESULT_BEGIN_MARKER/);
+  assert.match(replay, /RESULT_END_MARKER/);
+  assert.match(replay, /If the task is not complete, use the next required tool/);
+  assert.match(replay, /content truncated/);
+});

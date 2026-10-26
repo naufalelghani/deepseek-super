@@ -2,15 +2,33 @@
 
 const { MODEL_NAME, MAX_REPLAY, sha, uuid } = require('./config');
 const { blocksOf, sessionKey, renderMessage, truncateReplay } = require('./content');
-const { buildFullPrompt, buildResumePrompt, parseToolChoice, applyForcedTool, synthesizeToolCall } = require('./prompts');
-const { ensurePage, ensureTogglesOn, resumeUrl, gotoNewChat, runTurn, currentUrl, locked } = require('./browser');
-const { getSession, setSession } = require('./session-store');
+const { buildFullPrompt, buildResumePrompt, parseToolChoice, applyForcedTool } = require('./prompts');
+const { createToolCallRecoveryError } = require('./tool-recovery');
+const { validateToolCalls } = require('./tool-validation');
+
+function validateToolCallsForChoice(toolCalls, tools, force) {
+  const validation = validateToolCalls(toolCalls, tools);
+  if (!validation.valid) return validation;
+  if (force && force.mode === 'tool') {
+    const mismatch = toolCalls.find((call) => call.name !== force.name);
+    if (mismatch) {
+      return {
+        valid: false,
+        error: 'tool_choice requires "' + force.name + '", but DeepSeek returned "' + mismatch.name + '".',
+      };
+    }
+  }
+  return validation;
+}
+
+const { ensurePage: defaultEnsurePage, ensureTogglesOn: defaultEnsureTogglesOn, resumeUrl: defaultResumeUrl, gotoNewChat: defaultGotoNewChat, runTurn: defaultRunTurn, currentUrl: defaultCurrentUrl, locked: defaultLocked } = require('./browser');
+const { getSession: defaultGetSession, setSession: defaultSetSession } = require('./session-store');
 const { StreamSink } = require('./sse-sink');
 const { jsonError } = require('./http-utils');
 const { estimateInputTokens, estimateOutputTokens } = require('./anthropic-contract');
 
 function detectToolLoop(messages, threshold = 3) {
-  if (messages.length < threshold * 2 + 1) return false;
+  if (threshold < 1) return false;
   const signatures = [];
   for (const message of messages) {
     for (const block of blocksOf(message.content)) {
@@ -31,11 +49,20 @@ function isConversationTooLong(messages) {
 
 // Reuse the saved DeepSeek thread for every continuation, including tool_result
 // turns. A tool result is a continuation of the same assistant turn, not a new chat.
-function shouldResumeSession(cached, messages) {
-  return Boolean(cached && Array.isArray(messages) && messages.length > 1);
+function shouldResumeSession(cached, messages, forceFresh = false) {
+  return Boolean(!forceFresh && cached && Array.isArray(messages) && messages.length > 1);
 }
 
-async function handleMessages(req, res, body) {
+async function handleMessages(req, res, body, dependencies = {}) {
+  const ensurePage = dependencies.ensurePage || defaultEnsurePage;
+  const ensureTogglesOn = dependencies.ensureTogglesOn || defaultEnsureTogglesOn;
+  const resumeUrl = dependencies.resumeUrl || defaultResumeUrl;
+  const gotoNewChat = dependencies.gotoNewChat || defaultGotoNewChat;
+  const runTurn = dependencies.runTurn || defaultRunTurn;
+  const currentUrl = dependencies.currentUrl || defaultCurrentUrl;
+  const locked = dependencies.locked || defaultLocked;
+  const getSession = dependencies.getSession || defaultGetSession;
+  const setSession = dependencies.setSession || defaultSetSession;
   let clientDisconnected = false;
   const onResponseClose = () => {
     if (!res.writableEnded) clientDisconnected = true;
@@ -72,9 +99,10 @@ async function handleMessages(req, res, body) {
     console.warn('[loop-detect] three identical tool calls detected; forcing a text response');
     force = { mode: 'none' };
   }
-  if (isConversationTooLong(messages)) {
-    console.warn('[long-conv] message_count=' + messages.length + '; forcing a text response');
-    force = { mode: 'none' };
+  const conversationTooLong = isConversationTooLong(messages);
+  if (conversationTooLong) {
+    console.warn('[long-conv] message_count=' + messages.length +
+      '; starting a fresh DeepSeek thread with a bounded replay so tool use can continue');
   }
 
   const key = sessionKey(system, messages);
@@ -98,7 +126,7 @@ async function handleMessages(req, res, body) {
     abortIfCancelled();
 
     let resumed = false;
-    if (shouldResumeSession(cached, messages)) {
+    if (shouldResumeSession(cached, messages, conversationTooLong)) {
       try {
         resumed = await resumeUrl(cached.url);
       } catch (error) {
@@ -109,23 +137,26 @@ async function handleMessages(req, res, body) {
       }
     }
 
-    let prompt;
+    let untruncatedPrompt;
     if (resumed) {
-      prompt = buildResumePrompt(system, messages, tools, lastHasToolResult);
+      untruncatedPrompt = buildResumePrompt(system, messages, tools, lastHasToolResult);
     } else {
       if (cached) {
-        console.warn('[session] cached conversation unavailable; creating a new conversation');
+        console.warn(conversationTooLong
+          ? '[session] conversation exceeded the replay threshold; creating a fresh thread'
+          : '[session] cached conversation unavailable; creating a new conversation');
       }
       await gotoNewChat();
-      const untruncatedPrompt = buildFullPrompt(system, messages, tools);
-      if (untruncatedPrompt.length > MAX_REPLAY) {
-        console.warn('[prompt-truncate] input_chars=' + untruncatedPrompt.length +
-          ' cap_chars=' + MAX_REPLAY +
-          ' omitted_chars=' + (untruncatedPrompt.length - MAX_REPLAY) +
-          '; the replay includes an explicit warning marker');
-      }
-      prompt = truncateReplay(untruncatedPrompt);
+      untruncatedPrompt = buildFullPrompt(system, messages, tools);
     }
+
+    if (untruncatedPrompt.length > MAX_REPLAY) {
+      console.warn('[prompt-truncate] input_chars=' + untruncatedPrompt.length +
+        ' cap_chars=' + MAX_REPLAY +
+        ' omitted_chars=' + (untruncatedPrompt.length - MAX_REPLAY) +
+        '; the replay includes an explicit warning marker');
+    }
+    let prompt = truncateReplay(untruncatedPrompt);
     prompt = applyForcedTool(prompt, force);
     abortIfCancelled();
 
@@ -139,60 +170,137 @@ async function handleMessages(req, res, body) {
       toolBlock() {},
     };
     const useBuffer = tools.length > 0;
-    const out = await runTurn(prompt, sink || dummySink, useBuffer, isCancelled);
+    const bufferResponse = useBuffer || force.mode === 'none';
+    const out = await runTurn(prompt, sink || dummySink, bufferResponse, isCancelled);
     abortIfCancelled();
     answer = out.text;
     thinking = out.thinking;
     toolCalls = out.toolCalls;
 
     const hasRawToolCall = out.invalidToolCall || (answer || '').toLowerCase().includes('<tool_call>');
-    if (hasRawToolCall && toolCalls.length === 0 && tools.length > 0) {
+    if (force.mode === 'none' && (hasRawToolCall || toolCalls.length > 0)) {
+      console.warn('[tool-recovery] model ignored the no-tool policy; requesting one text-only recovery');
+      const textOnlyPrompt = [
+        '=== TEXT-ONLY RECOVERY ===',
+        'Your previous response attempted to call a tool even though tools are disabled for this turn.',
+        'Do not call tools, do not emit <TOOL_CALL> tags, and do not output JSON.',
+        'Use only the conversation and tool results already available to provide the best possible plain-text answer now.',
+        'If the task cannot be completed from available information, state the limitation clearly.',
+        'Output only the final user-facing answer.'
+      ].join('\n');
+      const recovery = await runTurn(textOnlyPrompt, dummySink, true, isCancelled);
+      abortIfCancelled();
+      const recoveryHasToolMarkup = recovery.invalidToolCall ||
+        (recovery.text || '').toLowerCase().includes('<tool_call>');
+      if (recovery.toolCalls.length > 0 || recoveryHasToolMarkup || !(recovery.text || '').trim()) {
+        throw createToolCallRecoveryError(
+          'DeepSeek continued to emit tool-call output despite a text-only recovery request. No tool was forwarded.',
+          1
+        );
+      }
+      answer = recovery.text;
+      thinking = recovery.thinking;
+      toolCalls = [];
+    }
+
+    let validation = toolCalls.length > 0
+      ? validateToolCallsForChoice(toolCalls, tools, force)
+      : { valid: !hasRawToolCall, error: null };
+    const needsRecovery = (hasRawToolCall && (out.invalidToolCall || toolCalls.length === 0)) ||
+      (toolCalls.length > 0 && !validation.valid);
+
+    if (needsRecovery) {
+      if (tools.length === 0) {
+        throw createToolCallRecoveryError(
+          'DeepSeek emitted a tool call that cannot be used because this request did not declare tools.',
+          0
+        );
+      }
+
       const maxRetries = 2;
-      let recoveredByRetry = false;
-      for (let attempt = 1; attempt <= maxRetries && toolCalls.length === 0; attempt++) {
-        console.warn('[retry] attempt=' + attempt + '/' + maxRetries + ' — correcting malformed tool-call output');
+      let recovered = false;
+      let recoveryIssue = validation.error ||
+        'The previous tool-call JSON was malformed or incomplete.';
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        console.warn('[retry] attempt=' + attempt + '/' + maxRetries +
+          ' — repairing tool-call output: ' + recoveryIssue);
         const retryPrompt = [
-          '=== RETRY FORMAT CORRECTION ===',
-          'The previous response contained a malformed tool-call JSON payload. Do not copy the malformed payload.',
-          'Use the original task, conversation history, available tool list, and schemas already present in the conversation.',
-          'Rebuild the tool call from scratch using the tool name and arguments required by the original task.',
-          'Output exactly one tool-call block with valid JSON and no text or Markdown outside it.',
-          'Valid format example only; this is not an instruction to execute pwd:',
+          '=== TOOL CALL RECOVERY ===',
+          'The previous response contained a tool call that was malformed or did not match the declared tool schema.',
+          'Do not copy its malformed JSON or invalid arguments.',
+          'Use the original task, conversation history, available tools, and their schemas.',
+          'Correct this issue: ' + recoveryIssue,
+          'Rebuild the necessary tool call(s) from scratch. All arguments must be valid JSON objects and satisfy the declared schemas.',
+          'Output only valid tool-call markup, with no prose or Markdown outside it.',
+          'Valid formatting example only; this is not an instruction to execute pwd:',
           '<TOOL_CALL>{"tool":"Bash","arguments":{"command":"pwd"}}</TOOL_CALL>',
-          'Use double-quoted JSON keys and strings, with no trailing commas or comments. Escape quotes inside strings using standard JSON rules.',
+          'Use double-quoted JSON keys and strings, no trailing commas or comments, and escape quotes and backslashes using standard JSON rules.',
           attempt === 1
-            ? 'Correct the format only; preserve the intent and arguments of the original task.'
-            : 'Final recovery attempt: do not copy the previous output. Rebuild the simplest arguments that still complete the original task.'
+            ? 'Preserve the original task intent and do not invent arguments.'
+            : 'This is the final recovery attempt. Rebuild the simplest valid arguments that still satisfy the original task.'
         ].join('\n');
-        // Use a dummy sink so failed retry output is not leaked or duplicated in the SSE stream.
+
+        // Keep retry output private until the whole batch passes validation.
         const retry = await runTurn(retryPrompt, dummySink, useBuffer, isCancelled);
         abortIfCancelled();
         answer = retry.text;
         thinking = retry.thinking;
         toolCalls = retry.toolCalls;
-        if (toolCalls.length > 0) {
-          recoveredByRetry = true;
-          console.log('[retry] recovered on attempt ' + attempt + ' — valid tool calls=' + toolCalls.length);
-        } else {
-          console.warn('[retry] attempt ' + attempt + ' did not produce a valid tool call');
+
+        const retryHasRawToolCall = retry.invalidToolCall ||
+          (answer || '').toLowerCase().includes('<tool_call>');
+        validation = retry.invalidToolCall
+          ? { valid: false, error: 'The retry returned a partially malformed or invalid tool-call batch.' }
+          : toolCalls.length > 0
+            ? validateToolCallsForChoice(toolCalls, tools, force)
+            : { valid: false, error: retryHasRawToolCall
+                ? 'The retried tool-call JSON is still malformed or incomplete.'
+                : 'The retry did not return a tool call.' };
+
+        if (toolCalls.length > 0 && validation.valid && !retry.invalidToolCall) {
+          recovered = true;
+          console.log('[retry] recovered on attempt ' + attempt +
+            ' — schema-valid tool calls=' + toolCalls.length);
+          break;
         }
+
+        recoveryIssue = validation.error || 'The retry did not return a valid tool call.';
+        console.warn('[retry] attempt ' + attempt + ' did not produce schema-valid tool calls');
       }
-      if (recoveredByRetry && sink) {
-        for (const tool of toolCalls) sink.toolBlock(tool.name, tool.input);
-      } else if (!recoveredByRetry) {
-        console.error('[retry] both attempts failed; falling back to text so the client does not receive an empty response');
-        answer = answer || 'DeepSeek could not produce valid tool-call JSON after two correction attempts. Please retry the request.';
-        if (sink) sink.emitText(answer);
+
+      if (!recovered) {
+        console.error('[retry] exhausted; returning an explicit gateway error instead of a false end_turn');
+        throw createToolCallRecoveryError(
+          'DeepSeek could not produce a valid tool call after ' + maxRetries +
+          ' recovery attempts. Last validation issue: ' + recoveryIssue,
+          maxRetries
+        );
       }
     }
 
     if (force.mode !== 'auto' && force.mode !== 'none' && toolCalls.length === 0) {
-      const synthesized = synthesizeToolCall(force, tools);
-      if (synthesized) {
-        console.warn('[force-tool] synthesized tool call:', synthesized.name, JSON.stringify(synthesized.input));
-        toolCalls = [synthesized];
-        if (sink) sink.toolBlock(synthesized.name, synthesized.input);
+      throw createToolCallRecoveryError(
+        'DeepSeek did not return the tool call required by tool_choice=' + force.mode + '.',
+        0
+      );
+    }
+
+    if (toolCalls.length > 0) {
+      validation = validateToolCallsForChoice(toolCalls, tools, force);
+      if (!validation.valid) {
+        throw createToolCallRecoveryError(
+          'Tool calls failed schema validation and were not forwarded: ' + validation.error,
+          0
+        );
       }
+    }
+
+    // For tool-enabled requests, emit the response only after parse and schema
+    // validation succeeds. This keeps retries atomic and prevents partial/invalid
+    // tool batches from reaching the client.
+    if (sink && (useBuffer || force.mode === 'none')) {
+      if (answer) sink.emitText(answer);
+      for (const tool of toolCalls) sink.toolBlock(tool.name, tool.input);
     }
 
     abortIfCancelled();

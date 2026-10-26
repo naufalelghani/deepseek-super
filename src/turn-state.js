@@ -20,4 +20,33 @@ function isResponseComplete(state, sawGeneratingSignal) {
   );
 }
 
-module.exports = { hasNewAssistantResponse, isResponseComplete };
+
+function shouldUseStableFallback(state, sawGeneratingSignal, idleMs, stableMs) {
+  const noSignalObserved = sawGeneratingSignal !== true;
+  const generationStoppedWithoutControls = sawGeneratingSignal === true &&
+    state && state.isGenerating === false && state.completionSignalAvailable !== true;
+  return Boolean(
+    (noSignalObserved || generationStoppedWithoutControls) &&
+    state &&
+    state.completionSignalAvailable !== true &&
+    Number.isFinite(idleMs) &&
+    Number.isFinite(stableMs) &&
+    idleMs >= stableMs * 2
+  );
+}
+
+
+function isIdleCompletionCandidate(state, sawGeneratingSignal, idleMs, stableMs) {
+  return Boolean(
+    sawGeneratingSignal !== true &&
+    state &&
+    state.completionSignalAvailable === true &&
+    state.isGenerating === false &&
+    state.sendButtonEnabled === true &&
+    Number.isFinite(idleMs) &&
+    Number.isFinite(stableMs) &&
+    idleMs >= stableMs * 2
+  );
+}
+
+module.exports = { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, isIdleCompletionCandidate };

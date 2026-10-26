@@ -1,6 +1,6 @@
 'use strict';
 
-const { uuid, approxTokens } = require('./config');
+const { uuid } = require('./config');
 
  class StreamSink {
      constructor(res, model, inTokens) {
@@ -26,7 +26,8 @@ const { uuid, approxTokens } = require('./config');
          });
      }
      send(event, data) {
-         this.res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+         if (this.res.destroyed || this.res.writableEnded) return false;
+         return this.res.write('event: ' + event + '\ndata: ' + JSON.stringify(data) + '\n\n');
      }
      _closeOpen() {
          if (this.open !== null) {
@@ -114,7 +115,7 @@ const { uuid, approxTokens } = require('./config');
          this.send('message_delta', {
              type: 'message_delta',
              delta: { stop_reason: stopReason, stop_sequence: null },
-             usage: { output_tokens: approxTokens('x'.repeat(this.outChars)) },
+             usage: { output_tokens: Math.max(1, Math.ceil(this.outChars / 4)) },
          });
          this.send('message_stop', { type: 'message_stop' });
      }

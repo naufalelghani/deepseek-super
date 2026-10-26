@@ -1,6 +1,7 @@
 'use strict';
 
-const { blocksOf, flattenContent, renderMessage } = require('./content');
+const { blocksOf, flattenContent, renderMessage, truncateTextPreservingEnds } = require('./content');
+const { MAX_REPLAY } = require('./config');
 
 const PROJECT_AND_LANGUAGE_INSTRUCTIONS = [
     '### PROJECT IDENTITY',
@@ -76,10 +77,6 @@ function buildFullPrompt(system, messages, tools) {
     const last = messages[messages.length - 1] || { role: 'user', content: '' };
     const lastHasToolResult = blocksOf(last.content).some((block) => block.type === 'tool_result');
 
-    // Keep tool schemas available on every turn so the model can continue a multi-step task.
-    const toolPrompt = toolsToPrompt(tools);
-    if (toolPrompt) parts.push('### TOOLS\n' + toolPrompt);
-
     const history = messages.slice(0, -1);
     if (history.length) {
         parts.push('### CONVERSATION HISTORY');
@@ -87,6 +84,11 @@ function buildFullPrompt(system, messages, tools) {
             parts.push(`[${message.role === 'assistant' ? 'ASSISTANT' : 'USER'}]\n${renderMessage(message)}`);
         }
     }
+
+    // Keep tool schemas close to the latest request/results. The replay truncator
+    // preserves the tail, so long histories cannot silently cut off the tool contract.
+    const toolPrompt = toolsToPrompt(tools);
+    if (toolPrompt) parts.push('### TOOLS\n' + toolPrompt);
 
     if (lastHasToolResult) {
         parts.push('=== TOOL RESULTS ===\n' + renderMessage(last));
@@ -114,10 +116,19 @@ function buildResumePrompt(system, messages, tools, isToolResultTurn) {
         parts.push(PROJECT_AND_LANGUAGE_INSTRUCTIONS);
         parts.push('=== SITUATION ===');
         parts.push('The client has executed a tool and provided its result. Continue the original task using the conversation context.');
-        if (toolPrompt) parts.push('=== TOOLS AVAILABLE FOR THE NEXT STEP ===\n' + toolPrompt);
         parts.push('');
         parts.push('=== LATEST TOOL RESULTS ===');
-        parts.push(renderMessage(last));
+        const renderedToolResult = renderMessage(last);
+        // Keep both the beginning and end of huge tool outputs. Important diagnostics
+        // often appear at either boundary; the outer replay cap still bounds total size.
+        parts.push(truncateTextPreservingEnds(
+            renderedToolResult,
+            Math.max(1024, Math.floor(MAX_REPLAY * 0.6))
+        ));
+        parts.push('');
+        // Put the tool contract after potentially large results so bounded replay
+        // truncation keeps the schemas needed for the next action.
+        if (toolPrompt) parts.push('=== TOOLS AVAILABLE FOR THE NEXT STEP ===\n' + toolPrompt);
         parts.push('');
         parts.push('=== INSTRUCTIONS AFTER TOOL RESULTS ===');
         parts.push(...TOOL_RESULT_INSTRUCTIONS);
@@ -182,37 +193,11 @@ function applyForcedTool(prompt, force) {
     return prompt;
 }
 
-function synthesizeToolCall(force, tools) {
-    const makeInput = (spec) => {
-        const input = {};
-        const properties = (spec.input_schema && spec.input_schema.properties) || {};
-        for (const key of Object.keys(properties)) {
-            const type = properties[key].type;
-            input[key] = type === 'number' ? 0 :
-                type === 'boolean' ? false :
-                type === 'array' ? [] :
-                type === 'object' ? {} : '';
-        }
-        return input;
-    };
-
-    if (force.mode === 'tool') {
-        const spec = tools.find((tool) => tool.name === force.name);
-        if (!spec) return null;
-        return { name: force.name, input: makeInput(spec) };
-    }
-    if (force.mode === 'any' && tools.length > 0) {
-        const spec = tools[0];
-        return { name: spec.name, input: makeInput(spec) };
-    }
-    return null;
-}
 
 module.exports = {
     toolsToPrompt,
     buildFullPrompt,
     buildResumePrompt,
     parseToolChoice,
-    applyForcedTool,
-    synthesizeToolCall
+    applyForcedTool
 };

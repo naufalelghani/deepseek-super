@@ -3,7 +3,7 @@
 const { chromium } = require('playwright');
 const { PROFILE_DIR, POLL_MS, STABLE_MS, MAX_TURN_MS, HOLD_CHARS, MAX_PENDING_TURNS } = require('./config');
 const { StreamParser, extractToolCallsFromText } = require('./tool-parser');
-const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
+const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, isIdleCompletionCandidate } = require('./turn-state');
 
  let ctx = null;
  let page = null;
@@ -28,25 +28,66 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
  }
 
  async function ensurePage() {
-     if (page) return;
+     if (page && !page.isClosed()) return;
+
      if (!initPromise) {
          initPromise = (async() => {
-             ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
+             // A page can close while its persistent context remains healthy.
+             // Prefer reviving that context before launching another Chrome instance.
+             if (ctx) {
+                 try {
+                     const candidate = ctx.pages().find((p) => !p.isClosed()) || await ctx.newPage();
+                     await candidate.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded' });
+                     const candidateTextarea = candidate.locator('textarea[placeholder="Message DeepSeek"]');
+                     await candidateTextarea.waitFor({ state: 'visible', timeout: 60000 });
+                     page = candidate;
+                     textarea = candidateTextarea;
+                     return;
+                 } catch (error) {
+                     try { await ctx.close(); } catch (closeError) {}
+                     ctx = null;
+                     page = null;
+                     textarea = null;
+                 }
+             }
+
+             const newContext = await chromium.launchPersistentContext(PROFILE_DIR, {
                  headless: false,
                  channel: 'chrome',
                  viewport: { width: 1280, height: 900 },
                  args: ['--disable-blink-features=AutomationControlled'],
                  ignoreDefaultArgs: ['--enable-automation'],
              });
-             page = ctx.pages()[0] || (await ctx.newPage());
-             await page.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded' });
-             textarea = page.locator('textarea[placeholder="Message DeepSeek"]');
-             await textarea.waitFor({ state: 'visible', timeout: 60000 });
+
+             try {
+                 const newPage = newContext.pages()[0] || await newContext.newPage();
+                 await newPage.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded' });
+                 const newTextarea = newPage.locator('textarea[placeholder="Message DeepSeek"]');
+                 await newTextarea.waitFor({ state: 'visible', timeout: 60000 });
+                 ctx = newContext;
+                 page = newPage;
+                 textarea = newTextarea;
+             } catch (error) {
+                 try { await newContext.close(); } catch (closeError) {}
+                 throw error;
+             }
          })();
      }
-     await initPromise;
- }
 
+     const pending = initPromise;
+     try {
+         await pending;
+     } catch (error) {
+         if (initPromise === pending) initPromise = null;
+         throw error;
+     }
+
+     // A close can race with initialization completing. Do not return a stale handle.
+     if (!page || page.isClosed()) {
+         if (initPromise === pending) initPromise = null;
+         return ensurePage();
+     }
+ }
  async function ensureTogglesOn(toolsProvided) {
      await page.evaluate((n) => {
          const aria = 'aria-pressed';
@@ -355,16 +396,20 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
          }
 
          if (sawNewMessage && sawResponseContent) {
-             if (sawGeneratingSignal && isResponseComplete(st, sawGeneratingSignal)) {
+             const idleMs = Date.now() - lastChange;
+             const explicitCompletion = sawGeneratingSignal && isResponseComplete(st, sawGeneratingSignal);
+             const inferredCompletion = isIdleCompletionCandidate(st, sawGeneratingSignal, idleMs, STABLE_MS);
+             if (explicitCompletion || inferredCompletion) {
                  completionSignalStreak++;
                  if (completionSignalStreak >= 3) break;
              } else {
                  completionSignalStreak = 0;
              }
 
-             // Use inactivity only as a fallback when the UI completion signal
-             // was not observed. A visible "generating" signal overrides this timer.
-             if (!sawGeneratingSignal && Date.now() - lastChange > STABLE_MS) {
+             // Without usable completion signals, wait twice the configured stable
+             // interval before falling back. This reduces false completion during
+             // short pauses between DeepSeek output chunks.
+             if (shouldUseStableFallback(st, sawGeneratingSignal, idleMs, STABLE_MS)) {
                  usedStableFallback = true;
                  break;
              }
@@ -401,7 +446,6 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
      // Post-process: recover tool calls if the parser did not find them but the text contains markup.
      let finalTools = parser.toolCalls();
      let finalText = parser.textOut;
-     const invalidToolCall = parser.sawToolMarkup && finalTools.length === 0;
      if (finalTools.length === 0 && finalText) {
          const ex = extractToolCallsFromText(finalText);
          if (ex.calls.length > 0) {
@@ -409,17 +453,15 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
              finalText = ex.text;
          }
      }
+     // A partially valid batch is still invalid: forwarding only its valid subset
+     // would silently omit requested actions and could leave the client out of sync.
+     const invalidToolCall = parser.sawToolMarkup &&
+         (finalTools.length === 0 || parser.parseErrors.length > 0);
 
-     // Emit parsed content to the sink.
-     if (sink) {
-         if (thinkOpened || textOpened) sink.stopBlock();
-         // Buffer until parsing completes when tools are available. Do not leak malformed
-         // tool-call payloads as assistant text while the handler is preparing a retry.
-         if (bufferText && finalText && !invalidToolCall) {
-             sink.emitText(finalText);
-         }
-         for (const t of finalTools) sink.toolBlock(t.name, t.input);
-     }
+     // Close any live thinking/text block, but defer buffered text and every tool
+     // block to the handler. It must validate the complete tool batch before emitting
+     // or forwarding any part of it, otherwise a failed recovery can leak partial output.
+     if (sink && (thinkOpened || textOpened)) sink.stopBlock();
 
      if (finalTools.length > 0) {
          console.log('[tool-parser] parsed tool call(s): ' + finalTools.map((t) => t.name).join(', '));

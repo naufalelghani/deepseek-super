@@ -81,3 +81,41 @@ test('parser can recover a valid JSON tool payload even if the closing marker is
   assert.equal(parser.incompleteToolBlock, true);
   assert.deepEqual(parser.toolCalls(), [{ name: 'Bash', input: { command: 'pwd' } }]);
 });
+
+
+test('parser rejects scalar or array tool arguments instead of coercing them into objects', () => {
+  const parser = new StreamParser(() => {});
+  parser.feed('<TOOL_CALL>{"tool":"Bash","arguments":"pwd"}</TOOL_CALL>');
+  parser.finish();
+  assert.deepEqual(parser.toolCalls(), []);
+  assert.equal(parser.parseErrors.length, 1);
+
+  const arrayParser = new StreamParser(() => {});
+  arrayParser.feed('<TOOL_CALL>{"tool":"Read","arguments":["file.txt"]}</TOOL_CALL>');
+  arrayParser.finish();
+  assert.deepEqual(arrayParser.toolCalls(), []);
+  assert.equal(arrayParser.parseErrors.length, 1);
+});
+
+
+test('parser exposes errors in mixed valid and invalid tool batches', () => {
+  const parser = new StreamParser(() => {});
+  parser.feed('<TOOL_CALL>[{"tool":"Read","arguments":{"file_path":"a.txt"}},{"tool":"Bash","arguments":"bad"}]</TOOL_CALL>');
+  parser.finish();
+
+  assert.deepEqual(parser.toolCalls(), [{ name: 'Read', input: { file_path: 'a.txt' } }]);
+  assert.equal(parser.parseErrors.length, 1);
+});
+
+
+test('tool argument normalization does not mutate prototypes from JSON input', () => {
+  const parser = new StreamParser(() => {});
+  parser.feed('<TOOL_CALL>{"tool":"Bash","arguments":{"__proto__":{"polluted":true},"command":"pwd"}}</TOOL_CALL>');
+  parser.finish();
+
+  const calls = parser.toolCalls();
+  assert.equal(calls.length, 1);
+  assert.equal(Object.getPrototypeOf(calls[0].input), Object.prototype);
+  assert.equal(Object.prototype.polluted, undefined);
+  assert.equal(Object.prototype.hasOwnProperty.call(calls[0].input, '__proto__'), true);
+});

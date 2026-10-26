@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { blocksOf, flattenContent, renderMessage, sessionKey, truncateReplay } = require('../src/content');
+const { blocksOf, flattenContent, renderMessage, sessionKey, truncateReplay, truncateTextPreservingEnds } = require('../src/content');
 const { approxTokens, MAX_REPLAY } = require('../src/config');
 
 test('blocksOf normalizes strings and handles empty content', () => {
@@ -37,4 +37,14 @@ test('sessionKey hashes the full first user message instead of a truncated prefi
   const a = [{ role: 'user', content: prefix + 'A' }];
   const b = [{ role: 'user', content: prefix + 'B' }];
   assert.notEqual(sessionKey('', a), sessionKey('', b));
+});
+
+
+test('truncateTextPreservingEnds retains the beginning and ending of oversized content', () => {
+  const text = 'BEGIN_MARKER_' + 'x'.repeat(10000) + '_END_MARKER';
+  const truncated = truncateTextPreservingEnds(text, 1024);
+  assert.equal(truncated.length, 1024);
+  assert.match(truncated, /^BEGIN_MARKER/);
+  assert.match(truncated, /_END_MARKER$/);
+  assert.match(truncated, /content truncated/);
 });

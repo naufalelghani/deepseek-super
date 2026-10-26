@@ -28,3 +28,17 @@ test('StreamSink emits a valid Anthropic-style tool-use SSE sequence', () => {
   assert.deepEqual(JSON.parse(events[2].data.delta.partial_json), { command: 'pwd' });
   assert.equal(events[4].data.delta.stop_reason, 'tool_use');
 });
+
+
+test('StreamSink does not write to a disconnected or ended response', () => {
+  let writes = 0;
+  const res = {
+    destroyed: true,
+    writableEnded: false,
+    write() { writes++; return true; },
+  };
+  const sink = new StreamSink(res, 'deepseek-super', 1);
+  sink.textDelta('ignored');
+  sink.finish('end_turn');
+  assert.equal(writes, 0);
+});
