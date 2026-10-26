@@ -9,6 +9,8 @@ const {
   isDeepSeekWebTool,
   normalizeWebToolInput,
   buildDeepSeekWebToolPrompt,
+  buildDeepSeekWebSearchTurnPrompt,
+  buildDeepSeekWebFetchTurnPrompt,
   buildDeepSeekWebToolContinuationPrompt,
   executeDeepSeekWebTool,
 } = require('../src/deepseek-web-tools');
@@ -91,9 +93,10 @@ test('tool prompts clearly request DeepSeek Search mode and prohibit fabricated 
   assert.match(searchPrompt, /DeepSeek Search mode has been enabled/);
   assert.match(searchPrompt, /latest release/);
   assert.match(searchPrompt, /release history/);
-  assert.match(searchPrompt, /site:nodejs\.org latest release/);
-  assert.match(searchPrompt, /site:github\.com release history/);
-  assert.match(searchPrompt, /separate subsection for each original query/);
+  assert.match(searchPrompt, /separate focused Search-mode browser turns/i);
+  assert.match(searchPrompt, /target domain: nodejs\.org latest release/i);
+  assert.match(searchPrompt, /target domain: github\.com release history/i);
+  assert.doesNotMatch(searchPrompt, /site:nodejs\.org latest release/);
   assert.match(searchPrompt, /up to 3 distinct source entries/);
   assert.match(searchPrompt, /Never fabricate URLs, source titles/);
 
@@ -104,12 +107,22 @@ test('tool prompts clearly request DeepSeek Search mode and prohibit fabricated 
       additional_urls: ['https://nodejs.org/en/download', 'https://github.com/nodejs/node/releases'],
     },
   });
-  assert.match(fetchPrompt, /Inspect EVERY public URL/i);
+  assert.match(fetchPrompt, /each URL in its own Search-mode browser turn/i);
   assert.match(fetchPrompt, /https:\/\/example\.com\/article/);
   assert.match(fetchPrompt, /https:\/\/nodejs\.org\/en\/download/);
   assert.match(fetchPrompt, /https:\/\/github\.com\/nodejs\/node\/releases/);
-  assert.match(fetchPrompt, /Inspect EVERY public URL/);
-  assert.match(fetchPrompt, /if a page cannot be opened/i);
+  assert.match(fetchPrompt, /Never substitute an unrelated page/i);
+  assert.match(fetchPrompt, /identifying whether it opened/i);
+
+  const oneSearchTurn = buildDeepSeekWebSearchTurnPrompt('official Node.js download', 'nodejs.org', 1, 2);
+  assert.match(oneSearchTurn, /exactly ONE focused web search/i);
+  assert.match(oneSearchTurn, /Target domain: nodejs.org/);
+  assert.doesNotMatch(oneSearchTurn, /site:nodejs\.org/);
+  assert.match(oneSearchTurn, /Do not use DeepSeekWebFetch/i);
+
+  const oneFetchTurn = buildDeepSeekWebFetchTurnPrompt('https://nodejs.org/en/download', 1, 3);
+  assert.match(oneFetchTurn, /Inspect only this exact public URL/i);
+  assert.match(oneFetchTurn, /https:\/\/nodejs\.org\/en\/download/);
 });
 
 test('continuation prompt feeds internal results back as tool results and retains tool schemas', () => {
@@ -209,6 +222,96 @@ test('search batch rejects invalid domains and excessive query/site combinations
     /query\/site combinations/
   );
 });
+
+test('search batch executes each query/domain pair in a focused turn and accepts only matching rendered source links', async () => {
+  const toggleStates = [];
+  const prompts = [];
+  const result = await executeDeepSeekWebTool({
+    name: DEEPSEEK_WEB_SEARCH,
+    input: {
+      query: 'official docs',
+      additional_queries: ['release notes'],
+      sites: ['nodejs.org', 'github.com'],
+      max_results: 8,
+    },
+  }, {
+    ensureTogglesOn: async (toolsProvided) => toggleStates.push(toolsProvided),
+    runTurn: async (prompt, sink, buffer, isCancelled, includeLinks) => {
+      prompts.push(prompt);
+      assert.equal(buffer, true);
+      assert.equal(typeof isCancelled, 'function');
+      assert.equal(includeLinks, true);
+      if (/Target domain: nodejs\.org/.test(prompt) && /official docs/.test(prompt)) {
+        return { text: 'FOUND\nTitle: Node.js download\nURL: https://nodejs.org/en/download', sourceLinks: [{ text: 'Node.js download', url: 'https://nodejs.org/en/download' }], toolCalls: [], invalidToolCall: false };
+      }
+      if (/Target domain: nodejs\.org/.test(prompt)) {
+        // A link from the wrong domain must not be accepted for a site-scoped search.
+        return { text: 'FOUND\nURL: https://github.com/nodejs/node/releases', sourceLinks: [{ text: 'Node.js releases', url: 'https://github.com/nodejs/node/releases' }], toolCalls: [], invalidToolCall: false };
+      }
+      if (/Target domain: github\.com/.test(prompt) && /official docs/.test(prompt)) {
+        return { text: 'FOUND\nTitle: Node.js releases\nURL: https://github.com/nodejs/node/releases', sourceLinks: [{ text: 'Node.js releases', url: 'https://github.com/nodejs/node/releases' }], toolCalls: [], invalidToolCall: false };
+      }
+      return { text: 'NO_RESULT', sourceLinks: [], toolCalls: [], invalidToolCall: false };
+    },
+  });
+
+  assert.equal(prompts.length, 4, 'each query/domain pair must be its own Search-mode turn');
+  assert.deepEqual(toggleStates, [false, true]);
+  assert.ok(prompts.every((prompt) => !/site:/.test(prompt)), 'do not rely on site: query syntax');
+  assert.match(result.result, /https:\/\/nodejs\.org\/en\/download/);
+  assert.match(result.result, /https:\/\/github\.com\/nodejs\/node\/releases/);
+  assert.match(result.result, /NO_RESULT: Search did not surface a matching source URL/);
+  assert.doesNotMatch(result.result, /Target domain: nodejs\.org\n  Source: Node\.js releases/);
+});
+
+test('search batch reports explicit NO_SOURCES_FOUND when Search exposes no rendered URLs', async () => {
+  const result = await executeDeepSeekWebTool({
+    name: DEEPSEEK_WEB_SEARCH,
+    input: { query: 'test query', sites: ['example.com'] },
+  }, {
+    ensureTogglesOn: async () => {},
+    runTurn: async () => ({ text: 'NO_RESULT', sourceLinks: [], toolCalls: [], invalidToolCall: false }),
+  });
+  assert.match(result.result, /^NO_SOURCES_FOUND:/);
+});
+
+test('fetch batch inspects each exact URL in a separate turn', async () => {
+  const urls = [
+    'https://nodejs.org/en/download',
+    'https://github.com/nodejs/node/releases',
+    'https://docs.npmjs.com/about-npm',
+  ];
+  const prompts = [];
+  const toggleStates = [];
+  const result = await executeDeepSeekWebTool({
+    name: DEEPSEEK_WEB_FETCH,
+    input: { url: urls[0], additional_urls: urls.slice(1) },
+  }, {
+    ensureTogglesOn: async (toolsProvided) => toggleStates.push(toolsProvided),
+    runTurn: async (prompt, sink, buffer, isCancelled, includeLinks) => {
+      prompts.push(prompt);
+      assert.equal(buffer, true);
+      assert.equal(includeLinks, true);
+      return {
+        text: 'STATUS: OPENED\nTitle: official documentation\nFact: page content was inspected.',
+        sourceLinks: [],
+        toolCalls: [],
+        invalidToolCall: false,
+      };
+    },
+  });
+
+  assert.equal(prompts.length, 3);
+  assert.deepEqual(toggleStates, [false, true]);
+  for (let index = 0; index < urls.length; index++) {
+    const escapeRegExp = (value) => value.replace(/[|\\{}()[\]^$+*?.]/g, '\\$&');
+    assert.match(prompts[index], new RegExp(escapeRegExp(urls[index])));
+    assert.equal((prompts[index].match(/https?:\/\//g) || []).length, 1,
+      'each fetch turn should contain only one requested URL');
+    assert.match(result.result, new RegExp(escapeRegExp(urls[index])));
+  }
+});
+
 
 test('fetch batch normalizes multiple public URLs and rejects an oversized batch', () => {
   assert.deepEqual(normalizeWebToolInput({
