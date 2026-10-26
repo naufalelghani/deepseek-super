@@ -302,8 +302,8 @@ HTTP compatibility with the Anthropic SDK does not imply full semantic support f
 
 When `tool_choice` is `auto`, the gateway offers two internal tools to DeepSeek:
 
-- `DeepSeekWebSearch({ query, max_results? })` — turns on DeepSeek's Search toggle for a dedicated search turn, then captures the visible assistant result (including any source URLs and citations DeepSeek provides).
-- `DeepSeekWebFetch({ url })` — turns on Search mode and asks DeepSeek to inspect a public HTTP(S) URL, returning a best-effort page summary and visible evidence.
+- `DeepSeekWebSearch({ query, additional_queries?, sites?, max_results? })` — turns on DeepSeek's Search toggle for one batch turn. It can search up to 6 query phrases against up to 8 target domains (at most 12 query/domain combinations), then captures the visible result and source URLs.
+- `DeepSeekWebFetch({ url, additional_urls? })` — turns on Search mode to inspect up to 5 public HTTP(S) URLs in one batch turn, returning a best-effort per-page summary and visible evidence.
 
 These are **gateway-internal tools**. Their calls are parsed from DSML, executed inside the existing DeepSeek browser conversation, and their results are fed back to DeepSeek as tool-result context. They are not returned as client-facing `tool_use` blocks. Any client-owned calls in the same batch (for example, `Read` or `Bash`) are returned normally after the internal web call finishes. Internal web-tool loops are bounded to three rounds per request.
 
@@ -311,12 +311,13 @@ DeepThink is still enabled through the UI toggle. Search is turned off for norma
 
 Safety and limitations:
 
-- Search query length is capped at 500 characters. `max_results` defaults to 5 and accepts integers from 1 to 8.
-- Fetch accepts only public `http://` and `https://` URLs, rejects embedded credentials and common local/private targets, and strips URL fragments. It is not a raw HTTP fetch API and does not guarantee full-page extraction.
+- Each search query is capped at 500 characters; a batch supports at most 6 queries, 8 bare target domains, and 12 query/domain combinations. Target-site domains must be public hostnames without a scheme, path, port, or wildcard. `max_results` defaults to 8 and accepts integers from 1 to 12 across the entire batch.
+- Fetch accepts up to 5 public `http://` or `https://` URLs per batch, rejects embedded credentials and common local/private targets, and strips URL fragments. It is not a raw HTTP fetch API and does not guarantee full-page extraction.
+- Each batch uses one Search-enabled DeepSeek UI turn per internal tool call; the single browser session is not issuing independent network fetches in parallel. The prompt asks DeepSeek Search to cover each query/site or URL, but the model/service may still omit sources.
 - Source links, summaries, and citations depend on what the signed-in DeepSeek Search UI actually returns. The model may provide incomplete results, and this adapter cannot guarantee that a source is accessible or that every citation is correct. Verify important sources independently.
 - If the DeepSeek UI changes, the Search toggle selectors or result rendering may need maintenance.
 
-Unit tests cover argument checks, URL safety, Search-mode prompts, toggle restoration, internal tool-result handoff, and mixed internal/client tool batches. Run `npm test` and `npm run check` to validate these paths without a live DeepSeek session. For an optional real-UI check, sign in with `node deepseek-login.js`, start `npm start`, then run `npm run test:web-tools` in a second terminal. That smoke test asks DeepSeek to search for the official Node.js downloads page and inspect that URL; it requires a working signed-in DeepSeek Search UI and can fail when the website, selector, or web-search service is unavailable.
+Unit tests cover argument checks, URL safety, Search-mode prompts, toggle restoration, internal tool-result handoff, and mixed internal/client tool batches. Run `npm test` and `npm run check` to validate these paths without a live DeepSeek session. For an optional real-UI check, sign in with `node deepseek-login.js`, start `npm start`, then run `npm run test:web-tools` in a second terminal. That smoke test asks DeepSeek to search multiple queries across `nodejs.org`, `github.com`, and `docs.npmjs.com`, then inspect three URLs in one fetch batch. It requires a working signed-in DeepSeek Search UI and can fail when the website, selector, or web-search service is unavailable.
 
 ### Tool-call and browser recovery
 
