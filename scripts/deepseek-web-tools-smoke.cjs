@@ -91,7 +91,7 @@ async function main() {
   assert.ok(searchSectionMatch, 'DeepSeekWebSearch: a separate SEARCH RESULTS section is required');
   const searchSection = searchSectionMatch[1];
   assert.doesNotMatch(searchSection, /NO_SOURCES_FOUND/i,
-    'DeepSeekWebSearch: the actual search batch reported no sources');
+    'DeepSeekWebSearch: the actual search batch reported no sources. Search response: ' + searchSection.slice(0, 1800));
   assert.doesNotMatch(searchText, /follow-up direct fetch|substitut(?:e|ed|ing) direct fetch|sources came from .*fetch/i,
     'DeepSeekWebSearch: direct fetch must not be used as a fallback for empty search results');
   const searchURLs = [...searchSection.matchAll(/https?:\/\/([^/\s?#]+)/gi)]
