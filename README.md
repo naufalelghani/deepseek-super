@@ -168,6 +168,128 @@ for await (const event of stream) {
 }
 ```
 
+
+### Tool calls with the Anthropic SDK
+
+The gateway can return Anthropic-style **tool_use** blocks in both non-streaming JSON responses and SSE streams. These examples reuse the **client** initialized above. The tool schema is sent with each request, and **tool_choice** asks for the named tool so the example is easy to recognize.
+
+**Important:** receiving a **tool_use** block does not execute the tool. Your application or agent is responsible for validating the requested action, executing it safely, and sending its result back as a **tool_result** block. The shell command below is only a demonstration payload; this example prints it and never runs it.
+
+#### Non-streaming tool call
+
+~~~js
+(async () => {
+  const toolsForNonStream = [{
+    name: 'Bash',
+    description: 'Demonstration tool only; this example does not execute commands.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', description: 'The requested shell command' },
+      },
+      required: ['command'],
+    },
+  }];
+
+  const toolMessage = await client.messages.create({
+    model: 'deepseek-super',
+    max_tokens: 256,
+    tools: toolsForNonStream,
+    tool_choice: { type: 'tool', name: 'Bash' },
+    messages: [{
+      role: 'user',
+      content: 'Call Bash with command exactly "echo SDK_TOOL_CALL_OK". Do not answer in plain text.',
+    }],
+  });
+
+  const toolUse = toolMessage.content.find((block) => block.type === 'tool_use');
+  if (!toolUse) {
+    throw new Error('Expected a tool_use block; stop_reason=' + toolMessage.stop_reason);
+  }
+
+  // Inspect the requested tool call. Do not execute untrusted model output blindly.
+  console.log(JSON.stringify({
+    stop_reason: toolMessage.stop_reason,
+    id: toolUse.id,
+    name: toolUse.name,
+    input: toolUse.input,
+  }, null, 2));
+})().catch(console.error);
+~~~
+
+When the client has actually run a tool, send the result in the next Messages request using the same conversation history, the assistant's **tool_use** block, and a user **tool_result** block whose **tool_use_id** matches **toolUse.id**. The local **npm run test:sdk** smoke test demonstrates that round trip with a **synthetic** result; it does not execute the command.
+
+#### Streaming tool call
+
+With SSE streaming, tool-use information arrives in **content_block_start** and **content_block_delta** events. The SDK exposes the **input_json_delta.partial_json** fragments; accumulate them by content-block index before parsing the JSON.
+
+~~~js
+(async () => {
+  const toolsForStream = [{
+    name: 'Bash',
+    description: 'Demonstration tool only; this example does not execute commands.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', description: 'The requested shell command' },
+      },
+      required: ['command'],
+    },
+  }];
+
+  const stream = await client.messages.create({
+    model: 'deepseek-super',
+    max_tokens: 256,
+    stream: true,
+    tools: toolsForStream,
+    tool_choice: { type: 'tool', name: 'Bash' },
+    messages: [{
+      role: 'user',
+      content: 'Call Bash with command exactly "echo SDK_STREAM_TOOL_CALL_OK". Do not answer in plain text.',
+    }],
+  });
+
+  const toolBlocks = new Map();
+  let stopReason = null;
+
+  for await (const event of stream) {
+    if (
+      event.type === 'content_block_start' &&
+      event.content_block &&
+      event.content_block.type === 'tool_use'
+    ) {
+      toolBlocks.set(event.index, {
+        id: event.content_block.id,
+        name: event.content_block.name,
+        partialJson: '',
+      });
+    } else if (
+      event.type === 'content_block_delta' &&
+      event.delta &&
+      event.delta.type === 'input_json_delta'
+    ) {
+      const tool = toolBlocks.get(event.index);
+      if (tool) tool.partialJson += event.delta.partial_json;
+    } else if (event.type === 'message_delta') {
+      stopReason = event.delta.stop_reason;
+    }
+  }
+
+  const toolCalls = [...toolBlocks.values()].map((tool) => ({
+    id: tool.id,
+    name: tool.name,
+    input: tool.partialJson ? JSON.parse(tool.partialJson) : {},
+  }));
+
+  if (stopReason !== 'tool_use' || toolCalls.length === 0) {
+    throw new Error('Expected streamed tool_use output; stop_reason=' + stopReason);
+  }
+
+  // The streamed input is a request for your app to consider, not an executed action.
+  console.log(JSON.stringify({ stop_reason: stopReason, toolCalls }, null, 2));
+})().catch(console.error);
+~~~
+
 ### Compatibility limitations
 
 The request contract validates `model`, `messages`, `max_tokens`, message roles and content, tool schemas, `tool_choice`, and `stream`. The `/v1/messages/count_tokens` endpoint estimates input length using a local character-based formula; it does not invoke DeepSeek's actual tokenizer.
