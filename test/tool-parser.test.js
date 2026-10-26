@@ -96,3 +96,13 @@ test('parser rejects scalar or array tool arguments instead of coercing them int
   assert.deepEqual(arrayParser.toolCalls(), []);
   assert.equal(arrayParser.parseErrors.length, 1);
 });
+
+
+test('parser exposes errors in mixed valid and invalid tool batches', () => {
+  const parser = new StreamParser(() => {});
+  parser.feed('<TOOL_CALL>[{"tool":"Read","arguments":{"file_path":"a.txt"}},{"tool":"Bash","arguments":null}]</TOOL_CALL>');
+  parser.finish();
+
+  assert.deepEqual(parser.toolCalls(), [{ name: 'Read', input: { file_path: 'a.txt' } }]);
+  assert.equal(parser.parseErrors.length, 1);
+});
