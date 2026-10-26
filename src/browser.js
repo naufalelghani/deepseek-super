@@ -554,6 +554,10 @@ async function runIsolatedTurn(prompt, sink, bufferText, isCancelled = () => fal
     let operationError = null;
     try {
         await gotoNewChat();
+        const newChatUrl = await currentUrl();
+        if (newChatUrl && newChatUrl === originalUrl) {
+            throw new Error('DeepSeek stayed on the original chat; refusing to send an internal Search prompt into the user conversation.');
+        }
         const searchState = await ensureTogglesOn(false);
         if (searchState !== true) {
             throw new Error('Could not verify that DeepSeek Search mode is enabled in the isolated chat.');
