@@ -177,7 +177,7 @@ test('bounded resumed prompt preserves tool schemas after an oversized tool resu
     content: [{
       type: 'tool_result',
       tool_use_id: 'toolu_large',
-      content: 'LARGE_RESULT_' + 'r'.repeat(70000),
+      content: 'RESULT_BEGIN_MARKER_' + 'r'.repeat(70000) + '_RESULT_END_MARKER',
     }],
   }], [{
     name: 'Read',
@@ -192,6 +192,8 @@ test('bounded resumed prompt preserves tool schemas after an oversized tool resu
   const replay = truncateReplay(prompt);
   assert.ok(replay.length <= require('../src/config').MAX_REPLAY);
   assert.match(replay, /Read\(file_path\*: string/);
+  assert.match(replay, /RESULT_BEGIN_MARKER/);
+  assert.match(replay, /RESULT_END_MARKER/);
   assert.match(replay, /If the task is not complete, use the next required tool/);
   assert.match(replay, /WARNING: conversation replay was truncated/);
 });
