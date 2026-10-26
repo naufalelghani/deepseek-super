@@ -226,7 +226,7 @@ function buildDeepSeekWebFetchTurnPrompt(url, turnIndex, turnCount) {
   return [
     '=== INTERNAL TOOL: DeepSeekWebFetch ===',
     'This is page-inspection batch item ' + turnIndex + ' of ' + turnCount + '. DeepSeek Search mode is enabled.',
-    'Actually inspect/open only this exact public URL using the visible DeepSeek Search UI. Do not answer from memory, skip it, or substitute another page.',
+    'Inspect only this exact public URL by actually opening it using the visible DeepSeek Search UI. Do not answer from memory, skip it, or substitute another page.',
     'Requested URL: ' + url,
     'For a page that opens, return these literal fields on separate lines:',
     'Status: OPENED',
@@ -409,10 +409,6 @@ async function executeDeepSeekWebTool(call, dependencies) {
         'Perform the requested operation directly with the visible DeepSeek Search UI, then follow the plain-text result format above exactly.',
       ].join('\n');
       output = await performTurn(retryPrompt, sink, true, isCancelled || (() => false), true);
-      emittedToolMarkup = output && (
-        output.invalidToolCall ||
-        (Array.isArray(output.toolCalls) && output.toolCalls.length > 0)
-      );
     }
 
     assertPlainTurnOutput(output);
