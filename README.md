@@ -178,7 +178,7 @@ HTTP compatibility with the Anthropic SDK does not imply full semantic support f
 
 ### Tool-call and browser recovery
 
-The gateway validates returned tool names and tool arguments against the schemas supplied by the client. Multi-tool responses are validated as a whole before tool blocks are emitted, so a partially invalid batch is not forwarded. Malformed or schema-invalid output receives a bounded correction attempt; if recovery fails, the gateway returns an upstream API error rather than disguising the failure as a successful \`end_turn\`.
+The gateway validates returned tool names and common JSON Schema constraints (types, required/properties, additional properties, enum/const, arrays, and common string/number bounds) against the schemas supplied by the client. This is a deliberately limited validator, not a complete implementation of every JSON Schema keyword. Multi-tool responses are validated as a whole before tool blocks are emitted, so a partially invalid batch is not forwarded. Malformed or schema-invalid output receives a bounded correction attempt; if recovery fails, the gateway returns an upstream API error rather than disguising the failure as a successful \`end_turn\`.
 
 At 41 or more conversation messages, the gateway starts a fresh DeepSeek browser thread and builds a bounded replay instead of continuing to grow the existing browser thread. The replay truncation limit is character-based, not a model-token limit; the latest request and tool schemas are placed near the replay tail to improve their chance of being retained.
 
