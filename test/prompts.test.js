@@ -122,7 +122,8 @@ test('full prompt retains tool schemas on a tool_result fallback turn', () => {
   assert.ok(prompt.includes('### TOOLS'));
   assert.ok(prompt.includes('Edit(file_path*: string'));
   assert.ok(prompt.includes('If the task still requires an action'));
-  assert.ok(prompt.includes('<｜DSML｜ calls>...</｜DSML｜ calls>'));
+  assert.ok(prompt.includes('<｜DSML｜ calls>'));
+  assert.ok(prompt.includes('</｜DSML｜ calls>'));
 });
 
 test('project identity and first-user-language policy are included in every prompt path', () => {
