@@ -115,10 +115,13 @@ function buildResumePrompt(system, messages, tools, isToolResultTurn) {
         parts.push(PROJECT_AND_LANGUAGE_INSTRUCTIONS);
         parts.push('=== SITUATION ===');
         parts.push('The client has executed a tool and provided its result. Continue the original task using the conversation context.');
-        if (toolPrompt) parts.push('=== TOOLS AVAILABLE FOR THE NEXT STEP ===\n' + toolPrompt);
         parts.push('');
         parts.push('=== LATEST TOOL RESULTS ===');
         parts.push(renderMessage(last));
+        parts.push('');
+        // Put the tool contract after potentially large results so bounded replay
+        // truncation keeps the schemas needed for the next action.
+        if (toolPrompt) parts.push('=== TOOLS AVAILABLE FOR THE NEXT STEP ===\n' + toolPrompt);
         parts.push('');
         parts.push('=== INSTRUCTIONS AFTER TOOL RESULTS ===');
         parts.push(...TOOL_RESULT_INSTRUCTIONS);
