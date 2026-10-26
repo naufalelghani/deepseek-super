@@ -76,10 +76,6 @@ function buildFullPrompt(system, messages, tools) {
     const last = messages[messages.length - 1] || { role: 'user', content: '' };
     const lastHasToolResult = blocksOf(last.content).some((block) => block.type === 'tool_result');
 
-    // Keep tool schemas available on every turn so the model can continue a multi-step task.
-    const toolPrompt = toolsToPrompt(tools);
-    if (toolPrompt) parts.push('### TOOLS\n' + toolPrompt);
-
     const history = messages.slice(0, -1);
     if (history.length) {
         parts.push('### CONVERSATION HISTORY');
@@ -87,6 +83,11 @@ function buildFullPrompt(system, messages, tools) {
             parts.push(`[${message.role === 'assistant' ? 'ASSISTANT' : 'USER'}]\n${renderMessage(message)}`);
         }
     }
+
+    // Keep tool schemas close to the latest request/results. The replay truncator
+    // preserves the tail, so long histories cannot silently cut off the tool contract.
+    const toolPrompt = toolsToPrompt(tools);
+    if (toolPrompt) parts.push('### TOOLS\n' + toolPrompt);
 
     if (lastHasToolResult) {
         parts.push('=== TOOL RESULTS ===\n' + renderMessage(last));
