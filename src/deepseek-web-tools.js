@@ -343,9 +343,9 @@ async function executeDeepSeekWebTool(call, dependencies) {
     }
   }
 
-  await setInternalSearchMode(true);
   let result = '';
   try {
+    await setInternalSearchMode(true);
     if (call.name === DEEPSEEK_WEB_SEARCH) {
       const queries = [input.query, ...(input.additional_queries || [])];
       const sites = input.sites || [];
