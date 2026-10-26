@@ -344,6 +344,7 @@ async function executeDeepSeekWebTool(call, dependencies) {
       const seenUrls = new Set();
 
       for (let index = 0; index < plan.length; index++) {
+        if (index > 0) await setSearchEnabled(false);
         const item = plan[index];
         const prompt = buildDeepSeekWebSearchTurnPrompt(item.query, item.site, index + 1, plan.length);
         const output = await runTurn(prompt, sink, true, isCancelled || (() => false), true);
@@ -384,6 +385,7 @@ async function executeDeepSeekWebTool(call, dependencies) {
       const urls = [input.url, ...(input.additional_urls || [])];
       const sections = [];
       for (let index = 0; index < urls.length; index++) {
+        if (index > 0) await setSearchEnabled(false);
         const url = urls[index];
         const prompt = buildDeepSeekWebFetchTurnPrompt(url, index + 1, urls.length);
         const output = await runTurn(prompt, sink, true, isCancelled || (() => false), true);
