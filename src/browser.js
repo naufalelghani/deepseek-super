@@ -3,7 +3,7 @@
 const { chromium } = require('playwright');
 const { PROFILE_DIR, POLL_MS, STABLE_MS, MAX_TURN_MS, HOLD_CHARS, MAX_PENDING_TURNS } = require('./config');
 const { StreamParser, extractToolCallsFromText } = require('./tool-parser');
-const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback } = require('./turn-state');
+const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, isIdleCompletionCandidate } = require('./turn-state');
 
  let ctx = null;
  let page = null;
@@ -396,17 +396,20 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback } =
          }
 
          if (sawNewMessage && sawResponseContent) {
-             if (sawGeneratingSignal && isResponseComplete(st, sawGeneratingSignal)) {
+             const idleMs = Date.now() - lastChange;
+             const explicitCompletion = sawGeneratingSignal && isResponseComplete(st, sawGeneratingSignal);
+             const inferredCompletion = isIdleCompletionCandidate(st, sawGeneratingSignal, idleMs, STABLE_MS);
+             if (explicitCompletion || inferredCompletion) {
                  completionSignalStreak++;
                  if (completionSignalStreak >= 3) break;
              } else {
                  completionSignalStreak = 0;
              }
 
-             // Without an observed generation signal, wait twice the configured
-             // stable interval before falling back. This reduces false completion
-             // during short pauses between DeepSeek output chunks.
-             if (shouldUseStableFallback(st, sawGeneratingSignal, Date.now() - lastChange, STABLE_MS)) {
+             // Without usable completion signals, wait twice the configured stable
+             // interval before falling back. This reduces false completion during
+             // short pauses between DeepSeek output chunks.
+             if (shouldUseStableFallback(st, sawGeneratingSignal, idleMs, STABLE_MS)) {
                  usedStableFallback = true;
                  break;
              }
