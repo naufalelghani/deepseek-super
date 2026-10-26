@@ -294,7 +294,7 @@ function getTurnLinks(output) {
   // Search turn. Arbitrary hyperlinks in a refusal/explanation are not proof
   // that Search surfaced a result.
   const text = String(output && output.text || '');
-  if (!/^\s*(?:\*\*)?FOUND(?:\*\*)?\s*$/im.test(text)) return [];
+  if (!/^\s*(?:\*\*)?FOUND(?:\*\*)?\s*(?:\r?\n|$)/i.test(text)) return [];
 
   const sourceLinks = output && Array.isArray(output.sourceLinks) ? output.sourceLinks : [];
   const titleMatch = text.match(/^\s*Title:\s*(.+?)\s*$/im);
