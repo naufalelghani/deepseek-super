@@ -296,10 +296,12 @@ function urlsFromText(text) {
 }
 
 function getTurnLinks(output) {
-  // In the live browser path, trust only links actually present in the rendered UI.
-  // Mocks and alternate runTurn implementations may omit sourceLinks, in which case
-  // textual URLs are useful for deterministic tests.
-  if (output && Array.isArray(output.sourceLinks)) return output.sourceLinks;
+  // Prefer URLs backed by actual anchors in the rendered DeepSeek UI.
+  // Some DeepSeek UI variants render a cited URL as literal text instead of an
+  // anchor, so fall back to explicitly printed URLs only when no rendered links
+  // were captured. Site-scoped results still must pass linkMatchesDomain().
+  const sourceLinks = output && Array.isArray(output.sourceLinks) ? output.sourceLinks : [];
+  if (sourceLinks.length > 0) return sourceLinks;
   return urlsFromText(output && output.text);
 }
 
