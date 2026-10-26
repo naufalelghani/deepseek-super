@@ -55,13 +55,15 @@ function textFrom(message) {
     .join('\n');
 }
 
-function assertFinalText(message, label) {
+function assertFinalText(message, label, options = {}) {
   assert.equal(message.type, 'message', label + ': response type must be message');
   assert.equal(message.role, 'assistant', label + ': role must be assistant');
   assert.equal(message.stop_reason, 'end_turn', label + ': internal web calls should be consumed by the gateway');
   const text = textFrom(message).trim();
   assert.ok(text, label + ': final text is empty');
-  assert.match(text, /https?:\/\/\S+/i, label + ': expected at least one explicit URL in the answer');
+  if (options.requireURL !== false) {
+    assert.match(text, /https?:\/\/\S+/i, label + ': expected at least one explicit URL in the answer');
+  }
   return text;
 }
 
@@ -84,7 +86,7 @@ async function main() {
       content: 'Use DeepSeekWebSearch only, in one batch. Main query: official Node.js downloads and supported release versions. Additional queries: ["Node.js release notes on GitHub", "official npm package documentation"]. Target sites: ["nodejs.org", "github.com", "docs.npmjs.com"]. Do not call DeepSeekWebFetch or replace missing search results by opening URLs. Return a section headed SEARCH RESULTS containing source links actually surfaced by Search, with title, exact URL, and one supported fact. If Search yields no sources, say NO_SOURCES_FOUND. Do not answer from memory or invent links.',
     }],
   });
-  const searchText = assertFinalText(searched, 'DeepSeekWebSearch');
+  const searchText = assertFinalText(searched, 'DeepSeekWebSearch', { requireURL: false });
   const searchSectionMatch = searchText.match(/SEARCH RESULTS([\s\S]*?)(?:FETCH RESULTS|$)/i);
   assert.ok(searchSectionMatch, 'DeepSeekWebSearch: a separate SEARCH RESULTS section is required');
   const searchSection = searchSectionMatch[1];
