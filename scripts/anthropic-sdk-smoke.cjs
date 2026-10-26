@@ -289,7 +289,7 @@ async function main() {
   assert.match(searchText, /SEARCH RESULTS/i,
     'DeepSeekWebSearch SDK: expected a distinct SEARCH RESULTS section');
   assert.doesNotMatch(searchText, /NO_SOURCES_FOUND/i,
-    'DeepSeekWebSearch SDK: actual Search batch returned no verifiable sources');
+    'DeepSeekWebSearch SDK: actual Search batch returned no verifiable sources. Response: ' + searchText.slice(0, 1800));
   assert.doesNotMatch(searchText, /follow-up direct fetch|substitut(?:e|ed|ing) direct fetch|sources came from .*fetch/i,
     'DeepSeekWebSearch SDK: Search must not pass by fetching pages instead');
   const searchSectionMatch = searchText.match(/SEARCH RESULTS([\s\S]*?)(?:FETCH RESULTS|$)/i);
