@@ -80,7 +80,7 @@ test('handler executes DeepSeekWebSearch internally and resumes the model with t
     if (turn === 2) {
       assert.match(prompt, /INTERNAL TOOL: DeepSeekWebSearch/);
       return {
-        text: 'Sources:\n- DeepSeek release notes: https://example.com/releases',
+        text: 'FOUND\nTitle: DeepSeek release notes\nURL: https://example.com/releases\nEvidence: release notes page.',
         thinking: '',
         toolCalls: [],
         invalidToolCall: false,
@@ -128,7 +128,7 @@ test('handler consumes internal web calls but returns client-owned calls in a mi
     }
     assert.match(prompt, /INTERNAL TOOL: DeepSeekWebSearch/);
     return {
-      text: 'Found reference: https://example.com/docs',
+      text: 'FOUND\nTitle: Example docs\nURL: https://example.com/docs\nEvidence: reference documentation.',
       thinking: '',
       toolCalls: [],
       invalidToolCall: false,
