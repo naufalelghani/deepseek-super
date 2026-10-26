@@ -323,7 +323,7 @@ npm run test:sdk
 
 For the default local endpoint, the smoke test reads the ignored `.deepseek-super-token` file automatically. If the server was started with an explicit `DEEPSEEK_SUPER_TOKEN`, set `ANTHROPIC_AUTH_TOKEN` to the same value in the second terminal. The endpoint can be changed with `DEEPSEEK_SUPER_BASE_URL`, and the model name with `ANTHROPIC_MODEL`; custom endpoints require a matching token.
 
-The smoke test checks non-streaming requests, SSE streaming events consumed by the SDK, tool calls, and a follow-up request with `tool_result`. The tool-use part checks the payload only; it does not execute the generated command. Tool results in the follow-up request are synthetic. These requests go through the signed-in DeepSeek web session and may be subject to web-app limits.
+The smoke test covers four flows through the official SDK: a non-streaming text response, a streamed text response, a non-streaming `tool_use` followed by a `tool_result` round trip, and a streamed `tool_use` whose `input_json_delta` fragments are reassembled and validated. The tool-use checks assert the returned tool name and fixture command. **No command is executed**; the follow-up tool result is synthetic. These requests go through the signed-in DeepSeek web session and may be subject to web-app limits.
 
 Run unit tests and syntax checks without a logged-in DeepSeek session or a running gateway:
 
