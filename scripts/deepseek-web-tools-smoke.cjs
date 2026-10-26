@@ -74,38 +74,51 @@ async function main() {
       : 'API token is missing. Set ANTHROPIC_AUTH_TOKEN for the selected endpoint.');
   }
 
-  console.log('\n[1/2] DeepSeekWebSearch via Search mode ...');
+  console.log('\n[1/2] Multi-site / multi-query DeepSeekWebSearch batch ...');
   const searched = await client.messages.create({
     model: process.env.ANTHROPIC_MODEL || 'deepseek-super',
-    max_tokens: 512,
+    max_tokens: 900,
     tool_choice: { type: 'auto' },
     messages: [{
       role: 'user',
-      content: 'Use the internal DeepSeekWebSearch tool to find the official Node.js downloads page. Do not answer from memory. Return a one-sentence summary and the exact public source URL.',
+      content: 'Use DeepSeekWebSearch in one batch. Main query: official Node.js downloads and supported release versions. Additional queries: ["Node.js release notes on GitHub", "official npm package documentation"]. Target sites: ["nodejs.org", "github.com", "docs.npmjs.com"]. Return a concise report with real source links from at least two of those target domains; state explicitly if a domain has no result. Do not answer from memory.',
     }],
   });
   const searchText = assertFinalText(searched, 'DeepSeekWebSearch');
   assert.match(searchText, /node(?:js|\.js)|nodejs\.org/i,
     'DeepSeekWebSearch: answer should identify Node.js or its official site');
-  console.log('PASS DeepSeekWebSearch:', searchText.slice(0, 500));
+  const searchDomains = ['nodejs\\.org', 'github\\.com', 'docs\\.npmjs\\.com'];
+  const foundDomainCount = searchDomains.filter((domain) => new RegExp(domain, 'i').test(searchText)).length;
+  assert.ok(foundDomainCount >= 2,
+    'DeepSeekWebSearch: expected source URLs from at least two target sites, found ' + foundDomainCount);
+  console.log('PASS multi-site DeepSeekWebSearch (' + foundDomainCount + ' domains):', searchText.slice(0, 900));
 
-  console.log('\n[2/2] DeepSeekWebFetch via Search mode ...');
+  console.log('\n[2/2] Multi-URL DeepSeekWebFetch batch ...');
   const fetched = await client.messages.create({
     model: process.env.ANTHROPIC_MODEL || 'deepseek-super',
-    max_tokens: 512,
+    max_tokens: 900,
     tool_choice: { type: 'auto' },
     messages: [{
       role: 'user',
-      content: 'Use the internal DeepSeekWebFetch tool to inspect this exact public URL: https://nodejs.org/en/download. Report the page title if available, one fact shown on the page, and the exact URL. Do not pretend you opened it if it was inaccessible.',
+      content: 'Use DeepSeekWebFetch to inspect all three exact public URLs in one batch: https://nodejs.org/en/download, https://github.com/nodejs/node/releases, and https://docs.npmjs.com/about-npm. Return a separate subsection per URL with title, one fact, and the URL. State which pages could not be opened rather than inventing content.',
     }],
   });
   const fetchText = assertFinalText(fetched, 'DeepSeekWebFetch');
   assert.match(fetchText, /node(?:js|\.js)|nodejs\.org/i,
     'DeepSeekWebFetch: answer should identify the requested Node.js page');
-  console.log('PASS DeepSeekWebFetch:', fetchText.slice(0, 500));
+  const requestedURLs = [
+    'https://nodejs.org/en/download',
+    'https://github.com/nodejs/node/releases',
+    'https://docs.npmjs.com/about-npm',
+  ];
+  const fetchedURLCount = requestedURLs.filter((url) => fetchText.includes(url)).length;
+  assert.ok(fetchedURLCount >= 2,
+    'DeepSeekWebFetch: expected results for at least two requested URLs, found ' + fetchedURLCount);
+  console.log('PASS multi-URL DeepSeekWebFetch (' + fetchedURLCount + '/3 URLs):', fetchText.slice(0, 900));
 
   console.log('\nALL DEEPSEEK WEB-TOOL SMOKE TESTS PASSED');
   console.log('For routing confirmation, inspect the gateway terminal for parsed DeepSeekWebSearch / DeepSeekWebFetch calls.');
+  console.log('The batch runs in one Search-enabled browser turn per internal tool call; it is not parallel HTTP fetching.');
 }
 
 main().catch((error) => {
