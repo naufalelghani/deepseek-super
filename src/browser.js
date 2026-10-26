@@ -3,7 +3,7 @@
 const { chromium } = require('playwright');
 const { PROFILE_DIR, POLL_MS, STABLE_MS, MAX_TURN_MS, HOLD_CHARS, MAX_PENDING_TURNS } = require('./config');
 const { StreamParser, extractToolCallsFromText } = require('./tool-parser');
-const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
+const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback } = require('./turn-state');
 
  let ctx = null;
  let page = null;
@@ -403,9 +403,10 @@ const { hasNewAssistantResponse, isResponseComplete } = require('./turn-state');
                  completionSignalStreak = 0;
              }
 
-             // Use inactivity only as a fallback when the UI completion signal
-             // was not observed. A visible "generating" signal overrides this timer.
-             if (!sawGeneratingSignal && Date.now() - lastChange > STABLE_MS) {
+             // Without an observed generation signal, wait twice the configured
+             // stable interval before falling back. This reduces false completion
+             // during short pauses between DeepSeek output chunks.
+             if (shouldUseStableFallback(st, sawGeneratingSignal, Date.now() - lastChange, STABLE_MS)) {
                  usedStableFallback = true;
                  break;
              }
