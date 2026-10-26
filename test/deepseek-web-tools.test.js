@@ -117,10 +117,11 @@ test('execution enables Search for the internal turn and restores it afterwards'
     input: { query: 'DeepSeek docs' },
   }, {
     ensureTogglesOn: async (toolsProvided) => toggleStates.push(toolsProvided),
-    runTurn: async (prompt, sink, buffer, isCancelled) => {
+    runTurn: async (prompt, sink, buffer, isCancelled, includeLinks) => {
       promptSent = prompt;
       assert.equal(buffer, true);
       assert.equal(typeof isCancelled, 'function');
+      assert.equal(includeLinks, true);
       return { text: 'Sources: https://example.com/docs', toolCalls: [], invalidToolCall: false };
     },
   });
