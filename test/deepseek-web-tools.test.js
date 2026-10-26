@@ -94,7 +94,7 @@ test('tool prompts clearly request DeepSeek Search mode and prohibit fabricated 
   assert.match(searchPrompt, /site:nodejs\.org latest release/);
   assert.match(searchPrompt, /site:github\.com release history/);
   assert.match(searchPrompt, /separate subsection for each original query/);
-  assert.match(searchPrompt, /up to 3 source entries/);
+  assert.match(searchPrompt, /up to 3 distinct source entries/);
   assert.match(searchPrompt, /Never fabricate a source, URL/);
 
   const fetchPrompt = buildDeepSeekWebToolPrompt({
