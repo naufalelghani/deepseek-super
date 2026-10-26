@@ -172,3 +172,34 @@ test('streaming emits a tool batch only after every call passes schema validatio
   assert.deepEqual(toolStarts, ['Bash', 'Read']);
   assert.equal(response.writableEnded, true);
 });
+
+
+test('handler heals a tool_choice mismatch and only forwards the selected tool', async () => {
+  let calls = 0;
+  const response = new FakeResponse();
+  const tools = [
+    { name: 'Bash', input_schema: { type: 'object', required: ['command'], properties: { command: { type: 'string' } } } },
+    { name: 'Read', input_schema: { type: 'object', required: ['file_path'], properties: { file_path: { type: 'string' } } } },
+  ];
+  const runTurn = async () => {
+    calls++;
+    return {
+      text: '',
+      thinking: '',
+      toolCalls: [calls === 1
+        ? { name: 'Bash', input: { command: 'pwd' } }
+        : { name: 'Read', input: { file_path: 'package.json' } }],
+      invalidToolCall: false,
+    };
+  };
+
+  await handleMessages(makeRequest(), response, makeBody({
+    tools,
+    tool_choice: { type: 'tool', name: 'Read' },
+  }), makeDependencies(runTurn));
+
+  const message = JSON.parse(response.output);
+  assert.equal(calls, 2);
+  assert.equal(message.stop_reason, 'tool_use');
+  assert.deepEqual(message.content.filter((block) => block.type === 'tool_use').map((block) => block.name), ['Read']);
+});
