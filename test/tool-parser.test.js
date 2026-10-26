@@ -178,3 +178,13 @@ test('StreamParser ignores stray DSML closing tags after legacy tool blocks', ()
   assert.equal(parser.textOut.trim(), '');
   assert.equal(parser.parseErrors.length, 0);
 });
+
+
+test('extractToolCallsFromText recovers a complete DSML invoke when the calls wrapper is missing', () => {
+  const text = 'Before <｜DSML｜ invoke name="Bash"><｜DSML｜ parameter name="command" string="true">pwd</｜DSML｜ parameter></｜DSML｜ invoke> After';
+  const result = extractToolCallsFromText(text);
+
+  assert.deepEqual(result.calls, [{ name: 'Bash', input: { command: 'pwd' } }]);
+  assert.equal(result.text, 'Before  After');
+  assert.deepEqual(result.errors, []);
+});
