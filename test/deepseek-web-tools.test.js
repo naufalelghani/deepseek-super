@@ -258,7 +258,7 @@ test('search batch executes each query/domain pair in a focused turn and accepts
   });
 
   assert.equal(prompts.length, 4, 'each query/domain pair must be its own Search-mode turn');
-  assert.deepEqual(toggleStates, [false, true]);
+  assert.deepEqual(toggleStates, [false, false, false, false, true]);
   assert.ok(prompts.every((prompt) => !/site:/.test(prompt)), 'do not rely on site: query syntax');
   assert.match(result.result, /https:\/\/nodejs\.org\/en\/download/);
   assert.match(result.result, /https:\/\/github\.com\/nodejs\/node\/releases/);
@@ -304,7 +304,7 @@ test('fetch batch inspects each exact URL in a separate turn', async () => {
   });
 
   assert.equal(prompts.length, 3);
-  assert.deepEqual(toggleStates, [false, true]);
+  assert.deepEqual(toggleStates, [false, false, false, true]);
   for (let index = 0; index < urls.length; index++) {
     assert.ok(prompts[index].includes(urls[index]));
     assert.equal((prompts[index].match(/https?:\/\//g) || []).length, 1,
