@@ -241,7 +241,7 @@
      }
      toolCalls() {
          const out = [];
-         const seen = {};
+         const seen = new Set();
          for (const raw of this.toolBlocks) {
              const payload = raw.trim();
              const parsed = tryParseJSON(payload);
@@ -264,8 +264,8 @@
                      if (sanitized) {
                          // Dedupe: hindari block duplikat dari model
                          const sig = sanitized.name + '|' + JSON.stringify(sanitized.input);
-                         if (!seen[sig]) {
-                             seen[sig] = true;
+                         if (!seen.has(sig)) {
+                             seen.add(sig);
                              out.push(sanitized);
                          }
                      } else {
