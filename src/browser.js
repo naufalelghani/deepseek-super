@@ -536,6 +536,53 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      return { text: finalText, thinking: emittedThink, toolCalls: finalTools, invalidToolCall, sourceLinks: includeLinks ? uiAnswerLinks : [] };
  }
 
+/**
+ * Run a native DeepSeek Search turn in a clean chat.
+ *
+ * The main gateway prompt includes the client tool schemas and DSML instructions.
+ * Reusing that thread for an internal Search turn can make DeepSeek emit another
+ * gateway tool call instead of using the Search mode toggle. Keep internal Search
+ * turns isolated, then return to the original conversation before the model resumes.
+ */
+async function runIsolatedTurn(prompt, sink, bufferText, isCancelled = () => false, includeLinks = false) {
+    await ensurePage();
+    const originalUrl = await currentUrl();
+    if (!originalUrl) {
+        throw new Error('Cannot isolate a DeepSeek Search turn because the original conversation URL is unavailable.');
+    }
+
+    let operationError = null;
+    try {
+        await gotoNewChat();
+        const searchState = await ensureTogglesOn(false);
+        if (searchState !== true) {
+            throw new Error('Could not verify that DeepSeek Search mode is enabled in the isolated chat.');
+        }
+        return await runTurn(prompt, sink, bufferText, isCancelled, includeLinks);
+    } catch (error) {
+        operationError = error;
+        throw error;
+    } finally {
+        try {
+            const restored = await resumeUrl(originalUrl);
+            if (!restored) {
+                throw new Error('The original DeepSeek conversation could not be restored after an isolated Search turn.');
+            }
+            const searchState = await ensureTogglesOn(true);
+            if (searchState !== false) {
+                throw new Error('Could not verify that DeepSeek Search mode is disabled after restoring the original conversation.');
+            }
+        } catch (restoreError) {
+            if (operationError) {
+                console.warn('[web-isolation] failed to fully restore the original DeepSeek chat: ' +
+                    (restoreError.message || String(restoreError)));
+            } else {
+                throw restoreError;
+            }
+        }
+    }
+}
+
 async function shutdownBrowser() {
     try { if (ctx) await ctx.close(); } catch (e) {}
     ctx = null;
@@ -544,4 +591,4 @@ async function shutdownBrowser() {
     initPromise = null;
 }
 
-module.exports = { ensurePage, ensureTogglesOn, readState, clickSend, currentUrl, gotoNewChat, resumeUrl, runTurn, locked, shutdownBrowser };
+module.exports = { ensurePage, ensureTogglesOn, readState, clickSend, currentUrl, gotoNewChat, resumeUrl, runTurn, runIsolatedTurn, locked, shutdownBrowser };
