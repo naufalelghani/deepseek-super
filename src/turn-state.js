@@ -22,8 +22,11 @@ function isResponseComplete(state, sawGeneratingSignal) {
 
 
 function shouldUseStableFallback(state, sawGeneratingSignal, idleMs, stableMs) {
+  const noSignalObserved = sawGeneratingSignal !== true;
+  const generationStoppedWithoutControls = sawGeneratingSignal === true &&
+    state && state.isGenerating === false && state.completionSignalAvailable !== true;
   return Boolean(
-    sawGeneratingSignal !== true &&
+    (noSignalObserved || generationStoppedWithoutControls) &&
     state &&
     state.completionSignalAvailable !== true &&
     Number.isFinite(idleMs) &&
