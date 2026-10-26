@@ -48,7 +48,7 @@ const client = new Anthropic({
   apiKey: apiKey || 'missing-local-gateway-token',
   baseURL,
   maxRetries: 0,
-  timeout: 300_000,
+  timeout: Number.parseInt(process.env.ANTHROPIC_SDK_TEST_TIMEOUT_MS || '600000', 10),
 });
 
 function textFrom(message) {
@@ -268,7 +268,76 @@ async function main() {
     events: streamedToolEventCount,
   }));
 
-  console.log('\nALL SDK SMOKE TESTS PASSED');
+
+  // 5. DeepSeek-native web search through the public Anthropic Messages SDK.
+  // The gateway handles DeepSeekWebSearch internally; it must not leak as tool_use.
+  console.log('\n[5/6] DeepSeekWebSearch batch through the SDK ...');
+  const searchMessage = await client.messages.create({
+    model,
+    max_tokens: 900,
+    tool_choice: { type: 'auto' },
+    messages: [{
+      role: 'user',
+      content: 'Run DeepSeekWebSearch only, using one batch. Main query: official Node.js downloads and supported release versions. Additional queries: ["Node.js release notes on GitHub", "official npm package documentation"]. Target sites: ["nodejs.org", "github.com", "docs.npmjs.com"]. Do not call DeepSeekWebFetch or substitute direct page fetches for missing search results. Return a separate section headed SEARCH RESULTS with actual source URLs surfaced by Search, titles, and one supported fact. If search results are empty, say NO_SOURCES_FOUND. Do not answer from memory or invent sources.',
+    }],
+  });
+  assertMessageShape(searchMessage, 'DeepSeekWebSearch SDK');
+  assert.equal(searchMessage.stop_reason, 'end_turn',
+    'DeepSeekWebSearch SDK: internal calls must be consumed by the gateway');
+  const searchText = textFrom(searchMessage);
+  assert.match(searchText, /SEARCH RESULTS/i,
+    'DeepSeekWebSearch SDK: expected a distinct SEARCH RESULTS section');
+  assert.doesNotMatch(searchText, /NO_SOURCES_FOUND/i,
+    'DeepSeekWebSearch SDK: actual Search batch returned no verifiable sources');
+  assert.doesNotMatch(searchText, /follow-up direct fetch|substitut(?:e|ed|ing) direct fetch|sources came from .*fetch/i,
+    'DeepSeekWebSearch SDK: Search must not pass by fetching pages instead');
+  const searchSectionMatch = searchText.match(/SEARCH RESULTS([\s\S]*?)(?:FETCH RESULTS|$)/i);
+  assert.ok(searchSectionMatch, 'DeepSeekWebSearch SDK: SEARCH RESULTS section could not be isolated');
+  const sourceHosts = [...searchSectionMatch[1].matchAll(/https?:\/\/([^/\s?#]+)/gi)]
+    .map((match) => match[1].toLowerCase());
+  const expectedSearchDomains = ['nodejs.org', 'github.com', 'docs.npmjs.com'];
+  const sourceDomainCount = expectedSearchDomains.filter((domain) =>
+    sourceHosts.some((host) => host === domain || host.endsWith('.' + domain))
+  ).length;
+  assert.ok(sourceDomainCount >= 2,
+    'DeepSeekWebSearch SDK: expected real source URLs from at least two target domains, got ' + sourceDomainCount);
+  console.log('PASS DeepSeekWebSearch SDK:', sourceDomainCount, 'source domains');
+  console.log(searchSectionMatch[1].trim().slice(0, 600));
+
+  // 6. DeepSeek-native fetch of three explicit public URLs through the SDK.
+  console.log('\n[6/6] DeepSeekWebFetch batch through the SDK ...');
+  const fetchMessage = await client.messages.create({
+    model,
+    max_tokens: 900,
+    tool_choice: { type: 'auto' },
+    messages: [{
+      role: 'user',
+      content: 'Use DeepSeekWebFetch to inspect all three exact public URLs in one batch: https://nodejs.org/en/download, https://github.com/nodejs/node/releases, and https://docs.npmjs.com/about-npm. Return a separate section headed FETCH RESULTS and, for each URL, include the exact URL, Title: ..., Fact: ..., and whether it opened. Do not invent content.',
+    }],
+  });
+  assertMessageShape(fetchMessage, 'DeepSeekWebFetch SDK');
+  assert.equal(fetchMessage.stop_reason, 'end_turn',
+    'DeepSeekWebFetch SDK: internal calls must be consumed by the gateway');
+  const fetchText = textFrom(fetchMessage);
+  assert.match(fetchText, /FETCH RESULTS/i,
+    'DeepSeekWebFetch SDK: expected a distinct FETCH RESULTS section');
+  const requestedFetchURLs = [
+    'https://nodejs.org/en/download',
+    'https://github.com/nodejs/node/releases',
+    'https://docs.npmjs.com/about-npm',
+  ];
+  const fetchedCount = requestedFetchURLs.filter((url) => fetchText.includes(url)).length;
+  assert.equal(fetchedCount, 3,
+    'DeepSeekWebFetch SDK: expected all three requested URLs, found ' + fetchedCount);
+  assert.doesNotMatch(fetchText, /could not be opened|not opened/i,
+    'DeepSeekWebFetch SDK: a requested official page could not be opened');
+  assert.ok((fetchText.match(/Title\s*:/gi) || []).length >= 3,
+    'DeepSeekWebFetch SDK: expected a title for each URL');
+  assert.ok((fetchText.match(/Fact\s*:/gi) || []).length >= 3,
+    'DeepSeekWebFetch SDK: expected a fact for each URL');
+  console.log('PASS DeepSeekWebFetch SDK: 3/3 URLs with titles and facts');
+
+  console.log('\nALL SDK AND DEEPSEEK WEB-TOOL SMOKE TESTS PASSED');
 }
 
 main().catch((error) => {
