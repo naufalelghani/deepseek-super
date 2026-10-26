@@ -183,7 +183,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
       const textOnlyPrompt = [
         '=== TEXT-ONLY RECOVERY ===',
         'Your previous response attempted to call a tool even though tools are disabled for this turn.',
-        'Do not call tools, do not emit <TOOL_CALL> tags, and do not output JSON.',
+        'Do not emit DSML calls/invoke/parameter tags, legacy <TOOL_CALL> tags, or tool-call JSON.',
         'Use only the conversation and tool results already available to provide the best possible plain-text answer now.',
         'If the task cannot be completed from available information, state the limitation clearly.',
         'Output only the final user-facing answer.'
@@ -231,10 +231,11 @@ async function handleMessages(req, res, body, dependencies = {}) {
           'Use the original task, conversation history, available tools, and their schemas.',
           'Correct this issue: ' + recoveryIssue,
           'Rebuild the necessary tool call(s) from scratch. All arguments must be valid JSON objects and satisfy the declared schemas.',
-          'Output only valid tool-call markup, with no prose or Markdown outside it.',
+          'Output only one DeepSeek DSML calls block, with no prose or Markdown outside it.',
+          'Use one invoke block per tool, and one parameter block per argument. For string values use string="true" and raw text; for non-string values use string="false" and valid JSON.',
           'Valid formatting example only; this is not an instruction to execute pwd:',
-          '<TOOL_CALL>{"tool":"Bash","arguments":{"command":"pwd"}}</TOOL_CALL>',
-          'Use double-quoted JSON keys and strings, no trailing commas or comments, and escape quotes and backslashes using standard JSON rules.',
+          '<｜DSML｜ calls><｜DSML｜ invoke name="Bash"><｜DSML｜ parameter name="command" string="true">pwd</｜DSML｜ parameter></｜DSML｜ invoke></｜DSML｜ calls>',
+          'Do not use the legacy <TOOL_CALL> wrapper or JSON-encoded arguments for string parameters.',
           attempt === 1
             ? 'Preserve the original task intent and do not invent arguments.'
             : 'This is the final recovery attempt. Rebuild the simplest valid arguments that still satisfy the original task.'
