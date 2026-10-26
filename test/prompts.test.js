@@ -166,7 +166,7 @@ test('truncated long replay retains tool schemas and the latest user request', (
   const replay = truncateReplay(buildFullPrompt('system instructions', messages, tools));
   assert.match(replay, /Bash\(command\*: string/);
   assert.match(replay, /LATEST_REQUEST_MARKER/);
-  assert.match(replay, /WARNING: conversation replay was truncated/);
+  assert.match(replay, /content truncated/);
 });
 
 
