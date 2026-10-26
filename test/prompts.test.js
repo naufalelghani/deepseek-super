@@ -166,7 +166,7 @@ test('truncated long replay retains tool schemas and the latest user request', (
   const replay = truncateReplay(buildFullPrompt('system instructions', messages, tools));
   assert.match(replay, /Bash\(command\*: string/);
   assert.match(replay, /LATEST_REQUEST_MARKER/);
-  assert.match(replay, /content truncated/);
+  assert.match(replay, /WARNING: conversation replay was truncated/);
 });
 
 
@@ -195,5 +195,5 @@ test('bounded resumed prompt preserves tool schemas after an oversized tool resu
   assert.match(replay, /RESULT_BEGIN_MARKER/);
   assert.match(replay, /RESULT_END_MARKER/);
   assert.match(replay, /If the task is not complete, use the next required tool/);
-  assert.match(replay, /WARNING: conversation replay was truncated/);
+  assert.match(replay, /content truncated/);
 });
