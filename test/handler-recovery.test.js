@@ -203,3 +203,34 @@ test('handler heals a tool_choice mismatch and only forwards the selected tool',
   assert.equal(message.stop_reason, 'tool_use');
   assert.deepEqual(message.content.filter((block) => block.type === 'tool_use').map((block) => block.name), ['Read']);
 });
+
+
+test('handler uses one text-only healing attempt when the model violates tool_choice=none', async () => {
+  let calls = 0;
+  const response = new FakeResponse();
+  const runTurn = async () => {
+    calls++;
+    if (calls === 1) {
+      return {
+        text: '',
+        thinking: '',
+        toolCalls: [{ name: 'Bash', input: { command: 'pwd' } }],
+        invalidToolCall: false,
+      };
+    }
+    return {
+      text: 'I cannot run tools in this turn, but here is the answer from the available context.',
+      thinking: '',
+      toolCalls: [],
+      invalidToolCall: false,
+    };
+  };
+
+  await handleMessages(makeRequest(), response, makeBody({ tool_choice: 'none' }), makeDependencies(runTurn));
+  const message = JSON.parse(response.output);
+
+  assert.equal(calls, 2);
+  assert.equal(message.stop_reason, 'end_turn');
+  assert.equal(message.content.some((block) => block.type === 'tool_use'), false);
+  assert.match(message.content.find((block) => block.type === 'text').text, /cannot run tools/);
+});
