@@ -231,7 +231,7 @@ test('execution isolates native Search turns from the client DSML tool context',
       assert.equal(typeof isCancelled, 'function');
       assert.equal(includeLinks, true);
       return {
-        text: 'FOUND\\nTitle: Node.js downloads\\nURL: https://nodejs.org/en/download\\nEvidence: Official downloads are available.',
+        text: 'FOUND\nTitle: Node.js downloads\nURL: https://nodejs.org/en/download\nEvidence: Official downloads are available.',
         sourceLinks: [{ text: 'Node.js downloads', url: 'https://nodejs.org/en/download' }],
         toolCalls: [],
         invalidToolCall: false,
