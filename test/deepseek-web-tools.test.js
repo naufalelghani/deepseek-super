@@ -263,14 +263,14 @@ test('search batch executes each query/domain pair in a focused turn and accepts
       assert.equal(buffer, true);
       assert.equal(typeof isCancelled, 'function');
       assert.equal(includeLinks, true);
-      if (/Target domain: nodejs\.org/.test(prompt) && /official docs/.test(prompt)) {
+      if (/Required target domain: nodejs\.org/.test(prompt) && /official docs/.test(prompt)) {
         return { text: 'FOUND\nTitle: Node.js download\nURL: https://nodejs.org/en/download', sourceLinks: [{ text: 'Node.js download', url: 'https://nodejs.org/en/download' }], toolCalls: [], invalidToolCall: false };
       }
-      if (/Target domain: nodejs\.org/.test(prompt)) {
+      if (/Required target domain: nodejs\.org/.test(prompt)) {
         // A link from the wrong domain must not be accepted for a site-scoped search.
         return { text: 'FOUND\nURL: https://github.com/nodejs/node/releases', sourceLinks: [{ text: 'Node.js releases', url: 'https://github.com/nodejs/node/releases' }], toolCalls: [], invalidToolCall: false };
       }
-      if (/Target domain: github\.com/.test(prompt) && /official docs/.test(prompt)) {
+      if (/Required target domain: github\.com/.test(prompt) && /official docs/.test(prompt)) {
         return { text: 'FOUND\nTitle: Node.js releases\nURL: https://github.com/nodejs/node/releases', sourceLinks: [{ text: 'Node.js releases', url: 'https://github.com/nodejs/node/releases' }], toolCalls: [], invalidToolCall: false };
       }
       return { text: 'NO_RESULT', sourceLinks: [], toolCalls: [], invalidToolCall: false };
