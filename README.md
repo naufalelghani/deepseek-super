@@ -176,6 +176,14 @@ The gateway's response `usage.input_tokens` and `usage.output_tokens`, and the `
 
 HTTP compatibility with the Anthropic SDK does not imply full semantic support for Anthropic model features. This gateway automates the DeepSeek website. For example, `max_tokens`, sampling parameters, prompt caching, images/documents, and Anthropic-specific options that are not mapped to the web UI may not behave like the official Anthropic API. Do not rely on undocumented options as supported features.
 
+### Tool-call and browser recovery
+
+The gateway validates returned tool names and tool arguments against the schemas supplied by the client. Multi-tool responses are validated as a whole before tool blocks are emitted, so a partially invalid batch is not forwarded. Malformed or schema-invalid output receives a bounded correction attempt; if recovery fails, the gateway returns an upstream API error rather than disguising the failure as a successful \`end_turn\`.
+
+At 41 or more conversation messages, the gateway starts a fresh DeepSeek browser thread and builds a bounded replay instead of continuing to grow the existing browser thread. The replay truncation limit is character-based, not a model-token limit; the latest request and tool schemas are placed near the replay tail to improve their chance of being retained.
+
+If a Playwright page closes, the gateway attempts to revive the persistent browser context or create a new one on a subsequent initialization. An active turn is not blindly replayed after a browser failure, because repeating a tool request could duplicate side effects. When no generation-completion signal is available, the idle fallback waits twice the configured \`STABLE_MS\` interval; a turn that reaches \`MAX_TURN_MS\` without completion is reported as an error, not as a successful final response.
+
 ## Anthropic SDK integration test
 
 The `@anthropic-ai/sdk` test dependency is included as a dev dependency. Sign in to DeepSeek first using the manual login helper documented above, then start the local gateway:
