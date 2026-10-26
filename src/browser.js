@@ -92,7 +92,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      await page.evaluate((n) => {
          const aria = 'aria-pressed';
          const cls = 'ds-toggle-button';
-         const els = document.querySelectorAll('div');
+         const els = document.querySelectorAll('[aria-pressed]');
          for (let i = 0; i < els.length; i++) {
              const el = els[i];
              if (el.getAttribute(aria) === null) continue;
@@ -109,7 +109,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      await page.evaluate((wantOn) => {
          const aria = 'aria-pressed';
          const cls = 'ds-toggle-button';
-         const els = document.querySelectorAll('div');
+         const els = document.querySelectorAll('[aria-pressed]');
          for (let i = 0; i < els.length; i++) {
              const el = els[i];
              if (el.getAttribute(aria) === null) continue;
@@ -125,7 +125,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      }, desiredSearchOn).catch(() => false);
      await page.waitForTimeout(200);
      const verifiedSearchState = await page.evaluate(() => {
-         const els = document.querySelectorAll('div.ds-toggle-button[aria-pressed]');
+         const els = document.querySelectorAll('.ds-toggle-button[aria-pressed]');
          for (let i = 0; i < els.length; i++) {
              const span = els[i].querySelector('span');
              if (span && span.textContent.trim() === 'Search') {
