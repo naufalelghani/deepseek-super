@@ -134,7 +134,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
     abortIfCancelled();
     await ensurePage();
     abortIfCancelled();
-    await ensureTogglesOn(tools.length > 0);
+    await ensureTogglesOn(tools.length > 0 || force.mode === 'none');
     abortIfCancelled();
 
     // Resolve the latest cached URL inside the browser lock. A preceding
