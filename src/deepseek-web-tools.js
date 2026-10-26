@@ -367,6 +367,32 @@ async function executeDeepSeekWebTool(call, dependencies) {
     throw new TypeError('DeepSeek web tool execution requires toggle and runTurn dependencies.');
   }
 
+  async function runPlainTextWebTurn(prompt) {
+    let output = await performTurn(prompt, sink, true, isCancelled || (() => false), true);
+    const emittedToolMarkup = output && (
+      output.invalidToolCall ||
+      (Array.isArray(output.toolCalls) && output.toolCalls.length > 0)
+    );
+
+    // In isolated chats, retry once in a new clean chat if the UI still returns
+    // DSML/tool-call markup. The original failure was recursive tool markup, so
+    // a tightly bounded plain-text recovery is safer than treating it as a result.
+    if (useIsolatedTurns && emittedToolMarkup) {
+      console.warn('[DeepSeekWebTool] isolated turn returned tool markup; retrying once in a clean chat');
+      const retryPrompt = [
+        prompt,
+        '=== PLAIN-TEXT WEB RESULT RECOVERY ===',
+        'Your previous response emitted gateway tool-call markup instead of the requested plain-text result.',
+        'This temporary chat has no gateway tool schemas. Do not emit DSML calls/invoke/parameter tags, legacy TOOL_CALL JSON, or any tool-call markup.',
+        'Perform the requested operation directly with the visible DeepSeek Search UI, then follow the plain-text result format above exactly.',
+      ].join('\\n');
+      output = await performTurn(retryPrompt, sink, true, isCancelled || (() => false), true);
+    }
+
+    assertPlainTurnOutput(output);
+    return output;
+  }
+
   async function setInternalSearchMode(enabled) {
     // The browser adapter returns a verified boolean. Test doubles and custom
     // adapters may return undefined; only reject an explicit failure/unknown state.
@@ -400,8 +426,7 @@ async function executeDeepSeekWebTool(call, dependencies) {
         if (index > 0 && !useIsolatedTurns) await setInternalSearchMode(true);
         const item = plan[index];
         const prompt = buildDeepSeekWebSearchTurnPrompt(item.query, item.site, index + 1, plan.length);
-        const output = await performTurn(prompt, sink, true, isCancelled || (() => false), true);
-        assertPlainTurnOutput(output);
+        const output = await runPlainTextWebTurn(prompt);
         const rawLinks = getTurnLinks(output).filter((link) =>
           link && typeof link.url === 'string' && /^https?:\/\//i.test(link.url)
         );
@@ -449,8 +474,7 @@ async function executeDeepSeekWebTool(call, dependencies) {
         if (index > 0 && !useIsolatedTurns) await setInternalSearchMode(true);
         const url = urls[index];
         const prompt = buildDeepSeekWebFetchTurnPrompt(url, index + 1, urls.length);
-        const output = await performTurn(prompt, sink, true, isCancelled || (() => false), true);
-        assertPlainTurnOutput(output);
+        const output = await runPlainTextWebTurn(prompt);
         sections.push([
           '--- Page inspection ' + (index + 1) + ' of ' + urls.length + ' ---',
           'Requested URL: ' + url,
