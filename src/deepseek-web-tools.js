@@ -289,20 +289,36 @@ function buildDeepSeekWebToolContinuationPrompt(results, tools) {
   return parts.filter(Boolean).join('\n\n');
 }
 
-function urlsFromText(text) {
-  const matches = String(text || '').match(/https?:\/\/\S+/gi) || [];
-  return [...new Set(matches.map((url) => url.replace(/[.,;:!?]+$/, '')))]
-    .map((url) => ({ text: url, url }));
-}
-
 function getTurnLinks(output) {
-  // Prefer URLs backed by actual anchors in the rendered DeepSeek UI.
-  // Some DeepSeek UI variants render a cited URL as literal text instead of an
-  // anchor, so fall back to explicitly printed URLs only when no rendered links
-  // were captured. Site-scoped results still must pass linkMatchesDomain().
+  // Only accept URLs in the explicit result schema requested from the isolated
+  // Search turn. Arbitrary hyperlinks in a refusal/explanation (for example,
+  // links to the requested domains) are not proof that Search surfaced a result.
+  const text = String(output && output.text || '');
+  if (!/^\\s*(?:\\*\\*)?FOUND(?:\\*\\*)?\\s*$/im.test(text)) return [];
+
   const sourceLinks = output && Array.isArray(output.sourceLinks) ? output.sourceLinks : [];
-  if (sourceLinks.length > 0) return sourceLinks;
-  return urlsFromText(output && output.text);
+  const titleMatch = text.match(/^\\s*Title:\\s*(.+?)\\s*$/im);
+  const title = titleMatch ? titleMatch[1].trim() : '';
+  const matches = [...text.matchAll(/^\\s*URL:\\s*(https?:\\/\\/\\S+)/gim)];
+  const links = [];
+  const seen = new Set();
+
+  for (const match of matches) {
+    const url = match[1].replace(/[.,;:!?]+$/, '');
+    if (seen.has(url)) continue;
+    seen.add(url);
+    const anchor = sourceLinks.find((link) =>
+      link && typeof link.url === 'string' &&
+      link.url.replace(/[.,;:!?]+$/, '') === url
+    );
+    links.push({
+      text: anchor && typeof anchor.text === 'string' && anchor.text.trim()
+        ? anchor.text.trim()
+        : (title || url),
+      url,
+    });
+  }
+  return links;
 }
 
 function linkMatchesDomain(link, site) {
