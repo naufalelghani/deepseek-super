@@ -298,6 +298,26 @@ The gateway's response `usage.input_tokens` and `usage.output_tokens`, and the `
 
 HTTP compatibility with the Anthropic SDK does not imply full semantic support for Anthropic model features. This gateway automates the DeepSeek website. For example, `max_tokens`, sampling parameters, prompt caching, images/documents, and Anthropic-specific options that are not mapped to the web UI may not behave like the official Anthropic API. Do not rely on undocumented options as supported features.
 
+### DeepSeek-native WebSearch / WebFetch adapter
+
+When `tool_choice` is `auto`, the gateway offers two internal tools to DeepSeek:
+
+- `DeepSeekWebSearch({ query, max_results? })` — turns on DeepSeek's Search toggle for a dedicated search turn, then captures the visible assistant result (including any source URLs and citations DeepSeek provides).
+- `DeepSeekWebFetch({ url })` — turns on Search mode and asks DeepSeek to inspect a public HTTP(S) URL, returning a best-effort page summary and visible evidence.
+
+These are **gateway-internal tools**. Their calls are parsed from DSML, executed inside the existing DeepSeek browser conversation, and their results are fed back to DeepSeek as tool-result context. They are not returned as client-facing `tool_use` blocks. Any client-owned calls in the same batch (for example, `Read` or `Bash`) are returned normally after the internal web call finishes. Internal web-tool loops are bounded to three rounds per request.
+
+DeepThink is still enabled through the UI toggle. Search is turned off for normal tool planning and re-enabled only for an internal web-tool turn, then turned off again before the model continues. Toggle control depends on the DeepSeek website DOM and is best-effort.
+
+Safety and limitations:
+
+- Search query length is capped at 500 characters. `max_results` defaults to 5 and accepts integers from 1 to 8.
+- Fetch accepts only public `http://` and `https://` URLs, rejects embedded credentials and common local/private targets, and strips URL fragments. It is not a raw HTTP fetch API and does not guarantee full-page extraction.
+- Source links, summaries, and citations depend on what the signed-in DeepSeek Search UI actually returns. The model may provide incomplete results, and this adapter cannot guarantee that a source is accessible or that every citation is correct. Verify important sources independently.
+- If the DeepSeek UI changes, the Search toggle selectors or result rendering may need maintenance.
+
+Unit tests cover argument checks, URL safety, Search-mode prompts, toggle restoration, internal tool-result handoff, and mixed internal/client tool batches. Run `npm test` and `npm run check` to validate these paths without a live DeepSeek session.
+
 ### Tool-call and browser recovery
 
 The gateway prompts DeepSeek to emit DSML calls using `<｜DSML｜ calls>`, `<｜DSML｜ invoke>`, and `<｜DSML｜ parameter>` blocks. String parameters are read as raw text with `string="true"`; non-string values are parsed as JSON with `string="false"`. The parser accepts DeepSeek V4 `tool_calls` and V4.1 `calls` spellings, and rejects legacy `<TOOL_CALL>` JSON wrappers rather than treating them as tool calls. Parsed tool names and arguments are then validated against the schemas supplied by the client using common JSON Schema constraints (types, required/properties, additional properties, enum/const, arrays, and common string/number bounds). This is a deliberately limited validator, not a complete implementation of every JSON Schema keyword. Multi-tool responses are validated as a whole before tool blocks are emitted, so a partially invalid batch is not forwarded. Malformed or schema-invalid output receives a bounded correction attempt; if recovery fails, the gateway returns an upstream API error rather than disguising the failure as a successful \`end_turn\`.
