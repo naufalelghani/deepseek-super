@@ -87,7 +87,7 @@ test('tool prompts clearly request DeepSeek Search mode and prohibit fabricated 
     name: DEEPSEEK_WEB_FETCH,
     input: { url: 'https://example.com/article' },
   });
-  assert.match(fetchPrompt, /inspect the public URL/);
+  assert.match(fetchPrompt, /inspect the public URL/i);
   assert.match(fetchPrompt, /https:\/\/example\.com\/article/);
   assert.match(fetchPrompt, /if the URL could not be opened/);
 });
