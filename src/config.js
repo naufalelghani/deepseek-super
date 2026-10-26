@@ -4,7 +4,24 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-const PORT = parseInt(process.env.PORT || '8787', 10);
+function parseBoundedInteger(value, min, max) {
+    if (value === undefined || value === null || String(value).trim() === '') return null;
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) return null;
+    return parsed;
+}
+
+function readIntegerEnv(name, fallback, min, max) {
+    const raw = process.env[name];
+    const parsed = parseBoundedInteger(raw, min, max);
+    if (parsed !== null) return parsed;
+    if (raw !== undefined && String(raw).trim() !== '') {
+        console.warn('[config] invalid ' + name + '; using safe default ' + fallback);
+    }
+    return fallback;
+}
+
+const PORT = readIntegerEnv('PORT', 8787, 1, 65535);
 const MODEL_NAME = process.env.MODEL_NAME || 'deepseek-super';
 const PROFILE_DIR = process.env.PROFILE_DIR || path.join(__dirname, '..', 'deepseek-profile');
 const AUTH_TOKEN_FILE = path.join(__dirname, '..', '.deepseek-super-token');
@@ -63,13 +80,13 @@ function loadAuthToken() {
 const auth = loadAuthToken();
 const AUTH_TOKEN = auth.token;
 const AUTH_TOKEN_SOURCE = auth.source;
-const POLL_MS = parseInt(process.env.POLL_MS || '200', 10);
-const STABLE_MS = parseInt(process.env.STABLE_MS || '4000', 10);
-const MAX_TURN_MS = parseInt(process.env.MAX_TURN_MS || '300000', 10);
+const POLL_MS = readIntegerEnv('POLL_MS', 200, 50, 5000);
+const STABLE_MS = readIntegerEnv('STABLE_MS', 4000, 500, 60000);
+const MAX_TURN_MS = readIntegerEnv('MAX_TURN_MS', 300000, 1000, 3600000);
 const HOLD_CHARS = 10;
-const MAX_REPLAY = parseInt(process.env.MAX_REPLAY || '60000', 10);
+const MAX_REPLAY = readIntegerEnv('MAX_REPLAY', 60000, 1024, 1000000);
 const SESSION_TTL = 30 * 60 * 1000;
-const MAX_PENDING_TURNS = Math.max(1, parseInt(process.env.MAX_PENDING_TURNS || '8', 10));
+const MAX_PENDING_TURNS = readIntegerEnv('MAX_PENDING_TURNS', 8, 1, 64);
 
 const uuid = (prefix) => prefix + '_' + crypto.randomBytes(12).toString('hex');
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex');
@@ -91,5 +108,6 @@ module.exports = {
     SESSION_TTL,
     uuid,
     sha,
-    approxTokens
+    approxTokens,
+    parseBoundedInteger
 };
