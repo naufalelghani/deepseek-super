@@ -83,7 +83,7 @@ async function main() {
   }
 
   // 1. Actual non-streaming Messages API request.
-  console.log('\n[1/3] Non-streaming request ...');
+  console.log('\n[1/4] Non-streaming request ...');
   const normal = await client.messages.create({
     model,
     max_tokens: 128,
@@ -97,8 +97,8 @@ async function main() {
   console.log('PASS non-streaming:', textFrom(normal).trim().slice(0, 160));
   console.log('  stop_reason:', normal.stop_reason);
 
-  // 2. Actual SSE stream, parsed by the official SDK.
-  console.log('\n[2/3] Streaming request ...');
+  // 2. Actual SSE text stream, parsed by the official SDK.
+  console.log('\n[2/4] Streaming text request ...');
   const stream = await client.messages.create({
     model,
     max_tokens: 128,
@@ -128,14 +128,9 @@ async function main() {
   assert.ok(eventCount > 0, 'streaming: the SDK received no events');
   assert.ok(streamedText.trim(), 'streaming: no text_delta was received');
   assert.ok(sawMessageStop, 'streaming: message_stop was not received');
-  console.log('PASS streaming:', streamedText.trim().slice(0, 160));
+  console.log('PASS streaming text:', streamedText.trim().slice(0, 160));
   console.log('  events:', eventCount);
 
-  // 3. Force a tool use, then submit a synthetic tool_result round-trip.
-  // The command is NEVER executed by this test.
-  console.log('\n[3/3] Tool-use + tool-result round trip ...');
-  const toolRequest =
-    'Call the Bash tool with command exactly "echo SDK_TOOL_CALL_OK". Do not answer with plain text.';
   const tools = [{
     name: 'Bash',
     description: 'A compatibility-test tool. The command will not be executed.',
@@ -148,6 +143,12 @@ async function main() {
     },
   }];
 
+  // 3. Non-streaming tool use, followed by a synthetic tool_result round-trip.
+  // The requested shell command is NEVER executed by this test.
+  console.log('\n[3/4] Non-streaming tool-use + tool_result round trip ...');
+  const toolRequest =
+    'Call the Bash tool with command exactly "echo SDK_TOOL_CALL_OK". Do not answer with plain text.';
+
   const toolMessage = await client.messages.create({
     model,
     max_tokens: 256,
@@ -156,15 +157,21 @@ async function main() {
     messages: [{ role: 'user', content: toolRequest }],
   });
 
-  assertMessageShape(toolMessage, 'tool-use');
-  assert.equal(toolMessage.stop_reason, 'tool_use', 'tool-use: stop_reason must be tool_use');
+  assertMessageShape(toolMessage, 'non-streaming tool-use');
+  assert.equal(toolMessage.stop_reason, 'tool_use',
+    'non-streaming tool-use: stop_reason must be tool_use');
 
   const toolUse = toolMessage.content.find((block) => block.type === 'tool_use');
-  assert.ok(toolUse, 'tool-use: no tool_use block was returned');
-  assert.equal(toolUse.name, 'Bash', 'tool-use: tool name did not match');
+  assert.ok(toolUse, 'non-streaming tool-use: no tool_use block was returned');
+  assert.equal(toolUse.name, 'Bash', 'non-streaming tool-use: tool name did not match');
   assert.ok(typeof toolUse.input.command === 'string' && toolUse.input.command.trim(),
-    'tool-use: command input is empty or invalid');
-  console.log('PASS tool_use:', JSON.stringify({ name: toolUse.name, input: toolUse.input }));
+    'non-streaming tool-use: command input is empty or invalid');
+  assert.equal(toolUse.input.command, 'echo SDK_TOOL_CALL_OK',
+    'non-streaming tool-use: command did not match the requested fixture');
+  console.log('PASS non-streaming tool_use:', JSON.stringify({
+    name: toolUse.name,
+    input: toolUse.input,
+  }));
 
   const finalMessage = await client.messages.create({
     model,
@@ -187,6 +194,79 @@ async function main() {
   assertMessageShape(finalMessage, 'tool-result round trip');
   assert.ok(textFrom(finalMessage).trim(), 'tool-result round trip: final response is empty');
   console.log('PASS tool_result round trip:', textFrom(finalMessage).trim().slice(0, 160));
+
+  // 4. Actual SSE tool-use stream. Accumulate partial JSON by block index.
+  // This validates the streaming example; it does not execute the requested command.
+  console.log('\n[4/4] Streaming tool-use request ...');
+  const streamingToolMessage = await client.messages.create({
+    model,
+    max_tokens: 256,
+    stream: true,
+    tools,
+    tool_choice: { type: 'tool', name: 'Bash' },
+    messages: [{
+      role: 'user',
+      content: 'Call the Bash tool with command exactly "echo SDK_STREAM_TOOL_CALL_OK". Do not answer with plain text.',
+    }],
+  });
+
+  const streamedToolsByIndex = new Map();
+  let streamedToolStopReason = null;
+  let streamedToolEventCount = 0;
+  let sawToolMessageStop = false;
+
+  for await (const event of streamingToolMessage) {
+    streamedToolEventCount++;
+    if (
+      event.type === 'content_block_start' &&
+      event.content_block &&
+      event.content_block.type === 'tool_use'
+    ) {
+      streamedToolsByIndex.set(event.index, {
+        id: event.content_block.id,
+        name: event.content_block.name,
+        partialJson: '',
+      });
+    } else if (
+      event.type === 'content_block_delta' &&
+      event.delta &&
+      event.delta.type === 'input_json_delta'
+    ) {
+      const tool = streamedToolsByIndex.get(event.index);
+      if (tool) tool.partialJson += event.delta.partial_json;
+    } else if (event.type === 'message_delta') {
+      streamedToolStopReason = event.delta.stop_reason;
+    } else if (event.type === 'message_stop') {
+      sawToolMessageStop = true;
+    }
+  }
+
+  const streamedTools = [...streamedToolsByIndex.values()].map((tool) => {
+    let input;
+    try {
+      input = tool.partialJson ? JSON.parse(tool.partialJson) : {};
+    } catch (error) {
+      throw new Error('streaming tool-use: invalid accumulated input JSON: ' + error.message);
+    }
+    return { id: tool.id, name: tool.name, input };
+  });
+
+  assert.ok(streamedToolEventCount > 0, 'streaming tool-use: the SDK received no events');
+  assert.ok(sawToolMessageStop, 'streaming tool-use: message_stop was not received');
+  assert.equal(streamedToolStopReason, 'tool_use',
+    'streaming tool-use: stop_reason must be tool_use');
+  assert.equal(streamedTools.length, 1, 'streaming tool-use: expected exactly one tool block');
+  assert.equal(streamedTools[0].name, 'Bash', 'streaming tool-use: tool name did not match');
+  assert.equal(typeof streamedTools[0].input.command, 'string',
+    'streaming tool-use: command input must be a string');
+  assert.equal(streamedTools[0].input.command, 'echo SDK_STREAM_TOOL_CALL_OK',
+    'streaming tool-use: command did not match the requested fixture');
+  console.log('PASS streaming tool_use:', JSON.stringify({
+    stop_reason: streamedToolStopReason,
+    name: streamedTools[0].name,
+    input: streamedTools[0].input,
+    events: streamedToolEventCount,
+  }));
 
   console.log('\nALL SDK SMOKE TESTS PASSED');
 }
