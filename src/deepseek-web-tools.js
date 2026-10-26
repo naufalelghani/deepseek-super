@@ -179,7 +179,7 @@ async function executeDeepSeekWebTool(call, dependencies) {
   await setSearchEnabled(false);
   let output;
   try {
-    output = await runTurn(prompt, sink, true, isCancelled || (() => false));
+    output = await runTurn(prompt, sink, true, isCancelled || (() => false), true);
   } finally {
     // Restore Search OFF before the model resumes tool planning or answers the user.
     await setSearchEnabled(true);
