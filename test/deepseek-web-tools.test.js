@@ -157,7 +157,7 @@ test('execution enables Search for the internal turn and restores it afterwards'
       assert.equal(buffer, true);
       assert.equal(typeof isCancelled, 'function');
       assert.equal(includeLinks, true);
-      return { text: 'FOUND\\nTitle: Example docs\\nURL: https://example.com/docs\\nEvidence: Example page.', toolCalls: [], invalidToolCall: false };
+      return { text: 'FOUND\nTitle: Example docs\nURL: https://example.com/docs\nEvidence: Example page.', toolCalls: [], invalidToolCall: false };
     },
   });
 
@@ -348,7 +348,7 @@ test('search does not mistake links in a failure explanation for surfaced Search
   }, {
     ensureTogglesOn: async () => {},
     runTurn: async () => ({
-      text: 'NO_RESULT\\nSearch failed. See https://nodejs.org/ for the requested domain.',
+      text: 'NO_RESULT\nSearch failed. See https://nodejs.org/ for the requested domain.',
       sourceLinks: [{ text: 'nodejs.org', url: 'https://nodejs.org/' }],
       toolCalls: [],
       invalidToolCall: false,
