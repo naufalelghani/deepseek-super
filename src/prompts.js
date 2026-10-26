@@ -48,16 +48,23 @@ function toolsToPrompt(tools) {
     lines.push('MANDATORY RULES:');
     lines.push('1. If the task requires file access, shell commands, search, or an action that one of the tools above can perform, you MUST use the appropriate tool.');
     lines.push('2. If the tool results already received are sufficient to complete the task, provide the final answer without another tool call. Otherwise, continue with the next appropriate tool.');
-    lines.push('3. Format for ONE tool: <TOOL_CALL>{"tool":"<name>","arguments":{...}}</TOOL_CALL>');
-    lines.push('4. Format for MULTIPLE tools: <TOOL_CALL>[{...},{...}]</TOOL_CALL>');
-    lines.push('5. Do NOT write anything outside the <TOOL_CALL> tags when calling tools.');
-    lines.push('6. Use plain text when the task is complete or no additional tool is needed.');
-    lines.push('7. All strings and keys must use valid JSON. Escape double quotes inside string values using standard JSON rules.');
-    lines.push('8. Do not use backticks or single quotes as substitutes for JSON escaping.');
+    lines.push('3. Use the DeepSeek DSML markup format for tool calls. Do not use the legacy <TOOL_CALL> JSON wrapper.');
+    lines.push('4. Emit exactly ONE outer calls block for the whole assistant tool response, with one invoke block per requested tool. Do not repeat the calls wrapper.');
+    lines.push('5. Use this DSML structure (the leading space after the DSML token in calls/invoke/parameter is intentional):');
+    lines.push('<｜DSML｜ calls>');
+    lines.push('<｜DSML｜ invoke name="Bash">');
+    lines.push('<｜DSML｜ parameter name="command" string="true">pwd</｜DSML｜ parameter>');
+    lines.push('</｜DSML｜ invoke>');
+    lines.push('</｜DSML｜ calls>');
+    lines.push('6. For string arguments, set string="true" and write the raw string value without JSON quoting or escaping.');
+    lines.push('7. For numbers, booleans, null, arrays, and objects, set string="false" and write the value as valid JSON.');
+    lines.push('8. Use each parameter name exactly as declared in the selected tool schema. Do not duplicate parameter names, invent tools, or add prose/Markdown inside the calls block.');
+    lines.push('9. Do NOT write anything outside the DSML calls block when calling tools.');
+    lines.push('10. Use plain text when the task is complete or no additional tool is needed.');
     lines.push('');
-    lines.push('VALID TOOL CALL EXAMPLE:');
-    lines.push('<TOOL_CALL>{"tool":"Bash","arguments":{"command":"pwd"}}</TOOL_CALL>');
-    lines.push('This example demonstrates formatting only. Choose the tool and arguments that fit the user request.');
+    lines.push('VALID DSML TOOL CALL EXAMPLE (formatting example only):');
+    lines.push('<｜DSML｜ calls><｜DSML｜ invoke name="Bash"><｜DSML｜ parameter name="command" string="true">pwd</｜DSML｜ parameter></｜DSML｜ invoke></｜DSML｜ calls>');
+    lines.push('Put all requested tool invocations inside one calls block. Do not append closing DSML tags a second time.');
     lines.push('');
     lines.push('EXAMPLE — TOOL REQUIRED:');
     lines.push(`User: "Please help me use ${tools[0].name}."`);
@@ -95,8 +102,8 @@ function buildFullPrompt(system, messages, tools) {
         parts.push([
             '=== INSTRUCTIONS AFTER TOOL RESULTS ===',
             ...TOOL_RESULT_INSTRUCTIONS,
-            'If the task still requires an action, call the next appropriate tool using the <TOOL_CALL>...</TOOL_CALL> format and valid JSON.',
-            'If the task is complete, provide the final answer without tool tags.'
+            'If the task still requires an action, call the next appropriate tool using the DeepSeek DSML calls/invoke/parameter format described in the tool contract.',
+            'If the task is complete, provide the final answer without tool-call tags.'
         ].join('\n'));
     } else {
         parts.push('### LATEST USER MESSAGE\n' + renderMessage(last));
@@ -132,7 +139,7 @@ function buildResumePrompt(system, messages, tools, isToolResultTurn) {
         parts.push('');
         parts.push('=== INSTRUCTIONS AFTER TOOL RESULTS ===');
         parts.push(...TOOL_RESULT_INSTRUCTIONS);
-        parts.push('If the task is not complete, use the next required tool with the <TOOL_CALL>...</TOOL_CALL> format and valid JSON.');
+        parts.push('If the task is not complete, use the next required tool with one DeepSeek DSML calls block containing invoke/parameter tags.');
         parts.push('If the task is complete, provide the final answer without tool tags.');
         return parts.filter(Boolean).join('\n');
     }
@@ -151,7 +158,8 @@ function buildResumePrompt(system, messages, tools, isToolResultTurn) {
         'Evaluate the latest request using the tool list provided immediately above.',
         'If the request requires file access, shell commands, search, or an action that one of the listed tools can perform, you MUST call the most appropriate tool now.',
         'Do not claim a tool is unavailable or substitute manual instructions when an appropriate tool is listed.',
-        'For a tool call, output only <TOOL_CALL>{"tool":"<tool-name>","arguments":{...}}</TOOL_CALL> with valid JSON.',
+        'For tool calls, output one DeepSeek DSML calls block containing one invoke per tool and parameter tags for its arguments. Do not use <TOOL_CALL> or a JSON wrapper.',
+        'For each string parameter, use string="true" and raw text; for non-string values, use string="false" and valid JSON.',
         'Do not report file contents or execution results until the tool has actually been called and its result received.'
     ].join('\n'));
 
@@ -175,7 +183,7 @@ function applyForcedTool(prompt, force) {
             'answer the user NOW in plain text.',
             '',
             'MANDATORY RULES:',
-            '1. Do NOT write <TOOL_CALL> or any tool tags.',
+            '1. Do NOT emit DSML calls/invoke/parameter tags or legacy <TOOL_CALL> tags.',
             '2. Do NOT call any tools. All tools are disabled for this turn.',
             '3. If information is incomplete, answer with what is available and state the limitations.',
             '4. Respond in the language used in the first user message, unless the user explicitly asks to switch languages.',
@@ -184,8 +192,7 @@ function applyForcedTool(prompt, force) {
         ].join('\n');
     }
     if (force.mode === 'tool') {
-        return '[REQUIRED: Call the tool "' + force.name + '" NOW. Respond ONLY with ' +
-            '<TOOL_CALL>{"tool":"' + force.name + '","arguments":{...}}</TOOL_CALL>]\n\n' + prompt;
+        return '[REQUIRED: Call the tool "' + force.name + '" NOW. Respond ONLY with one DeepSeek DSML calls block containing an invoke named "' + force.name + '". Use parameter tags and the declared schema; do not emit legacy <TOOL_CALL> JSON.]\n\n' + prompt;
     }
     if (force.mode === 'any') {
         return '[REQUIRED: Call at least one tool from the list below. Do NOT answer in plain text.]\n\n' + prompt;
