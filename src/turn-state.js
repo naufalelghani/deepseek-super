@@ -20,4 +20,16 @@ function isResponseComplete(state, sawGeneratingSignal) {
   );
 }
 
-module.exports = { hasNewAssistantResponse, isResponseComplete };
+
+function shouldUseStableFallback(state, sawGeneratingSignal, idleMs, stableMs) {
+  return Boolean(
+    sawGeneratingSignal !== true &&
+    state &&
+    state.completionSignalAvailable !== true &&
+    Number.isFinite(idleMs) &&
+    Number.isFinite(stableMs) &&
+    idleMs >= stableMs * 2
+  );
+}
+
+module.exports = { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback };
