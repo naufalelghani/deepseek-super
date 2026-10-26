@@ -106,7 +106,7 @@ test('continuation prompt feeds internal results back as tool results and retain
   assert.match(prompt, /INTERNAL DEEPSEEK WEB TOOL RESULTS/);
   assert.match(prompt, /Source: https:\/\/example\.com/);
   assert.match(prompt, /Bash\(command\*?: string\)/);
-  assert.match(prompt, /Continue the original user task/);
+  assert.match(prompt, /CONTINUE THE ORIGINAL USER TASK/i);
 });
 
 test('execution enables Search for the internal turn and restores it afterwards', async () => {
