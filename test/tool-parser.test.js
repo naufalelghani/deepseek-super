@@ -119,3 +119,62 @@ test('tool argument normalization does not mutate prototypes from JSON input', (
   assert.equal(Object.prototype.polluted, undefined);
   assert.equal(Object.prototype.hasOwnProperty.call(calls[0].input, '__proto__'), true);
 });
+
+
+test('StreamParser parses DeepSeek V4.1 DSML calls and raw string parameters', () => {
+  const parser = new StreamParser(() => {});
+  const input = [
+    '<｜DSML｜ calls>',
+    '<｜DSML｜ invoke name="Bash">',
+    '<｜DSML｜ parameter name="command" string="true">ls -la "docs" && echo done</｜DSML｜ parameter>',
+    '</｜DSML｜ invoke>',
+    '<｜DSML｜ invoke name="Read">',
+    '<｜DSML｜ parameter name="file_path" string="true">README.md</｜DSML｜ parameter>',
+    '<｜DSML｜ parameter name="options" string="false">{"start":1,"enabled":true}</｜DSML｜ parameter>',
+    '</｜DSML｜ invoke>',
+    '</｜DSML｜ calls>',
+  ].join('\n');
+  for (let i = 0; i < input.length; i += 11) parser.feed(input.slice(i, i + 11));
+  parser.finish();
+
+  assert.deepEqual(parser.toolCalls(), [
+    { name: 'Bash', input: { command: 'ls -la "docs" && echo done' } },
+    { name: 'Read', input: { file_path: 'README.md', options: { start: 1, enabled: true } } },
+  ]);
+  assert.equal(parser.parseErrors.length, 0);
+  assert.equal(parser.textOut, '');
+});
+
+test('StreamParser accepts DeepSeek V4 tool_calls spelling and duplicated DSML bars', () => {
+  const parser = new StreamParser(() => {});
+  parser.feed('<｜｜DSML｜｜tool_calls><｜｜DSML｜｜invoke name="Bash"><｜｜DSML｜｜parameter name="command" string="true">pwd</｜｜DSML｜｜parameter></｜｜DSML｜｜invoke></｜｜DSML｜｜tool_calls>');
+  parser.finish();
+
+  assert.deepEqual(parser.toolCalls(), [{ name: 'Bash', input: { command: 'pwd' } }]);
+  assert.equal(parser.parseErrors.length, 0);
+});
+
+test('StreamParser parses DSML and rejects malformed non-string parameter JSON', () => {
+  const parser = new StreamParser(() => {});
+  parser.feed('<｜DSML｜ calls><｜DSML｜ invoke name="Bash"><｜DSML｜ parameter name="command" string="false">not-json</｜DSML｜ parameter></｜DSML｜ invoke></｜DSML｜ calls>');
+  parser.finish();
+
+  assert.deepEqual(parser.toolCalls(), []);
+  assert.equal(parser.parseErrors.length, 1);
+  assert.match(parser.parseErrors[0].reason, /invalid JSON/);
+});
+
+test('StreamParser ignores stray DSML closing tags after legacy tool blocks', () => {
+  const parser = new StreamParser(() => {});
+  parser.feed('<TOOL_CALL>[{"tool":"Bash","arguments":{"command":"echo one"}}]</TOOL_CALL>');
+  parser.feed('<TOOL_CALL>[{"tool":"Bash","arguments":{"command":"echo two"}}]</TOOL_CALL>');
+  parser.feed('</｜｜DSML｜｜ parameter></｜｜DSML｜｜ invoke></｜｜DSML｜｜ calls>');
+  parser.finish();
+
+  assert.deepEqual(parser.toolCalls(), [
+    { name: 'Bash', input: { command: 'echo one' } },
+    { name: 'Bash', input: { command: 'echo two' } },
+  ]);
+  assert.equal(parser.textOut.trim(), '');
+  assert.equal(parser.parseErrors.length, 0);
+});
