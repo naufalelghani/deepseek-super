@@ -289,7 +289,7 @@ function createStateStore(options = {}) {
         );
       // The request.received event is written before browser-session lookup.
       // Backfill its correlation fields once the session/thread are known.
-      db.prepare('UPDATE events SET session_id = COALESCE(session_id, ?), thread_id = COALESCE(thread_id, ?) WHERE request_id = ?')
+      db.prepare("UPDATE events SET session_id = COALESCE(session_id, ?), thread_id = COALESCE(thread_id, ?) WHERE request_id = ? AND event_type = 'request.received'")
         .run(sessionId, threadId, requestId);
     });
     link();
