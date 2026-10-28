@@ -197,3 +197,28 @@ test('bounded resumed prompt preserves tool schemas after an oversized tool resu
   assert.match(replay, /If the task is not complete, use the next required tool/);
   assert.match(replay, /content truncated/);
 });
+
+
+test('base prompt includes humanizer rules, follows the current user language, and avoids em dash punctuation', () => {
+  const messages = [{ role: 'user', content: 'Halo bro, bantu tulis ulang kalimat ini.' }];
+  const prompts = [
+    buildFullPrompt('', messages, []),
+    buildResumePrompt('', messages, [], false),
+    buildResumePrompt('', [{
+      role: 'user',
+      content: [{ type: 'tool_result', tool_use_id: 'toolu_language', content: 'OK' }],
+    }], [], true),
+  ];
+
+  for (const prompt of prompts) {
+    assert.match(prompt, /WRITING STYLE AND HUMANIZER/);
+    assert.match(prompt, /Remove AI clichés, generic openings, repetitive wording/);
+    assert.match(prompt, /Preserve the author’s intent, facts, nuance, and important details/);
+    assert.match(prompt, /match the author’s tone, vocabulary, rhythm/);
+    assert.match(prompt, /Do not use em dash punctuation \(U\+2014\)/);
+    assert.match(prompt, /Respond in the language the user is currently using/);
+    assert.match(prompt, /If the user switches languages, switch with them/);
+    assert.match(prompt, /Never claim a skill is installed or activated unless that has been verified/);
+    assert.doesNotMatch(prompt, /\u2014/);
+  }
+});
