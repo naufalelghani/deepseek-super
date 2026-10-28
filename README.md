@@ -81,7 +81,7 @@ Configuration is read from environment variables:
 
 ### Available model names
 
-The authenticated `GET /v1/models` endpoint lists two selectable IDs: `deepseek-super` (display name **Deepseek Super**) and `claude-opus-5.5` (display name **Opus 5.5**). The second name is a compatibility alias only: **both IDs currently send requests to the signed-in DeepSeek web session. This does not connect to or provide the actual Anthropic Claude Opus model.**
+The authenticated `GET /v1/models` endpoint advertises two Claude Desktop-compatible IDs: `claude-sonnet-5-5` (display name **Deepseek Super**) and `claude-opus-5-5` (display name **Opus 5.5**). These IDs and family labels are UI compatibility aliases used so Claude Desktop can recognize model effort controls; **both entries still send requests to the signed-in DeepSeek web session. Neither ID connects to or provides the actual Anthropic Claude model it names.** The gateway continues to accept `deepseek-super` as a model ID for direct API clients, even though it is not advertised in the Claude Desktop discovery catalog.
 
 ### Effort selector compatibility
 
