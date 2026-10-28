@@ -27,7 +27,7 @@ test('instruction normalization retains the original system value for session fi
   });
 
   assert.equal(result.body[ORIGINAL_SYSTEM], originalSystem);
-  assert.equal(Object.keys(result.body).includes(String(ORIGINAL_SYSTEM)), false);
+  assert.equal(Object.getOwnPropertyDescriptor(result.body, ORIGINAL_SYSTEM).enumerable, false);
   assert.equal(result.normalizedInstructionMessages, 1);
 });
 
