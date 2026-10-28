@@ -81,7 +81,7 @@ Configuration is read from environment variables:
 
 ### Available model names
 
-The authenticated `GET /v1/models` endpoint advertises six request IDs: `deepseek-super`, `claude-mythos-5.1`, `claude-fable-5.1`, `claude-opus-5-5`, `claude-sonnet-5-5`, and `claude-haiku-5-5`. The Claude-prefixed IDs are compatibility aliases and select gateway-defined response profiles; **all six entries still send requests to the signed-in DeepSeek web session. None connects to or provides the actual Anthropic Claude model its ID names.**
+The authenticated `GET /v1/models` endpoint advertises six request IDs: `deepseek-super`, `claude-mythos-5-1`, `claude-fable-5.1`, `claude-opus-5-5`, `claude-sonnet-5-5`, and `claude-haiku-5-5`. The Claude-prefixed IDs are compatibility aliases and select gateway-defined response profiles; **all six entries still send requests to the signed-in DeepSeek web session. None connects to or provides the actual Anthropic Claude model its ID names.** For backward compatibility, direct API requests using the former dotted Mythos ID `claude-mythos-5.1` still resolve to the canonical `claude-mythos-5-1` response profile.
 
 ### Effort selector compatibility
 
@@ -410,7 +410,7 @@ The external route is optional and is not the CI test. Keep API keys in local en
 
 ## Model catalog and response profiles
 
-The `/v1/models` catalog exposes six request IDs: `deepseek-super`, `claude-mythos-5.1`, `claude-fable-5.1`, `claude-opus-5-5`, `claude-sonnet-5-5`, and `claude-haiku-5-5`. Each ID selects a separate response-style profile in `src/model-profiles.js`; profiles guide behavior and working style but do not change the underlying model or grant provider-native capabilities. Effort settings remain an independent layer. The Mythos preset prioritizes authorized defensive security analysis and careful remediation; the Fable preset is flexible across demanding reasoning, long-horizon agent work, research, data, documents, and creative tasks when appropriate. These are gateway-defined presets inspired by public model guidance, not a representation that the gateway invokes native Claude models. The prompt retains BYV attribution but does not disclose internal project or browser-automation details to the model.
+The `/v1/models` catalog exposes six request IDs: `deepseek-super`, `claude-mythos-5-1`, `claude-fable-5.1`, `claude-opus-5-5`, `claude-sonnet-5-5`, and `claude-haiku-5-5`. Each ID selects a separate response-style profile in `src/model-profiles.js`; profiles guide behavior and working style but do not change the underlying model or grant provider-native capabilities. Effort settings remain an independent layer. The Mythos preset prioritizes authorized defensive security analysis and careful remediation; the Fable preset is flexible across demanding reasoning, long-horizon agent work, research, data, documents, and creative tasks when appropriate. These are gateway-defined presets inspired by public model guidance, not a representation that the gateway invokes native Claude models. The prompt retains BYV attribution but does not disclose internal project or browser-automation details to the model.
 
 ## Endpoints
 
@@ -457,7 +457,7 @@ The session cache key is a SHA-256 fingerprint of the complete top-level system 
 
 The browser is a single shared resource. Requests are serialized through a bounded queue; when the queue is full, the server reports overload instead of allowing an unbounded backlog. If a client disconnects while a turn is running, the gateway best-effort clicks a visible stop/cancel control, stops polling, and releases the queue. This cancellation is best-effort because the website does not expose a documented API for cancelling a generation. Completion detection first uses the UI's observable stop/send controls when detected; `STABLE_MS` is an inactivity fallback only when the explicit signal has not been observed. UI changes can break these selectors, and the `MAX_TURN_MS` deadline is reported as a failure rather than a completed answer.
 
-Initial prompt replay is capped by `MAX_REPLAY` characters. If the cap is exceeded, the gateway preserves the prompt head and tail, inserts a clear truncation warning into the prompt, and logs the lengths. Some middle context is still lost; long agent sessions may therefore need compaction or a fresh session. The cap is character-based, not a token count.
+Initial prompt replay is capped by `MAX_REPLAY` characters. If the cap is exceeded, the gateway compacts oversized external system instructions, older conversation history, and tool results while prioritizing the project policy, available tool schemas, and latest request. It inserts a truncation warning into the prompt and logs the lengths. Some earlier context can still be lost; long agent sessions may therefore need compaction or a fresh session. The cap is character-based, not a token count.
 
 The local API token, Host validation, and CORS allowlist protect the local gateway endpoint. They do not protect or anonymize data submitted to DeepSeek: the browser session and prompts are still processed by the DeepSeek web service under the service's own terms and privacy policy. Do not submit data you are not comfortable sending to that service.
 
