@@ -73,9 +73,10 @@ test('keeps DSML tool-call output unchanged', async (t) => {
     await withBrowser(t, async (browser) => {
         const page = await browser.newPage();
         const dsml = '<｜DSML｜ calls><｜DSML｜ invoke name="Read"><｜DSML｜ parameter name="file_path" string="true">README.md</｜DSML｜ parameter></｜DSML｜ invoke></｜DSML｜ calls>';
+        const escapedDsml = dsml.replace(/</g, '&lt;').replace(/>/g, '&gt;');
         await page.setContent(
             '<div data-virtual-list-item-key="answer-1"><div class="ds-assistant-message-main-content">' +
-            '<div class="ds-markdown"><p>' + dsml + '</p></div></div></div>'
+            '<div class="ds-markdown"><p>' + escapedDsml + '</p></div></div></div>'
         );
         const state = await page.evaluate(readStateInPage, { final: true });
         assert.equal(state.answerMarkdown, dsml);
