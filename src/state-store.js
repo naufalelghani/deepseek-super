@@ -274,15 +274,25 @@ function createStateStore(options = {}) {
 
   function linkRequestToSession(requestId, session, metadata = {}) {
     if (!session) return;
-    db.prepare('UPDATE requests SET session_id = ?, thread_id = ?, thread_generation = ?, resumed = ?, rotation_reason = ? WHERE request_id = ?')
-      .run(
-        session.sessionId || null,
-        session.threadId || null,
-        Number.isInteger(session.generation) ? session.generation : null,
-        typeof metadata.resumed === 'boolean' ? (metadata.resumed ? 1 : 0) : null,
-        metadata.rotationReason || null,
-        requestId
-      );
+    const sessionId = session.sessionId || null;
+    const threadId = session.threadId || null;
+    const generation = Number.isInteger(session.generation) ? session.generation : null;
+    const link = db.transaction(() => {
+      db.prepare('UPDATE requests SET session_id = ?, thread_id = ?, thread_generation = ?, resumed = ?, rotation_reason = ? WHERE request_id = ?')
+        .run(
+          sessionId,
+          threadId,
+          generation,
+          typeof metadata.resumed === 'boolean' ? (metadata.resumed ? 1 : 0) : null,
+          metadata.rotationReason || null,
+          requestId
+        );
+      // The request.received event is written before browser-session lookup.
+      // Backfill its correlation fields once the session/thread are known.
+      db.prepare('UPDATE events SET session_id = COALESCE(session_id, ?), thread_id = COALESCE(thread_id, ?) WHERE request_id = ?')
+        .run(sessionId, threadId, requestId);
+    });
+    link();
   }
 
   function recordPromptMetrics(requestId, metrics) {
