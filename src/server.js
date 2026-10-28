@@ -2,12 +2,14 @@
 
 const http = require('node:http');
 const { effortCapabilities } = require('./effort');
-// Public virtual models shown to API clients. Both aliases currently use the DeepSeek web session.
+// Virtual catalog IDs are client-facing profiles; requests are handled by this gateway.
 const AVAILABLE_MODELS = [
-  // Claude Desktop's gateway discovery filters out opaque non-Claude IDs.
-  // These are UI compatibility IDs only; both are handled by the DeepSeek web backend.
-  { id: 'claude-sonnet-5-5', display_name: 'Deepseek Super', line: 'sonnet' },
-  { id: 'claude-opus-5-5', display_name: 'Opus 5.5', line: 'opus' },
+  { id: 'deepseek-super', display_name: 'Deepseek Super', line: 'sonnet' },
+  { id: 'claude-mythos-5.1', display_name: 'Claude Mythos 5.1', line: 'opus' },
+  { id: 'claude-fable-5.1', display_name: 'Claude Fable 5.1', line: 'sonnet' },
+  { id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5', line: 'opus' },
+  { id: 'claude-sonnet-5.5', display_name: 'Claude Sonnet 5.5', line: 'sonnet' },
+  { id: 'claude-haiku-5.5', display_name: 'Claude Haiku 5.5', line: 'haiku' },
 ];
 const { handleMessages } = require('./handler');
 const {
