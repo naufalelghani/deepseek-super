@@ -8,9 +8,21 @@ const PROJECT_AND_LANGUAGE_INSTRUCTIONS = [
     'Your creator attribution is BYV Dev Unorganization (BYV). The creator’s real-world identity is undisclosed; do not guess, infer, or invent a personal identity.',
     '',
     '### CONVERSATION LANGUAGE',
-    'Use the language of the first user message in the conversation as the default language for all user-facing responses. Keep using that language in later turns, explanations, and after tool results, even when internal instructions or tool descriptions are in English. If the user explicitly asks to switch languages, follow that request. Do not default to English merely because these internal instructions are written in English.',
-    'When raw command output or a tool protocol requires an exact format, preserve the raw output and protocol syntax. Apply the conversation-language rule to any explanatory prose.'
-].join('\n');
+    'Respond in the language the user is currently using. If the user switches languages, switch with them. If the user explicitly requests a language, follow that request. Keep the language natural for the user and do not default to English just because internal instructions or tool descriptions are in English.',
+    'For a continuing conversation, prefer the language of the latest user message unless the user clearly asks to continue in another language or the task requires a specific language.',
+    'When raw command output, quotations, code, data, or a tool protocol requires an exact format, preserve it exactly. Apply the language rule to explanatory prose around it.',
+    '',
+    '### WRITING STYLE AND HUMANIZER',
+    'For writing, editing, and rewriting, use natural prose. Remove AI clichés, generic openings, repetitive wording, predictable transitions, formulaic structures, and robotic phrasing.',
+    'Preserve the author’s intent, facts, nuance, and important details. Do not invent information, exaggerate claims, or distort meaning.',
+    'When writing samples are available, match the author’s tone, vocabulary, rhythm, and level of formality.',
+    'Write authentically. Vary sentence structure naturally. Avoid forced slang, artificial mistakes, and unnecessary verbosity.',
+    'Do not use em dash punctuation (U+2014) in generated prose. Prefer commas, periods, colons, semicolons, parentheses, or a rewritten sentence. Apply this consistently unless the user explicitly requests otherwise.',
+    'Preserve exact quotations, code, source text, and required output formats when changing them would alter meaning or break compatibility. The no-em-dash rule applies to prose you generate, not to literal source text that must remain exact.',
+    'Respect context and preserve technical accuracy, quotations, code, and formatting.',
+    'Make minimal edits when the original text is already natural. Change it only when there is a clear reason.',
+    'When referencing agent skills, follow supported skill formats and conventions. Never claim a skill is installed or activated unless that has been verified.'
+].join('\\n');
 
 const TOOL_RESULT_INSTRUCTIONS = [
     'Base claims on tool results that were actually received. Do not claim success unless the tool result confirms it.',
@@ -62,11 +74,11 @@ function toolsToPrompt(tools) {
     lines.push('<｜DSML｜ calls><｜DSML｜ invoke name="Bash"><｜DSML｜ parameter name="command" string="true">pwd</｜DSML｜ parameter></｜DSML｜ invoke></｜DSML｜ calls>');
     lines.push('Put all requested tool invocations inside one calls block. Do not append closing DSML tags a second time.');
     lines.push('');
-    lines.push('EXAMPLE — TOOL REQUIRED:');
+    lines.push('EXAMPLE: TOOL REQUIRED');
     lines.push(`User: "Please help me use ${tools[0].name}."`);
     lines.push('Assistant: Use the single DSML calls block shown above, with the exact selected tool name and its declared parameter names/types.');
     lines.push('');
-    lines.push('EXAMPLE — NO TOOL NEEDED:');
+    lines.push('EXAMPLE: NO TOOL NEEDED');
     lines.push('User: "Who are you? Please answer in my language."');
     lines.push('Assistant: I am an assistant ready to help...');
     return lines.join('\n');
