@@ -328,6 +328,8 @@ function createStateStore(options = {}) {
       );
     recordEvent({
       requestId: request.requestId,
+      sessionId: request.sessionId || null,
+      threadId: request.threadId || null,
       type: status === 'completed' ? 'request.completed' : 'request.' + status,
       level: status === 'error' ? 'error' : status === 'cancelled' ? 'warn' : 'info',
       details: {
