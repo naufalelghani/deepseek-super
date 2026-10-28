@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const {
   validateMessagesRequest,
   normalizeAnthropicMessagesRequest,
+  ORIGINAL_SYSTEM,
   estimateInputTokens,
   estimateOutputTokens,
 } = require('../src/anthropic-contract');
@@ -14,6 +15,21 @@ const minimal = {
   max_tokens: 256,
   messages: [{ role: 'user', content: 'Hello' }],
 };
+
+test('instruction normalization retains the original system value for session fingerprinting', () => {
+  const originalSystem = 'stable base system';
+  const result = normalizeAnthropicMessagesRequest({
+    system: originalSystem,
+    messages: [
+      { role: 'developer', content: 'dynamic developer instruction' },
+      { role: 'user', content: 'inspect the project' },
+    ],
+  });
+
+  assert.equal(result.body[ORIGINAL_SYSTEM], originalSystem);
+  assert.equal(Object.keys(result.body).includes(String(ORIGINAL_SYSTEM)), false);
+  assert.equal(result.normalizedInstructionMessages, 1);
+});
 
 test('accepts a standard Anthropic Messages request', () => {
   assert.equal(validateMessagesRequest(minimal), null);
