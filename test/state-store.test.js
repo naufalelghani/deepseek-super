@@ -106,6 +106,10 @@ test('SQLite state persists sessions and records thread rotation across process 
     assert.equal(request.completion_source, 'ui_explicit');
 
     const events = store.listEvents(requestId);
+    const received = events.find((event) => event.type === 'request.received');
+    assert.ok(received);
+    assert.equal(received.sessionId, first.sessionId);
+    assert.equal(received.threadId, firstThread.threadId);
     const sanitized = events.find((event) => event.type === 'test.sanitization');
     assert.ok(sanitized);
     assert.equal(sanitized.details.prompt_chars, 60000);
