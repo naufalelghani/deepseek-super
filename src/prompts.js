@@ -25,7 +25,7 @@ const PROJECT_AND_LANGUAGE_INSTRUCTIONS = [
     'Respect context and preserve technical accuracy, quotations, code, and formatting.',
     'Make minimal edits when the original text is already natural. Change it only when there is a clear reason.',
     'When referencing agent skills, follow supported skill formats and conventions. Never claim a skill is installed or activated unless that has been verified.'
-].join('\\n');
+].join('\n');
 
 const TOOL_RESULT_INSTRUCTIONS = [
     'Base claims on tool results that were actually received. Do not claim success unless the tool result confirms it.',
