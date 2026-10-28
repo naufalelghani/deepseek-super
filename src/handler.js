@@ -171,10 +171,16 @@ async function handleMessages(req, res, body, dependencies = {}) {
   if (sessionInfo) {
     traceStore('linkRequestToSession', requestId, sessionInfo, { resumed: false });
     if (sessionInfo.created) {
-      traceEvent('session.created', requestId, sessionInfo, { message_count: messages.length });
+      traceEvent('session.created', requestId, sessionInfo, {
+        message_count: messages.length,
+        possible_compaction_or_new_turn: messages.length === 1,
+      });
     }
   }
-  if (isCancelled()) return;
+  if (isCancelled()) {
+    traceStore('finishRequest', { requestId, status: 'cancelled', sessionId: sessionInfo && sessionInfo.sessionId });
+    return;
+  }
   try {
     await ensurePage();
   } catch (error) {
@@ -182,13 +188,13 @@ async function handleMessages(req, res, body, dependencies = {}) {
       requestId,
       status: error && error.name === 'AbortError' ? 'cancelled' : 'error',
       errorCode: error && (error.type || error.name) || 'error',
-      sessionId: activeSession && activeSession.sessionId,
-      threadId: activeSession && activeSession.threadId,
+      sessionId: sessionInfo && sessionInfo.sessionId,
+      threadId: sessionInfo && sessionInfo.threadId,
     });
     throw error;
   }
   if (isCancelled()) {
-    traceStore('finishRequest', { requestId, status: 'cancelled' });
+    traceStore('finishRequest', { requestId, status: 'cancelled', sessionId: sessionInfo && sessionInfo.sessionId });
     return;
   }
 
@@ -221,7 +227,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
       try {
         resumed = await resumeUrl(cached.url);
       } catch (error) {
-        console.warn('[session] failed to resume cached conversation:', error.message || String(error));
+        console.warn('[session] request_id=' + requestId + ' failed to resume cached conversation:', error.message || String(error));
       }
       if (resumed) {
         console.log('[session] request_id=' + requestId + ' resumed cached conversation; tool_result=' + lastHasToolResult);
@@ -556,12 +562,18 @@ async function handleMessages(req, res, body, dependencies = {}) {
       status: error && error.name === 'AbortError' ? 'cancelled' : 'error',
       completionSource,
       errorCode: error && (error.type || error.name) || 'error',
+      sessionId: activeSession && activeSession.sessionId,
+      threadId: activeSession && activeSession.threadId,
     });
     throw error;
   }
 
   if (isCancelled()) {
-    traceStore('finishRequest', { requestId, status: 'cancelled', completionSource });
+    traceStore('finishRequest', {
+      requestId, status: 'cancelled', completionSource,
+      sessionId: activeSession && activeSession.sessionId,
+      threadId: activeSession && activeSession.threadId,
+    });
     return;
   }
 
@@ -572,6 +584,8 @@ async function handleMessages(req, res, body, dependencies = {}) {
     stopReason,
     toolCallCount: toolCalls.length,
     completionSource,
+    sessionId: activeSession && activeSession.sessionId,
+    threadId: activeSession && activeSession.threadId,
   });
   console.log('[response] request_id=' + requestId + ' stop_reason=' + stopReason + ' tool_calls=' + toolCalls.length + ' stream=' + wantStream);
   if (wantStream) {
