@@ -26,7 +26,7 @@ test('unknown model IDs do not add a profile instruction', () => {
 test('profile guidance preserves tool protocol, safety, and output-format precedence', () => {
   for (const id of Object.keys(MODEL_PROFILES)) {
     const prompt = modelProfilePrompt(id);
-    assert.match(prompt, /does not change the underlying model/);
+    assert.match(prompt, /response-style guidance/);
     assert.match(prompt, /safety requirements/);
     assert.match(prompt, /tool schemas and calling protocol/);
   }
