@@ -39,6 +39,68 @@ test('sessionKey hashes the full first user message instead of a truncated prefi
   assert.notEqual(sessionKey('', a), sessionKey('', b));
 });
 
+test('oversized structured prompts preserve project policy, tool schemas, and the latest request', () => {
+  const system = '### SYSTEM\\nSYSTEM_HEAD_MARKER\\n' +
+    'system context '.repeat(MAX_REPLAY) +
+    '\\nSYSTEM_TAIL_MARKER';
+  const policy = [
+    '### ASSISTANT IDENTITY',
+    'IDENTITY_POLICY_MARKER',
+    '### CONVERSATION LANGUAGE',
+    'Respond in the language the user is currently using.',
+    '### WRITING STYLE AND HUMANIZER',
+    'EM DASH BAN: Never insert U+2014.',
+  ].join('\\n');
+  const history = '\\n\\n### CONVERSATION HISTORY\\nHISTORY_HEAD_MARKER\\n' +
+    'old conversation '.repeat(MAX_REPLAY) +
+    'HISTORY_TAIL_MARKER';
+  const tools = '\\n\\n### TOOLS\\nTOOL_SCHEMA_SENTINEL: Bash(command*: string)';
+  const latest = '\\n\\n### LATEST USER MESSAGE\\nLATEST_REQUEST_SENTINEL: inspect src/handler.js';
+  const replay = truncateReplay(system + '\\n\\n' + policy + history + tools + latest);
+
+  assert.ok(replay.length <= MAX_REPLAY);
+  assert.match(replay, /SYSTEM_HEAD_MARKER/);
+  assert.match(replay, /SYSTEM_TAIL_MARKER/);
+  assert.match(replay, /EM DASH BAN/);
+  assert.match(replay, /TOOL_SCHEMA_SENTINEL/);
+  assert.match(replay, /LATEST_REQUEST_SENTINEL/);
+  assert.match(replay, /WARNING: conversation replay was truncated/);
+});
+
+test('oversized latest tool results retain both ends, next-step tool schema, and continuation instructions', () => {
+  const system = '### SYSTEM\\n' + 'large-system '.repeat(MAX_REPLAY * 2);
+  const policy = [
+    '### ASSISTANT IDENTITY',
+    'policy',
+    '### CONVERSATION LANGUAGE',
+    'Respond in the language the user is currently using.',
+    '### WRITING STYLE AND HUMANIZER',
+    'EM DASH BAN: Never insert U+2014.',
+  ].join('\\n');
+  const result = 'RESULT_BEGIN_MARKER\\n' +
+    'long tool output '.repeat(MAX_REPLAY) +
+    '\\nRESULT_END_MARKER';
+  const tail = [
+    '=== SITUATION ===',
+    'Continue the task using the latest result.',
+    '=== LATEST TOOL RESULTS ===',
+    result,
+    '=== TOOLS AVAILABLE FOR THE NEXT STEP ===',
+    'NEXT_STEP_TOOL_SCHEMA: Read(file_path*: string)',
+    '=== INSTRUCTIONS AFTER TOOL RESULTS ===',
+    'If the task is not complete, call the next required tool.',
+  ].join('\\n');
+  const replay = truncateReplay(system + '\\n\\n' + policy + '\\n\\n' + tail);
+
+  assert.ok(replay.length <= MAX_REPLAY);
+  assert.match(replay, /EM DASH BAN/);
+  assert.match(replay, /RESULT_BEGIN_MARKER/);
+  assert.match(replay, /RESULT_END_MARKER/);
+  assert.match(replay, /NEXT_STEP_TOOL_SCHEMA/);
+  assert.match(replay, /If the task is not complete, call the next required tool/);
+  assert.match(replay, /WARNING: conversation replay was truncated/);
+});
+
 
 test('truncateTextPreservingEnds retains the beginning and ending of oversized content', () => {
   const text = 'BEGIN_MARKER_' + 'x'.repeat(10000) + '_END_MARKER';
