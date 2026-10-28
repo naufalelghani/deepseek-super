@@ -6,7 +6,7 @@ const { MODEL_PROFILES, modelProfilePrompt } = require('../src/model-profiles');
 
 const MODEL_IDS = [
   'deepseek-super',
-  'claude-mythos-5.1',
+  'claude-mythos-5-1',
   'claude-fable-5.1',
   'claude-opus-5-5',
   'claude-sonnet-5-5',
@@ -18,6 +18,13 @@ test('each advertised profile ID has a distinct non-empty response profile', () 
   const prompts = MODEL_IDS.map(modelProfilePrompt);
   assert.ok(prompts.every((prompt) => prompt.includes('MODEL RESPONSE PROFILE')));
   assert.equal(new Set(prompts).size, MODEL_IDS.length);
+});
+
+test('legacy dotted Mythos ID resolves to the canonical Claude Code profile', () => {
+  assert.equal(
+    modelProfilePrompt('claude-mythos-5.1'),
+    modelProfilePrompt('claude-mythos-5-1')
+  );
 });
 
 test('unknown model IDs do not add a profile instruction', () => {
@@ -35,7 +42,7 @@ test('profile guidance preserves tool protocol, safety, and output-format preced
 });
 
 test('Mythos profile emphasizes authorized defensive security, vulnerabilities, safe fixes, and verification', () => {
-  const prompt = modelProfilePrompt('claude-mythos-5.1');
+  const prompt = modelProfilePrompt('claude-mythos-5-1');
   assert.match(prompt, /defensive cybersecurity and vulnerability analysis/i);
   assert.match(prompt, /trust boundaries/i);
   assert.match(prompt, /authentication or authorization/i);
