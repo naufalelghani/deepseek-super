@@ -4,19 +4,20 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { MODEL_PROFILES, modelProfilePrompt } = require('../src/model-profiles');
 
+const MODEL_IDS = [
+  'deepseek-super',
+  'claude-mythos-5.1',
+  'claude-fable-5.1',
+  'claude-opus-5-5',
+  'claude-sonnet-5.5',
+  'claude-haiku-5.5',
+];
+
 test('each advertised profile ID has a distinct non-empty response profile', () => {
-  const ids = [
-    'deepseek-super',
-    'claude-mythos-5.1',
-    'claude-fable-5.1',
-    'claude-opus-5-5',
-    'claude-sonnet-5.5',
-    'claude-haiku-5.5',
-  ];
-  assert.deepEqual(Object.keys(MODEL_PROFILES), ids);
-  const prompts = ids.map(modelProfilePrompt);
+  assert.deepEqual(Object.keys(MODEL_PROFILES), MODEL_IDS);
+  const prompts = MODEL_IDS.map(modelProfilePrompt);
   assert.ok(prompts.every((prompt) => prompt.includes('MODEL RESPONSE PROFILE')));
-  assert.equal(new Set(prompts).size, ids.length);
+  assert.equal(new Set(prompts).size, MODEL_IDS.length);
 });
 
 test('unknown model IDs do not add a profile instruction', () => {
@@ -24,10 +25,45 @@ test('unknown model IDs do not add a profile instruction', () => {
 });
 
 test('profile guidance preserves tool protocol, safety, and output-format precedence', () => {
-  for (const id of Object.keys(MODEL_PROFILES)) {
+  for (const id of MODEL_IDS) {
     const prompt = modelProfilePrompt(id);
     assert.match(prompt, /response-style guidance/);
     assert.match(prompt, /safety requirements/);
     assert.match(prompt, /tool schemas and calling protocol/);
+    assert.match(prompt, /do not change the underlying model/i);
   }
+});
+
+test('Mythos profile emphasizes authorized defensive security, vulnerabilities, safe fixes, and verification', () => {
+  const prompt = modelProfilePrompt('claude-mythos-5.1');
+  assert.match(prompt, /defensive cybersecurity and vulnerability analysis/i);
+  assert.match(prompt, /trust boundaries/i);
+  assert.match(prompt, /authentication or authorization/i);
+  assert.match(prompt, /smallest safe fix/i);
+  assert.match(prompt, /regression tests/i);
+  assert.match(prompt, /authorized to test/i);
+  assert.match(prompt, /Never declare a system secure or a vulnerability fixed without supporting evidence/i);
+  assert.match(prompt, /do not provide stealth, persistence, credential theft/i);
+});
+
+test('Fable profile is flexible and supports long-horizon multi-domain deliverables', () => {
+  const prompt = modelProfilePrompt('claude-fable-5.1');
+  assert.match(prompt, /flexible, adaptive/i);
+  assert.match(prompt, /long-horizon agentic coding/i);
+  assert.match(prompt, /multi-step research/i);
+  assert.match(prompt, /spreadsheets, slides/i);
+  assert.match(prompt, /Adapt verbosity and tone to the task/i);
+});
+
+test('coding-oriented profiles require appropriate scope control and verification', () => {
+  const sonnet = modelProfilePrompt('claude-sonnet-5.5');
+  const opus = modelProfilePrompt('claude-opus-5-5');
+  const haiku = modelProfilePrompt('claude-haiku-5.5');
+  for (const prompt of [sonnet, opus, haiku]) {
+    assert.match(prompt, /run relevant tests|run the most relevant tests|run the most targeted available verification/i);
+    assert.match(prompt, /without overstating success|without evidence|calling the task complete/i);
+  }
+  assert.match(sonnet, /Keep changes within the requested scope/);
+  assert.match(opus, /long-running agent workflows/);
+  assert.match(haiku, /Brevity is not permission to stop early/);
 });
