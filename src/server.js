@@ -1,7 +1,11 @@
 'use strict';
 
 const http = require('node:http');
-const { MODEL_NAME } = require('./config');
+// Public virtual models shown to API clients. Both aliases currently use the DeepSeek web session.
+const AVAILABLE_MODELS = [
+  { id: 'deepseek-super', display_name: 'Deepseek Super' },
+  { id: 'claude-opus-5.5', display_name: 'Opus 5.5' },
+];
 const { handleMessages } = require('./handler');
 const {
   jsonError,
@@ -74,13 +78,14 @@ function createServer() {
 
     if (req.method === 'GET' && urlPath === '/v1/models') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
+      const createdAt = new Date().toISOString();
       return res.end(JSON.stringify({
-        data: [{
-          id: MODEL_NAME,
+        data: AVAILABLE_MODELS.map(({ id, display_name }) => ({
+          id,
           type: 'model',
-          display_name: MODEL_NAME,
-          created_at: new Date().toISOString(),
-        }],
+          display_name,
+          created_at: createdAt,
+        })),
         has_more: false,
       }));
     }
