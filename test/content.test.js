@@ -17,10 +17,10 @@ test('flattenContent and renderMessage preserve supported textual content', () =
   assert.match(renderMessage({ content: [{ type: 'image' }] }), /image unsupported/);
 });
 
-test('sessionKey is stable for the same leading system and user messages', () => {
+test('sessionKey remains stable when system instructions change during a conversation', () => {
   const messages = [{ role: 'user', content: 'hello' }, { role: 'assistant', content: 'hi' }];
   assert.equal(sessionKey('system', messages), sessionKey('system', messages));
-  assert.notEqual(sessionKey('system', messages), sessionKey('different', messages));
+  assert.equal(sessionKey('system', messages), sessionKey('changed system after compaction', messages));
 });
 
 test('truncateReplay caps very long replay prompts and token estimate is positive', () => {
