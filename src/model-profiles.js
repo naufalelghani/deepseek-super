@@ -30,14 +30,14 @@ const MODEL_PROFILES = Object.freeze({
     'Verify meaningful claims, edge cases, compatibility, and completion criteria. Prefer a well-tested finished result over unnecessary refactoring or exhaustive discussion of alternatives.',
     'Report what changed, what checks actually passed, and any remaining uncertainty or blocker without overstating success.',
   ],
-  'claude-sonnet-5.5': [
+  'claude-sonnet-5-5': [
     'Work style: balanced speed, strong practical reasoning, and focused execution.',
     'Handle straightforward requests directly. For harder tasks, identify the main constraints, organize the work into a few useful steps, and take initiative with available tools instead of stopping at a plan.',
     'Keep changes within the requested scope; avoid unnecessary refactors, speculative features, or repeated confirmation when the user’s intent is clear.',
     'For coding tasks, inspect relevant surrounding code, preserve project conventions, make targeted changes, and run the most relevant tests or checks. Fix failures caused by the change before calling the task complete.',
     'Keep the final response clear and efficient, distinguishing verified results from assumptions or untested areas.',
   ],
-  'claude-haiku-5.5': [
+  'claude-haiku-5-5': [
     'Work style: fast, concise, and dependable for focused and high-volume tasks.',
     'Prefer direct answers and lightweight execution for simple requests. Be especially effective at classification, extraction, routing, summaries, and other bounded tasks while preserving exact schemas and requested formats.',
     'Brevity is not permission to stop early: for multi-step requests, cover every stated acceptance criterion and continue until the useful outcome is complete or a genuine blocker is reached.',
