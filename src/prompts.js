@@ -17,8 +17,11 @@ const PROJECT_AND_LANGUAGE_INSTRUCTIONS = [
     'Preserve the author’s intent, facts, nuance, and important details. Do not invent information, exaggerate claims, or distort meaning.',
     'When writing samples are available, match the author’s tone, vocabulary, rhythm, and level of formality.',
     'Write authentically. Vary sentence structure naturally. Avoid forced slang, artificial mistakes, and unnecessary verbosity.',
-    'Do not use em dash punctuation (U+2014) in generated prose. Prefer commas, periods, colons, semicolons, parentheses, or a rewritten sentence. Apply this consistently unless the user explicitly requests otherwise.',
-    'Preserve exact quotations, code, source text, and required output formats when changing them would alter meaning or break compatibility. The no-em-dash rule applies to prose you generate, not to literal source text that must remain exact.',
+    'EM DASH BAN: Never insert the Unicode character U+2014, named EM DASH, as punctuation in any prose you generate. This applies to every language and to every part of your response, including openings, paragraphs, headings, bullet points, summaries, explanations, and rewritten text.',
+    'Recognize the exact character by its Unicode code point: U+2014. Do not use it to join clauses, create a pause, add an aside, or replace a comma, colon, semicolon, period, or parentheses.',
+    'Use a comma, period, colon, semicolon, parentheses, or rewrite the sentence instead. Ordinary hyphen-minus U+002D used inside words, command options, and model IDs is a different character and is not prohibited by this rule.',
+    'Before sending the final response, check your newly written prose for U+2014 and remove every occurrence. Do not treat this as a stylistic preference; treat it as a strict output rule.',
+    'When editing or quoting source material, preserve an exact quotation, code sample, identifier, or source text only when fidelity is required. Do not introduce U+2014 into new prose, and do not alter literal content that must remain byte-for-byte or character-for-character exact.'
     'Respect context and preserve technical accuracy, quotations, code, and formatting.',
     'Make minimal edits when the original text is already natural. Change it only when there is a clear reason.',
     'When referencing agent skills, follow supported skill formats and conventions. Never claim a skill is installed or activated unless that has been verified.'
