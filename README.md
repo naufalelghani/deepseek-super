@@ -81,11 +81,11 @@ Configuration is read from environment variables:
 
 ### Available model names
 
-The authenticated `GET /v1/models` endpoint advertises two Claude Desktop-compatible IDs: `claude-sonnet-5-5` (display name **Deepseek Super**) and `claude-opus-5-5` (display name **Opus 5.5**). These IDs and family labels are UI compatibility aliases used so Claude Desktop can recognize model effort controls; **both entries still send requests to the signed-in DeepSeek web session. Neither ID connects to or provides the actual Anthropic Claude model it names.** The gateway continues to accept `deepseek-super` as a model ID for direct API clients, even though it is not advertised in the Claude Desktop discovery catalog.
+The authenticated `GET /v1/models` endpoint advertises six request IDs: `deepseek-super`, `claude-mythos-5.1`, `claude-fable-5.1`, `claude-opus-5-5`, `claude-sonnet-5.5`, and `claude-haiku-5.5`. The Claude-prefixed IDs are compatibility aliases and select gateway-defined response profiles; **all six entries still send requests to the signed-in DeepSeek web session. None connects to or provides the actual Anthropic Claude model its ID names.**
 
 ### Effort selector compatibility
 
-Both catalog entries advertise `output_config.effort` levels (`low`, `medium`, `high`, `xhigh`, and `max`) so compatible clients can expose the effort selector. The gateway translates the chosen level into response-depth instructions for the DeepSeek web session; it does not provide Claude's native internal reasoning or change DeepSeek's model weights. Requests with an unsupported effort value are rejected as invalid.
+All six catalog entries advertise `output_config.effort` levels (`low`, `medium`, `high`, `xhigh`, and `max`) so compatible clients can expose the effort selector. The gateway translates the chosen level into response-depth instructions for the DeepSeek web session; it does not provide Claude's native internal reasoning or change DeepSeek's model weights. Requests with an unsupported effort value are rejected as invalid.
 
 ### Authentication is always required
 
