@@ -248,7 +248,7 @@ function truncateReplay(text) {
         rest = truncateMarkedSection(
             rest,
             '=== TOOL RESULTS ===\n',
-            ['\n=== INSTRUCTIONS AFTER TOOL RESULTS ==='],
+            ['\n=== ORIGINAL USER REQUEST ===', '\n=== INSTRUCTIONS AFTER TOOL RESULTS ==='],
             resultLimit,
             '[...middle of tool result omitted...]\n'
         );
