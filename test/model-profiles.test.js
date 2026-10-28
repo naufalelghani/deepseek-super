@@ -1,0 +1,33 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { MODEL_PROFILES, modelProfilePrompt } = require('../src/model-profiles');
+
+test('each advertised profile ID has a distinct non-empty response profile', () => {
+  const ids = [
+    'deepseek-super',
+    'claude-mythos-5.1',
+    'claude-fable-5.1',
+    'claude-opus-5-5',
+    'claude-sonnet-5.5',
+    'claude-haiku-5.5',
+  ];
+  assert.deepEqual(Object.keys(MODEL_PROFILES), ids);
+  const prompts = ids.map(modelProfilePrompt);
+  assert.ok(prompts.every((prompt) => prompt.includes('MODEL RESPONSE PROFILE')));
+  assert.equal(new Set(prompts).size, ids.length);
+});
+
+test('unknown model IDs do not add a profile instruction', () => {
+  assert.equal(modelProfilePrompt('unlisted-model'), '');
+});
+
+test('profile guidance preserves tool protocol, safety, and output-format precedence', () => {
+  for (const id of Object.keys(MODEL_PROFILES)) {
+    const prompt = modelProfilePrompt(id);
+    assert.match(prompt, /does not change the underlying model/);
+    assert.match(prompt, /safety requirements/);
+    assert.match(prompt, /tool schemas and calling protocol/);
+  }
+});
