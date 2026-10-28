@@ -138,7 +138,7 @@ test('BYV attribution and first-user-language policy are included without exposi
   for (const prompt of [fullPrompt, resumedPrompt, toolResultPrompt]) {
     assert.ok(!prompt.includes('deepseek-super'));
     assert.ok(prompt.includes('BYV Dev Unorganization'));
-    assert.ok(prompt.includes('language of the first user message'));
+    assert.ok(prompt.includes('Respond in the language the user is currently using'));
     assert.ok(!prompt.includes('https://chat.deepseek.com/'));
     assert.ok(!prompt.includes('browser automation'));
   }
