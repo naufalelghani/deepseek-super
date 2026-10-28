@@ -5,11 +5,11 @@ const { effortCapabilities } = require('./effort');
 // Virtual catalog IDs are client-facing profiles; requests are handled by this gateway.
 const AVAILABLE_MODELS = [
   { id: 'deepseek-super', display_name: 'Deepseek Super', line: 'sonnet' },
-  { id: 'claude-mythos-5.1', display_name: 'Claude Mythos 5.1', line: 'opus' },
-  { id: 'claude-fable-5.1', display_name: 'Claude Fable 5.1', line: 'sonnet' },
-  { id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5', line: 'opus' },
-  { id: 'claude-sonnet-5.5', display_name: 'Claude Sonnet 5.5', line: 'sonnet' },
-  { id: 'claude-haiku-5.5', display_name: 'Claude Haiku 5.5', line: 'haiku' },
+  { id: 'claude-mythos-5.1', display_name: 'Mythos 5.1', line: 'opus' },
+  { id: 'claude-fable-5.1', display_name: 'Fable 5.1', line: 'sonnet' },
+  { id: 'claude-opus-5-5', display_name: 'Opus 5.5', line: 'opus' },
+  { id: 'claude-sonnet-5.5', display_name: 'Sonnet 5.5', line: 'sonnet' },
+  { id: 'claude-haiku-5.5', display_name: 'Haiku 5.5', line: 'haiku' },
 ];
 const { handleMessages } = require('./handler');
 const {
