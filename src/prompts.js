@@ -29,7 +29,7 @@ function toolsToPrompt(tools) {
     if (!tools || !tools.length) return '';
 
     const lines = [];
-    lines.push('You have access to the tools provided by the client. These are the only tools available to you.');
+    lines.push('You have access to the tools listed below. These are the only tools available to you for this request.');
     lines.push('');
 
     for (const tool of tools) {

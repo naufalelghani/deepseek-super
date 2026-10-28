@@ -3,6 +3,13 @@
 const { MODEL_NAME, MAX_REPLAY, sha, uuid } = require('./config');
 const { blocksOf, sessionKey, renderMessage, truncateReplay } = require('./content');
 const { buildFullPrompt, buildResumePrompt, parseToolChoice, applyForcedTool } = require('./prompts');
+const {
+  DEEPSEEK_WEB_TOOLS,
+  MAX_INTERNAL_WEB_TOOL_ROUNDS,
+  isDeepSeekWebTool,
+  executeDeepSeekWebTool,
+  buildDeepSeekWebToolContinuationPrompt,
+} = require('./deepseek-web-tools');
 const { createToolCallRecoveryError } = require('./tool-recovery');
 const { validateToolCalls } = require('./tool-validation');
 
@@ -21,7 +28,7 @@ function validateToolCallsForChoice(toolCalls, tools, force) {
   return validation;
 }
 
-const { ensurePage: defaultEnsurePage, ensureTogglesOn: defaultEnsureTogglesOn, resumeUrl: defaultResumeUrl, gotoNewChat: defaultGotoNewChat, runTurn: defaultRunTurn, currentUrl: defaultCurrentUrl, locked: defaultLocked } = require('./browser');
+const { ensurePage: defaultEnsurePage, ensureTogglesOn: defaultEnsureTogglesOn, resumeUrl: defaultResumeUrl, gotoNewChat: defaultGotoNewChat, runTurn: defaultRunTurn, runIsolatedTurn: defaultRunIsolatedTurn, currentUrl: defaultCurrentUrl, locked: defaultLocked } = require('./browser');
 const { getSession: defaultGetSession, setSession: defaultSetSession } = require('./session-store');
 const { StreamSink } = require('./sse-sink');
 const { jsonError } = require('./http-utils');
@@ -64,6 +71,11 @@ async function handleMessages(req, res, body, dependencies = {}) {
   const resumeUrl = dependencies.resumeUrl || defaultResumeUrl;
   const gotoNewChat = dependencies.gotoNewChat || defaultGotoNewChat;
   const runTurn = dependencies.runTurn || defaultRunTurn;
+  // Tests/custom adapters that inject runTurn keep their existing turn behavior unless
+  // they explicitly provide an isolated callback. Production uses a clean chat for
+  // native DeepSeek Search so client DSML instructions do not leak into that turn.
+  const runIsolatedTurn = dependencies.runIsolatedTurn ||
+    (dependencies.runTurn ? null : defaultRunIsolatedTurn);
   const currentUrl = dependencies.currentUrl || defaultCurrentUrl;
   const locked = dependencies.locked || defaultLocked;
   const getSession = dependencies.getSession || defaultGetSession;
@@ -87,7 +99,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
 
   const system = body.system || '';
   const messages = Array.isArray(body.messages) ? body.messages : [];
-  const tools = Array.isArray(body.tools) ? body.tools : [];
+  const clientTools = Array.isArray(body.tools) ? body.tools : [];
   const wantStream = body.stream === true;
   const model = body.model || MODEL_NAME;
 
@@ -99,11 +111,16 @@ async function handleMessages(req, res, body, dependencies = {}) {
   const lastHasToolResult = blocksOf(last.content).some((block) => block.type === 'tool_result');
   // Respect the caller's tool_choice after tool results too; the model may need another tool step.
   let force = parseToolChoice(body.tool_choice);
-
   if (detectToolLoop(messages, 3)) {
     console.warn('[loop-detect] three identical tool calls detected; forcing a text response');
     force = { mode: 'none' };
   }
+
+  // Keep client-enforced tool_choice and loop-recovery semantics intact.
+  // DeepSeek-backed web tools are internal orchestration tools for auto selection only.
+  const tools = force.mode === 'auto'
+    ? clientTools.concat(DEEPSEEK_WEB_TOOLS)
+    : clientTools;
   const conversationTooLong = isConversationTooLong(messages);
   if (conversationTooLong) {
     console.warn('[long-conv] message_count=' + messages.length +
@@ -122,7 +139,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
     abortIfCancelled();
     await ensurePage();
     abortIfCancelled();
-    await ensureTogglesOn(tools.length > 0);
+    await ensureTogglesOn(tools.length > 0 || force.mode === 'none');
     abortIfCancelled();
 
     // Resolve the latest cached URL inside the browser lock. A preceding
@@ -282,6 +299,78 @@ async function handleMessages(req, res, body, dependencies = {}) {
           ' recovery attempts. Last validation issue: ' + recoveryIssue,
           maxRetries
         );
+      }
+    }
+
+    // Resolve DeepSeek-native web tools inside the gateway. Only client-owned tools
+    // are returned as Anthropic tool_use blocks; internal results are placed back
+    // into the same DeepSeek conversation before it continues.
+    let internalWebRounds = 0;
+    while (toolCalls.some(isDeepSeekWebTool)) {
+      const internalCalls = toolCalls.filter(isDeepSeekWebTool);
+      const clientCalls = toolCalls.filter((call) => !isDeepSeekWebTool(call));
+      internalWebRounds++;
+      if (internalWebRounds > MAX_INTERNAL_WEB_TOOL_ROUNDS) {
+        throw createToolCallRecoveryError(
+          'DeepSeek exceeded the internal web-tool round limit (' + MAX_INTERNAL_WEB_TOOL_ROUNDS + ').',
+          internalWebRounds - 1
+        );
+      }
+
+      const internalResults = [];
+      for (const call of internalCalls) {
+        abortIfCancelled();
+        try {
+          internalResults.push(await executeDeepSeekWebTool(call, {
+            ensureTogglesOn,
+            runTurn,
+            runIsolatedTurn,
+            sink: dummySink,
+            isCancelled,
+          }));
+        } catch (error) {
+          abortIfCancelled();
+          internalResults.push({
+            name: call.name,
+            input: call.input || {},
+            result: 'Internal DeepSeek web tool failed: ' + (error.message || String(error)),
+          });
+        }
+      }
+
+      // A mixed batch is allowed: run internal searches now, then hand the
+      // client-owned calls back exactly as requested. Their results will arrive
+      // on the client's next Messages request, with web results retained in UI history.
+      if (clientCalls.length > 0) {
+        toolCalls = clientCalls;
+        answer = '';
+        break;
+      }
+
+      const continuationPrompt = buildDeepSeekWebToolContinuationPrompt(internalResults, tools);
+      await ensureTogglesOn(true);
+      abortIfCancelled();
+      const continued = await runTurn(continuationPrompt, dummySink, true, isCancelled);
+      abortIfCancelled();
+      answer = continued.text;
+      thinking = continued.thinking;
+      toolCalls = continued.toolCalls;
+
+      const hasInvalidMarkup = continued.invalidToolCall || containsToolMarkup(answer);
+      if (hasInvalidMarkup) {
+        throw createToolCallRecoveryError(
+          'DeepSeek returned malformed tool-call markup after receiving internal web-tool results.',
+          0
+        );
+      }
+      if (toolCalls.length > 0) {
+        const continuedValidation = validateToolCallsForChoice(toolCalls, tools, force);
+        if (!continuedValidation.valid) {
+          throw createToolCallRecoveryError(
+            'Tool calls after internal web-tool results failed schema validation: ' + continuedValidation.error,
+            0
+          );
+        }
       }
     }
 
