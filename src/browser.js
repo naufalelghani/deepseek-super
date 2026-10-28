@@ -290,6 +290,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      let sawGeneratingSignal = false;
      let completionSignalStreak = 0;
      let usedStableFallback = false;
+     let completionSource = 'unknown';
      let timedOut = false;
      let thinkOpened = false;
      let textOpened = false;
@@ -368,7 +369,10 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              const inferredCompletion = isIdleCompletionCandidate(st, sawGeneratingSignal, idleMs, STABLE_MS);
              if (explicitCompletion || inferredCompletion) {
                  completionSignalStreak++;
-                 if (completionSignalStreak >= 3) break;
+                 if (completionSignalStreak >= 3) {
+                     completionSource = explicitCompletion ? 'ui_explicit' : 'ui_idle_inferred';
+                     break;
+                 }
              } else {
                  completionSignalStreak = 0;
              }
@@ -378,6 +382,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              // short pauses between DeepSeek output chunks.
              if (shouldUseStableFallback(st, sawGeneratingSignal, idleMs, STABLE_MS)) {
                  usedStableFallback = true;
+                 completionSource = 'stable_fallback';
                  break;
              }
          }
@@ -490,7 +495,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              ' visible_text_urls=' + textURLCount +
              ' answer_chars=' + finalText.length);
      }
-     return { text: finalText, thinking: emittedThink, toolCalls: finalTools, invalidToolCall, sourceLinks: includeLinks ? uiAnswerLinks : [] };
+     return { text: finalText, thinking: emittedThink, toolCalls: finalTools, invalidToolCall, sourceLinks: includeLinks ? uiAnswerLinks : [], completionSource };
  }
 
 /**
