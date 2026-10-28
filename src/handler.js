@@ -11,6 +11,7 @@ const {
   buildDeepSeekWebToolContinuationPrompt,
 } = require('./deepseek-web-tools');
 const { createToolCallRecoveryError } = require('./tool-recovery');
+const { effortPrompt } = require('./effort');
 const { validateToolCalls } = require('./tool-validation');
 
 function validateToolCallsForChoice(toolCalls, tools, force) {
@@ -180,6 +181,8 @@ async function handleMessages(req, res, body, dependencies = {}) {
     }
     let prompt = truncateReplay(untruncatedPrompt);
     prompt = applyForcedTool(prompt, force);
+    const effortInstruction = effortPrompt(body.output_config && body.output_config.effort);
+    if (effortInstruction) prompt += '\n\n' + effortInstruction;
     abortIfCancelled();
 
     const dummySink = {
