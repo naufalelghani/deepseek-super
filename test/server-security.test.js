@@ -60,11 +60,20 @@ test('server accepts a valid token for model discovery', async (t) => {
     headers: { Authorization: 'Bearer ' + AUTH_TOKEN },
   });
   assert.equal(response.status, 200);
-  const models = JSON.parse(response.body).data;
+  const catalog = JSON.parse(response.body);
+  const models = catalog.data;
   assert.deepEqual(models.map(({ id, display_name }) => ({ id, display_name })), [
     { id: 'deepseek-super', display_name: 'Deepseek Super' },
     { id: 'claude-opus-5.5', display_name: 'Opus 5.5' },
   ]);
+  assert.equal(catalog.first_id, 'deepseek-super');
+  assert.equal(catalog.last_id, 'claude-opus-5.5');
+  for (const model of models) {
+    assert.equal(model.capabilities.effort.supported, true);
+    for (const level of ['low', 'medium', 'high', 'xhigh', 'max']) {
+      assert.equal(model.capabilities.effort[level].supported, true, model.id + ' should advertise ' + level);
+    }
+  }
 });
 
 test('server rejects unexpected Host headers and cross-origin browser calls', async (t) => {

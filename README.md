@@ -83,6 +83,10 @@ Configuration is read from environment variables:
 
 The authenticated `GET /v1/models` endpoint lists two selectable IDs: `deepseek-super` (display name **Deepseek Super**) and `claude-opus-5.5` (display name **Opus 5.5**). The second name is a compatibility alias only: **both IDs currently send requests to the signed-in DeepSeek web session. This does not connect to or provide the actual Anthropic Claude Opus model.**
 
+### Effort selector compatibility
+
+Both catalog entries advertise `output_config.effort` levels (`low`, `medium`, `high`, `xhigh`, and `max`) so compatible clients can expose the effort selector. The gateway translates the chosen level into response-depth instructions for the DeepSeek web session; it does not provide Claude's native internal reasoning or change DeepSeek's model weights. Requests with an unsupported effort value are rejected as invalid.
+
 ### Authentication is always required
 
 The server binds to `127.0.0.1` and requires a token for every API route, including the health endpoint. CORS `OPTIONS` preflight requests are handled before token authentication, but only for an accepted local or explicitly allowlisted Origin and they do not execute API operations. On first startup, if `DEEPSEEK_SUPER_TOKEN` is not set, the app generates a random local token and stores it in `.deepseek-super-token`. The file is listed in `.gitignore`; do not commit, publish, or share it. If `DEEPSEEK_SUPER_TOKEN` is set, that environment variable takes precedence over the local token file.
