@@ -69,7 +69,7 @@ Configuration is read from environment variables:
 | Variable | Default | Description |
 |---|---:|---|
 | `PORT` | `8787` | Local HTTP server port |
-| `MODEL_NAME` | `deepseek-super` | Virtual model name reported by the API |
+| `MODEL_NAME` | `deepseek-super` | Fallback response model label when a request omits `model`; `/v1/models` always lists both aliases |
 | `PROFILE_DIR` | `./deepseek-profile` | Persistent Chrome profile directory |
 | `DEEPSEEK_SUPER_TOKEN` | Unset | Optional explicit token override; if unset, a random token is created and stored in `.deepseek-super-token` |
 | `POLL_MS` | `200` | UI polling interval in milliseconds |
@@ -78,6 +78,10 @@ Configuration is read from environment variables:
 | `MAX_REPLAY` | `60000` | Maximum replay prompt length in **characters**, not tokens |
 | `MAX_PENDING_TURNS` | `8` | Maximum active-plus-queued browser turns before new requests are rejected as overloaded |
 | `CORS_ALLOWED_ORIGINS` | Empty | Optional comma-separated list of exact extra browser origins allowed to access the local gateway |
+
+### Available model names
+
+The authenticated `GET /v1/models` endpoint lists two selectable IDs: `deepseek-super` (display name **Deepseek Super**) and `claude-opus-5.5` (display name **Opus 5.5**). The second name is a compatibility alias only: **both IDs currently send requests to the signed-in DeepSeek web session. This does not connect to or provide the actual Anthropic Claude Opus model.**
 
 ### Authentication is always required
 
