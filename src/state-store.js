@@ -348,6 +348,12 @@ function createStateStore(options = {}) {
     return db.prepare('SELECT * FROM requests WHERE request_id = ?').get(requestId) || null;
   }
 
+  function listRecentRequests(limit = 20) {
+    const boundedLimit = Math.max(1, Math.min(100, Number(limit) || 20));
+    return db.prepare('SELECT request_id AS requestId, message_id AS messageId, session_id AS sessionId, thread_id AS threadId, thread_generation AS threadGeneration, model, stream, message_count AS messageCount, client_tool_count AS clientToolCount, input_prompt_chars AS inputPromptChars, replay_prompt_chars AS replayPromptChars, final_prompt_chars AS finalPromptChars, omitted_prompt_chars AS omittedPromptChars, prompt_truncated AS promptTruncated, resumed, rotation_reason AS rotationReason, stop_reason AS stopReason, tool_call_count AS toolCallCount, completion_source AS completionSource, status, error_code AS errorCode, started_at AS startedAt, completed_at AS completedAt FROM requests ORDER BY started_at DESC LIMIT ?')
+      .all(boundedLimit);
+  }
+
   function listEvents(requestId, limit = 200) {
     const boundedLimit = Math.max(1, Math.min(1000, Number(limit) || 200));
     return db.prepare('SELECT event_id AS eventId, request_id AS requestId, session_id AS sessionId, thread_id AS threadId, occurred_at AS occurredAt, level, event_type AS type, details_json AS detailsJson FROM events WHERE request_id = ? ORDER BY event_id LIMIT ?')
@@ -374,6 +380,7 @@ function createStateStore(options = {}) {
     finishRequest,
     listThreads,
     getRequest,
+    listRecentRequests,
     listEvents,
     close,
   };
