@@ -91,6 +91,26 @@ test('tool-result resume prompt includes schemas and allows the next tool step',
   assert.ok(!prompt.includes('JANGAN memanggil tool apa pun.'));
 });
 
+test('tool-result fallback explicitly retains the original user request', () => {
+  const original = 'Audit src/handler.js for request routing and cite verified line numbers.';
+  const prompt = buildFullPrompt('', [
+    { role: 'user', content: original },
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_read', name: 'Bash', input: { command: 'ls' } }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_read', content: 'src/\ntest/\nREADME.md' }] },
+  ], [{
+    name: 'Read',
+    description: 'Read a project file',
+    input_schema: {
+      type: 'object',
+      properties: { file_path: { type: 'string' } },
+      required: ['file_path'],
+    },
+  }]);
+
+  assert.ok(prompt.includes('=== ORIGINAL USER REQUEST ==='));
+  assert.ok(prompt.includes(original));
+});
+
 test('full prompt retains tool schemas on a tool_result fallback turn', () => {
   const prompt = buildFullPrompt('', [
     {
