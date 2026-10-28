@@ -55,6 +55,8 @@ test('handler turns the selected output_config effort into DeepSeek prompt guida
     messages: [{ role: 'user', content: 'Explain the result.' }],
   }, dependencies);
 
+  assert.match(capturedPrompt, /MODEL RESPONSE PROFILE/);
+  assert.match(capturedPrompt, /Work style: efficient, practical, and technically precise/);
   assert.match(capturedPrompt, /client selected effort="high"/);
   assert.match(capturedPrompt, /verify important assumptions/);
   assert.match(capturedPrompt, /does not change DeepSeek model weights/);
