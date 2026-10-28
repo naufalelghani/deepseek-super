@@ -84,6 +84,99 @@ function truncateMarkedSection(text, startMarker, endMarkers, maxSectionLength, 
     return text.slice(0, contentStart) + replacement + text.slice(endIndex);
 }
 
+function compactToolSection(text, maxLength) {
+    const startMarkers = [
+        '### TOOLS\n',
+        '=== TOOLS AVAILABLE FOR THIS REQUEST ===\n',
+        '=== TOOLS AVAILABLE FOR THE NEXT STEP ===\n',
+    ];
+    let start = -1;
+    let marker = '';
+    for (const candidate of startMarkers) {
+        const index = text.indexOf(candidate);
+        if (index !== -1 && (start === -1 || index < start)) {
+            start = index;
+            marker = candidate;
+        }
+    }
+    if (start === -1) return text;
+
+    const contentStart = start + marker.length;
+    const end = nextMarkerIndex(text, contentStart, [
+        '\n### LATEST USER MESSAGE\n',
+        '\n=== TOOL RESULTS ===',
+        '\n=== LATEST TOOL RESULTS ===',
+        '\n=== ORIGINAL USER REQUEST ===',
+        '\n=== INSTRUCTIONS AFTER TOOL RESULTS ===',
+        '\n=== NEW USER REQUEST ===',
+        '\n=== SITUATION ===',
+        '\n=== INSTRUCTIONS FOR THIS TURN ===',
+    ]);
+    const endIndex = end === -1 ? text.length : end;
+    const section = text.slice(start, endIndex);
+    if (section.length <= maxLength) return text;
+
+    const compactLines = (descriptionLimit, propertyDescriptionLimit, omitExamples) => {
+        let skipExampleDetail = false;
+        const lines = section.split('\n');
+        const compacted = [];
+        for (const originalLine of lines) {
+            let line = originalLine;
+            if (omitExamples && (
+                line.startsWith('EXAMPLE: TOOL REQUIRED') ||
+                line.startsWith('EXAMPLE: NO TOOL NEEDED')
+            )) {
+                skipExampleDetail = true;
+                continue;
+            }
+            if (skipExampleDetail) {
+                skipExampleDetail = false;
+                continue;
+            }
+            if (omitExamples && line.startsWith('<｜DSML｜ calls><｜DSML｜ invoke name="Bash">')) {
+                compacted.push('DSML example omitted; follow the mandatory format rules above.');
+                continue;
+            }
+            if (omitExamples && line.startsWith('VALID DSML TOOL CALL EXAMPLE')) {
+                compacted.push('VALID DSML EXAMPLE: follow the declared invoke and parameter format.');
+                continue;
+            }
+            line = line.replace(/\(([^)]{35,})\)/g, (_match, description) => {
+                if (propertyDescriptionLimit <= 0) return '(details omitted)';
+                return '(' + description.slice(0, propertyDescriptionLimit) +
+                    (description.length > propertyDescriptionLimit ? '...' : '') + ')';
+            });
+            if (line.startsWith('- ')) {
+                const separator = line.lastIndexOf('): ');
+                if (separator !== -1) {
+                    const description = line.slice(separator + 3);
+                    const shortened = descriptionLimit <= 0
+                        ? ''
+                        : description.slice(0, descriptionLimit) +
+                            (description.length > descriptionLimit ? '...' : '');
+                    line = line.slice(0, separator + 3) + shortened;
+                }
+            }
+            compacted.push(line);
+        }
+        return compacted.join('\n');
+    };
+
+    let compacted = compactLines(120, 48, true);
+    if (compacted.length > maxLength) compacted = compactLines(32, 12, true);
+    if (compacted.length > maxLength) compacted = compactLines(0, 0, true);
+    if (compacted.length > maxLength) {
+        // Rare oversized schema fallback. Keep the beginning and end of the tool
+        // contract, and mark that some middle schema metadata was omitted.
+        compacted = truncateTextPreservingEnds(
+            compacted,
+            maxLength,
+            '\n[...middle tool metadata omitted to fit MAX_REPLAY...]\n'
+        );
+    }
+    return text.slice(0, start) + compacted + text.slice(endIndex);
+}
+
 function truncateReplay(text) {
     if (typeof text !== 'string') return '';
     if (text.length <= MAX_REPLAY) return text;
@@ -122,8 +215,11 @@ function truncateReplay(text) {
     let historyLimit = Math.min(5000, Math.floor(MAX_REPLAY * 0.08));
     let resultLimit = Math.min(12000, Math.floor(MAX_REPLAY * 0.20));
 
+    const toolSectionLimit = Math.max(1000, Math.min(28000, Math.floor(MAX_REPLAY * 0.48)));
+    const compactedRestOriginal = compactToolSection(restOriginal, toolSectionLimit);
+
     const render = () => {
-        let rest = restOriginal;
+        let rest = compactedRestOriginal;
         rest = truncateMarkedSection(
             rest,
             '### CONVERSATION HISTORY\n',
@@ -189,22 +285,28 @@ function truncateReplay(text) {
         // context first, then bound the remaining tool/request section from both ends.
         const rest = truncateMarkedSection(
             truncateMarkedSection(
-                restOriginal,
-                '### CONVERSATION HISTORY\n',
-                [
-                    '\n### TOOLS\n',
-                    '\n### LATEST USER MESSAGE\n',
-                    '\n=== TOOL RESULTS ===',
-                    '\n=== TOOLS AVAILABLE FOR THIS REQUEST ===',
-                    '\n=== NEW USER REQUEST ===',
-                    '\n=== SITUATION ===',
-                    '\n=== LATEST TOOL RESULTS ===',
-                ],
+                truncateMarkedSection(
+                    compactedRestOriginal,
+                    '### CONVERSATION HISTORY\n',
+                    [
+                        '\n### TOOLS\n',
+                        '\n### LATEST USER MESSAGE\n',
+                        '\n=== TOOL RESULTS ===',
+                        '\n=== TOOLS AVAILABLE FOR THIS REQUEST ===',
+                        '\n=== NEW USER REQUEST ===',
+                        '\n=== SITUATION ===',
+                        '\n=== LATEST TOOL RESULTS ===',
+                    ],
+                    0,
+                    '[...history omitted...]\n'
+                ),
+                '=== LATEST TOOL RESULTS ===\n',
+                ['\n=== TOOLS AVAILABLE FOR THE NEXT STEP ===', '\n=== INSTRUCTIONS AFTER TOOL RESULTS ==='],
                 0,
-                '[...history omitted...]\n'
+                '[...tool result omitted...]\n'
             ),
-            '=== LATEST TOOL RESULTS ===\n',
-            ['\n=== TOOLS AVAILABLE FOR THE NEXT STEP ===', '\n=== INSTRUCTIONS AFTER TOOL RESULTS ==='],
+            '=== TOOL RESULTS ===\n',
+            ['\n=== ORIGINAL USER REQUEST ===', '\n=== INSTRUCTIONS AFTER TOOL RESULTS ==='],
             0,
             '[...tool result omitted...]\n'
         ).trim();
