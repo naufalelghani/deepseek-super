@@ -63,11 +63,15 @@ test('server accepts a valid token for model discovery', async (t) => {
   const catalog = JSON.parse(response.body);
   const models = catalog.data;
   assert.deepEqual(models.map(({ id, display_name, line }) => ({ id, display_name, line })), [
-    { id: 'claude-sonnet-5-5', display_name: 'Deepseek Super', line: 'sonnet' },
-    { id: 'claude-opus-5-5', display_name: 'Opus 5.5', line: 'opus' },
+    { id: 'deepseek-super', display_name: 'Deepseek Super', line: 'sonnet' },
+    { id: 'claude-mythos-5.1', display_name: 'Claude Mythos 5.1', line: 'opus' },
+    { id: 'claude-fable-5.1', display_name: 'Claude Fable 5.1', line: 'sonnet' },
+    { id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5', line: 'opus' },
+    { id: 'claude-sonnet-5.5', display_name: 'Claude Sonnet 5.5', line: 'sonnet' },
+    { id: 'claude-haiku-5.5', display_name: 'Claude Haiku 5.5', line: 'haiku' },
   ]);
-  assert.equal(catalog.first_id, 'claude-sonnet-5-5');
-  assert.equal(catalog.last_id, 'claude-opus-5-5');
+  assert.equal(catalog.first_id, 'deepseek-super');
+  assert.equal(catalog.last_id, 'claude-haiku-5.5');
   for (const model of models) {
     assert.equal(model.capabilities.effort.supported, true);
     for (const level of ['low', 'medium', 'high', 'xhigh', 'max']) {
