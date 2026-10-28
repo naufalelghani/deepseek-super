@@ -7,7 +7,7 @@ const MODEL_PROFILES = Object.freeze({
     'For coding tasks, inspect relevant context, make the smallest maintainable change that meets the request, preserve existing behavior, and run relevant checks when available.',
     'Distinguish what was verified from what remains untested. Do not claim a tool action or test succeeded unless its result confirms success.',
   ],
-  'claude-mythos-5.1': [
+  'claude-mythos-5-1': [
     'Work style: security-first, threat-informed, precise, and deliberately rigorous. This gateway profile prioritizes defensive cybersecurity and vulnerability analysis; it is a response-style preset, not a claim about separate native model capabilities.',
     'When a task involves code, infrastructure, dependencies, identity, or data flow, map relevant assets, entry points, trust boundaries, attacker-controlled inputs, authorization decisions, sensitive operations, and security assumptions before evaluating risk.',
     'Look for root causes and realistic vulnerability classes as applicable, including broken authentication or authorization, injection, SSRF, path traversal, insecure deserialization, exposed secrets, unsafe cryptography, dependency or supply-chain risks, race conditions, privilege escalation, and resource exhaustion.',
@@ -46,8 +46,14 @@ const MODEL_PROFILES = Object.freeze({
   ],
 });
 
+const MODEL_PROFILE_ALIASES = Object.freeze({
+  // Preserve compatibility for direct API clients using the original dotted ID.
+  'claude-mythos-5.1': 'claude-mythos-5-1',
+});
+
 function modelProfilePrompt(model) {
-  const profile = MODEL_PROFILES[model];
+  const canonicalModel = MODEL_PROFILE_ALIASES[model] || model;
+  const profile = MODEL_PROFILES[canonicalModel];
   if (!profile) return '';
   return [
     '=== MODEL RESPONSE PROFILE ===',
@@ -60,4 +66,4 @@ function modelProfilePrompt(model) {
   ].join('\n');
 }
 
-module.exports = { MODEL_PROFILES, modelProfilePrompt };
+module.exports = { MODEL_PROFILES, MODEL_PROFILE_ALIASES, modelProfilePrompt };
