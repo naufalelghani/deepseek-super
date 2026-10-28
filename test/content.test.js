@@ -39,6 +39,31 @@ test('sessionKey hashes the full first user message instead of a truncated prefi
   assert.notEqual(sessionKey('', a), sessionKey('', b));
 });
 
+test('oversized tool catalogs are compacted without dropping individual tool schemas or latest task', () => {
+  const policy = [
+    '### ASSISTANT IDENTITY',
+    'IDENTITY_POLICY_SENTINEL',
+    '### CONVERSATION LANGUAGE',
+    'Respond in the language the user is currently using.',
+    '### WRITING STYLE AND HUMANIZER',
+    'EM DASH BAN: Never insert U+2014.',
+  ].join('\n');
+  const tools = '\n\n### TOOLS\n' + Array.from({ length: 40 }, (_, index) =>
+    '- Tool_' + String(index).padStart(2, '0') + '(command*: string): ' +
+    ('verbose tool description '.repeat(110))
+  ).join('\n');
+  const latest = '\n\n### LATEST USER MESSAGE\nLATEST_TASK_SENTINEL: audit the gateway.';
+  const replay = truncateReplay(policy + tools + latest);
+
+  assert.ok(replay.length <= MAX_REPLAY);
+  assert.match(replay, /IDENTITY_POLICY_SENTINEL/);
+  assert.match(replay, /EM DASH BAN/);
+  assert.match(replay, /Tool_00\(command\*: string\)/);
+  assert.match(replay, /Tool_39\(command\*: string\)/);
+  assert.match(replay, /LATEST_TASK_SENTINEL/);
+  assert.match(replay, /WARNING: conversation replay was truncated/);
+});
+
 test('oversized structured prompts preserve project policy, tool schemas, and the latest request', () => {
   const system = '### SYSTEM\nSYSTEM_HEAD_MARKER\n' +
     'system context '.repeat(MAX_REPLAY) +
