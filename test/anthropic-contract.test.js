@@ -2,6 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { sessionKey } = require('../src/content');
 const {
   validateMessagesRequest,
   normalizeAnthropicMessagesRequest,
@@ -29,6 +30,10 @@ test('instruction normalization retains the original system value for session fi
   assert.equal(result.body[ORIGINAL_SYSTEM], originalSystem);
   assert.equal(Object.getOwnPropertyDescriptor(result.body, ORIGINAL_SYSTEM).enumerable, false);
   assert.equal(result.normalizedInstructionMessages, 1);
+  assert.equal(
+    sessionKey(originalSystem, result.body.messages),
+    sessionKey(result.body[ORIGINAL_SYSTEM], result.body.messages)
+  );
 });
 
 test('accepts a standard Anthropic Messages request', () => {
