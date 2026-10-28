@@ -56,6 +56,7 @@ function createServer() {
     if (origin) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Expose-Headers', 'X-Gateway-Request-ID, X-Token-Usage-Estimated');
     }
 
     if (req.method === 'OPTIONS') {
