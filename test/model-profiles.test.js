@@ -9,8 +9,8 @@ const MODEL_IDS = [
   'claude-mythos-5.1',
   'claude-fable-5.1',
   'claude-opus-5-5',
-  'claude-sonnet-5.5',
-  'claude-haiku-5.5',
+  'claude-sonnet-5-5',
+  'claude-haiku-5-5',
 ];
 
 test('each advertised profile ID has a distinct non-empty response profile', () => {
@@ -56,9 +56,9 @@ test('Fable profile is flexible and supports long-horizon multi-domain deliverab
 });
 
 test('coding-oriented profiles require appropriate scope control and verification', () => {
-  const sonnet = modelProfilePrompt('claude-sonnet-5.5');
+  const sonnet = modelProfilePrompt('claude-sonnet-5-5');
   const opus = modelProfilePrompt('claude-opus-5-5');
-  const haiku = modelProfilePrompt('claude-haiku-5.5');
+  const haiku = modelProfilePrompt('claude-haiku-5-5');
   for (const prompt of [sonnet, opus, haiku]) {
     assert.match(prompt, /run relevant tests|run the most relevant tests|run the most targeted available verification/i);
     assert.match(prompt, /without overstating success|without evidence|calling the task complete/i);
