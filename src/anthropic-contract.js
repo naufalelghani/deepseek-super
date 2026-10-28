@@ -1,6 +1,7 @@
 'use strict';
 
 const { approxTokens } = require('./config');
+const { EFFORT_LEVELS } = require('./effort');
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -81,6 +82,20 @@ function validateMessagesRequest(body, options = {}) {
     if (isPlainObject(choice) && choice.type === 'tool' &&
         (!Array.isArray(body.tools) || !body.tools.some((tool) => tool.name === choice.name))) {
       return { type: 'invalid_request_error', message: `tool_choice references an unavailable tool: ${choice.name}` };
+    }
+  }
+
+  if (body.output_config !== undefined && body.output_config !== null) {
+    if (!isPlainObject(body.output_config)) {
+      return { type: 'invalid_request_error', message: 'Field "output_config" must be an object or null.' };
+    }
+    const effort = body.output_config.effort;
+    if (effort !== undefined && effort !== null &&
+        (typeof effort !== 'string' || !EFFORT_LEVELS.includes(effort))) {
+      return {
+        type: 'invalid_request_error',
+        message: 'Field "output_config.effort" must be one of: ' + EFFORT_LEVELS.join(', ') + '.',
+      };
     }
   }
 
