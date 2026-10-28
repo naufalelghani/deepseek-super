@@ -93,7 +93,7 @@ function truncateReplay(text) {
 
     // Keep the bounded head/tail strategy for unstructured prompt formats.
     if (policyStart === -1) {
-        const marker = '\\n\\n[WARNING: conversation replay was truncated; middle content was omitted and earlier context may be missing.]\\n\\n';
+        const marker = '\n\n[WARNING: conversation replay was truncated; middle content was omitted and earlier context may be missing.]\n\n';
         const headLength = Math.min(4000, Math.max(0, MAX_REPLAY - marker.length));
         const tailLength = Math.max(0, MAX_REPLAY - headLength - marker.length);
         return text.slice(0, headLength) + marker +
@@ -103,14 +103,14 @@ function truncateReplay(text) {
     // The gateway's project policy follows the caller's potentially huge system
     // prompt. Split there so truncation cannot silently remove HUMANIZER/language rules.
     const policyEndMarkers = [
-        '\\n### CONVERSATION HISTORY\\n',
-        '\\n### TOOLS\\n',
-        '\\n### LATEST USER MESSAGE\\n',
-        '\\n=== TOOLS AVAILABLE FOR THIS REQUEST ===',
-        '\\n=== NEW USER REQUEST ===',
-        '\\n=== SITUATION ===',
-        '\\n=== LATEST TOOL RESULTS ===',
-        '\\n=== TOOL RESULTS ===',
+        '\n### CONVERSATION HISTORY\n',
+        '\n### TOOLS\n',
+        '\n### LATEST USER MESSAGE\n',
+        '\n=== TOOLS AVAILABLE FOR THIS REQUEST ===',
+        '\n=== NEW USER REQUEST ===',
+        '\n=== SITUATION ===',
+        '\n=== LATEST TOOL RESULTS ===',
+        '\n=== TOOL RESULTS ===',
     ];
     const policyEnd = nextMarkerIndex(text, policyStart, policyEndMarkers);
     const endIndex = policyEnd === -1 ? text.length : policyEnd;
@@ -126,45 +126,45 @@ function truncateReplay(text) {
         let rest = restOriginal;
         rest = truncateMarkedSection(
             rest,
-            '### CONVERSATION HISTORY\\n',
+            '### CONVERSATION HISTORY\n',
             [
-                '\\n### TOOLS\\n',
-                '\\n### LATEST USER MESSAGE\\n',
-                '\\n=== TOOL RESULTS ===',
-                '\\n=== TOOLS AVAILABLE FOR THIS REQUEST ===',
-                '\\n=== NEW USER REQUEST ===',
-                '\\n=== SITUATION ===',
-                '\\n=== LATEST TOOL RESULTS ===',
+                '\n### TOOLS\n',
+                '\n### LATEST USER MESSAGE\n',
+                '\n=== TOOL RESULTS ===',
+                '\n=== TOOLS AVAILABLE FOR THIS REQUEST ===',
+                '\n=== NEW USER REQUEST ===',
+                '\n=== SITUATION ===',
+                '\n=== LATEST TOOL RESULTS ===',
             ],
             historyLimit,
-            '[...earlier conversation history compacted...]\\n'
+            '[...earlier conversation history compacted...]\n'
         );
         rest = truncateMarkedSection(
             rest,
-            '=== LATEST TOOL RESULTS ===\\n',
+            '=== LATEST TOOL RESULTS ===\n',
             [
-                '\\n=== TOOLS AVAILABLE FOR THE NEXT STEP ===',
-                '\\n=== INSTRUCTIONS AFTER TOOL RESULTS ===',
+                '\n=== TOOLS AVAILABLE FOR THE NEXT STEP ===',
+                '\n=== INSTRUCTIONS AFTER TOOL RESULTS ===',
             ],
             resultLimit,
-            '[...middle of latest tool result omitted...]\\n'
+            '[...middle of latest tool result omitted...]\n'
         );
         rest = truncateMarkedSection(
             rest,
-            '=== TOOL RESULTS ===\\n',
-            ['\\n=== INSTRUCTIONS AFTER TOOL RESULTS ==='],
+            '=== TOOL RESULTS ===\n',
+            ['\n=== INSTRUCTIONS AFTER TOOL RESULTS ==='],
             resultLimit,
-            '[...middle of tool result omitted...]\\n'
+            '[...middle of tool result omitted...]\n'
         );
 
         const system = systemLimit > 0
             ? truncateTextPreservingEnds(
                 systemOriginal,
                 systemLimit,
-                '\\n[...external system instructions compacted; beginning and end retained...]\\n'
+                '\n[...external system instructions compacted; beginning and end retained...]\n'
             )
             : '';
-        return [system, policy, warning, rest.trim()].filter(Boolean).join('\\n\\n');
+        return [system, policy, warning, rest.trim()].filter(Boolean).join('\n\n');
     };
 
     let replay = render();
@@ -190,31 +190,31 @@ function truncateReplay(text) {
         const rest = truncateMarkedSection(
             truncateMarkedSection(
                 restOriginal,
-                '### CONVERSATION HISTORY\\n',
+                '### CONVERSATION HISTORY\n',
                 [
-                    '\\n### TOOLS\\n',
-                    '\\n### LATEST USER MESSAGE\\n',
-                    '\\n=== TOOL RESULTS ===',
-                    '\\n=== TOOLS AVAILABLE FOR THIS REQUEST ===',
-                    '\\n=== NEW USER REQUEST ===',
-                    '\\n=== SITUATION ===',
-                    '\\n=== LATEST TOOL RESULTS ===',
+                    '\n### TOOLS\n',
+                    '\n### LATEST USER MESSAGE\n',
+                    '\n=== TOOL RESULTS ===',
+                    '\n=== TOOLS AVAILABLE FOR THIS REQUEST ===',
+                    '\n=== NEW USER REQUEST ===',
+                    '\n=== SITUATION ===',
+                    '\n=== LATEST TOOL RESULTS ===',
                 ],
                 0,
-                '[...history omitted...]\\n'
+                '[...history omitted...]\n'
             ),
-            '=== LATEST TOOL RESULTS ===\\n',
-            ['\\n=== TOOLS AVAILABLE FOR THE NEXT STEP ===', '\\n=== INSTRUCTIONS AFTER TOOL RESULTS ==='],
+            '=== LATEST TOOL RESULTS ===\n',
+            ['\n=== TOOLS AVAILABLE FOR THE NEXT STEP ===', '\n=== INSTRUCTIONS AFTER TOOL RESULTS ==='],
             0,
-            '[...tool result omitted...]\\n'
+            '[...tool result omitted...]\n'
         ).trim();
         const budget = Math.max(0, MAX_REPLAY - policy.length - warning.length - 4);
         const boundedRest = truncateTextPreservingEnds(
             rest,
             budget,
-            '\\n[...remaining tool/request context compacted to fit MAX_REPLAY...]\\n'
+            '\n[...remaining tool/request context compacted to fit MAX_REPLAY...]\n'
         );
-        replay = [policy, warning, boundedRest].filter(Boolean).join('\\n\\n');
+        replay = [policy, warning, boundedRest].filter(Boolean).join('\n\n');
     }
 
     if (replay.length <= MAX_REPLAY) return replay;
@@ -223,7 +223,7 @@ function truncateReplay(text) {
     return truncateTextPreservingEnds(
         replay,
         MAX_REPLAY,
-        '\\n[...critical replay content truncated to fit MAX_REPLAY...]\\n'
+        '\n[...critical replay content truncated to fit MAX_REPLAY...]\n'
     );
 }
 
