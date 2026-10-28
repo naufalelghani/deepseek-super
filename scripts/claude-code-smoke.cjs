@@ -5,6 +5,7 @@
 // Prerequisites: npm start is running and the local DeepSeek profile is signed in.
 // Run: npm run test:claude-code
 
+const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -45,7 +46,7 @@ const RAW_TOKEN = IS_DEFAULT_GATEWAY
 // introduced when copying a key from a terminal or dashboard; never log the key.
 const TOKEN = RAW_TOKEN.replace(/\s+/g, '');
 const TOKEN_HAD_WHITESPACE = /\s/.test(RAW_TOKEN);
-const TIMEOUT_MS = Number.parseInt(process.env.CLAUDE_CODE_TEST_TIMEOUT_MS || '360000', 10);
+const TIMEOUT_MS = Number.parseInt(process.env.CLAUDE_CODE_TEST_TIMEOUT_MS || '600000', 10);
 const TEST_TOOLS = 'Bash,Read,Edit,Write,Glob,Grep';
 const REQUIRED_TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash'];
 
@@ -304,6 +305,68 @@ async function main() {
     if (finalText) console.log('\nClaude Code final response:\n' + finalText);
     if (stderr.trim()) console.log('\nClaude Code diagnostics (stderr):\n' + stderr.trim().slice(-3000));
     if (nonJson.length) console.log('\nAdditional CLI output:\n' + nonJson.join('\n').slice(-2000));
+    if (IS_DEFAULT_GATEWAY) {
+      console.log('\n[Web tools] Testing DeepSeekWebSearch and DeepSeekWebFetch through Claude Code ...');
+      const webPrompt = [
+        'This is a mandatory live web-tools integration test through the configured DeepSeek gateway.',
+        'Use DeepSeekWebSearch first with one batch: main query "official Node.js downloads and supported release versions"; additional queries ["Node.js release notes on GitHub", "official npm package documentation"]; target sites ["nodejs.org", "github.com", "docs.npmjs.com"].',
+        'The SEARCH RESULTS section must contain only sources actually surfaced by Search, with URLs, titles, and one supported fact. Do not use DeepSeekWebFetch to compensate for missing search results. Do not answer from memory or invent sources.',
+        'Then use DeepSeekWebFetch to inspect these exact URLs in one batch: https://nodejs.org/en/download, https://github.com/nodejs/node/releases, https://docs.npmjs.com/about-npm.',
+        'Return separate sections headed SEARCH RESULTS and FETCH RESULTS. For each fetched URL include the exact URL, Title: ..., Fact: ..., and whether it opened.',
+        'Do not use Bash, Read, Glob, Grep, Edit, or Write for this web task. Do not access local files. If a page cannot be opened or Search returns no sources, say so honestly.'
+      ].join(' ');
+
+      const webRun = await runClaude(webPrompt, settingsPath, workspace);
+      const webParsed = parseStreamJson(webRun.stdout);
+      const webFinalText = webParsed.events
+        .filter((event) => event.type === 'result')
+        .map((event) => event.result || '')
+        .join('\n')
+        .trim();
+      assert.ok(webFinalText, 'Claude Code web-tools test: no final response was emitted');
+      assert.match(webFinalText, /SEARCH RESULTS/i,
+        'Claude Code web-tools test: missing SEARCH RESULTS section');
+      assert.match(webFinalText, /FETCH RESULTS/i,
+        'Claude Code web-tools test: missing FETCH RESULTS section');
+      assert.doesNotMatch(webFinalText, /follow-up direct fetch|substitut(?:e|ed|ing) direct fetch|sources came from .*fetch/i,
+        'Claude Code web-tools test: search evidence must not be replaced by page fetches');
+
+      const searchSectionMatch = webFinalText.match(/SEARCH RESULTS([\s\S]*?)(?:FETCH RESULTS|$)/i);
+      assert.ok(searchSectionMatch, 'Claude Code web-tools test: could not isolate Search results');
+      assert.doesNotMatch(searchSectionMatch[1], /NO_SOURCES_FOUND/i,
+        'Claude Code web-tools test: DeepSeekWebSearch returned no verifiable sources. Response: ' + searchSectionMatch[1].slice(0, 1800));
+      const sourceHosts = [...searchSectionMatch[1].matchAll(/https?:\/\/([^/\s?#]+)/gi)]
+        .map((match) => match[1].toLowerCase());
+      const expectedDomains = ['nodejs.org', 'github.com', 'docs.npmjs.com'];
+      const sourceDomainCount = expectedDomains.filter((domain) =>
+        sourceHosts.some((host) => host === domain || host.endsWith('.' + domain))
+      ).length;
+      assert.ok(sourceDomainCount >= 2,
+        'Claude Code web-tools test: expected source URLs from at least two target domains, got ' + sourceDomainCount);
+
+      const requestedURLs = [
+        'https://nodejs.org/en/download',
+        'https://github.com/nodejs/node/releases',
+        'https://docs.npmjs.com/about-npm',
+      ];
+      const fetchedCount = requestedURLs.filter((url) => webFinalText.includes(url)).length;
+      assert.equal(fetchedCount, 3,
+        'Claude Code web-tools test: expected all 3 fetched URLs, got ' + fetchedCount);
+      assert.doesNotMatch(webFinalText, /could not be opened|not opened/i,
+        'Claude Code web-tools test: at least one requested official page could not be opened');
+      assert.ok((webFinalText.match(/Title\s*:/gi) || []).length >= 3,
+        'Claude Code web-tools test: expected a title for each fetched URL');
+      assert.ok((webFinalText.match(/Fact\s*:/gi) || []).length >= 3,
+        'Claude Code web-tools test: expected a fact for each fetched URL');
+      console.log('PASS Claude Code DeepSeekWebSearch:', sourceDomainCount, 'source domains');
+      console.log('PASS Claude Code DeepSeekWebFetch: 3/3 URLs with titles and facts');
+      if (webRun.stderr.trim()) {
+        console.log('\nClaude Code web diagnostics (stderr):\n' + webRun.stderr.trim().slice(-2000));
+      }
+    } else {
+      console.log('\nSKIP DeepSeek web-tools tests: the selected endpoint is not this repository\'s local gateway.');
+    }
+
     console.log('\nCLAUDE CODE INTEGRATION TEST PASSED');
   } finally {
     try { fs.unlinkSync(settingsPath); } catch {}

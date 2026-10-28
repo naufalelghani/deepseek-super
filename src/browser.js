@@ -93,7 +93,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      await page.evaluate((n) => {
          const aria = 'aria-pressed';
          const cls = 'ds-toggle-button';
-         const els = document.querySelectorAll('div');
+         const els = document.querySelectorAll('[aria-pressed]');
          for (let i = 0; i < els.length; i++) {
              const el = els[i];
              if (el.getAttribute(aria) === null) continue;
@@ -106,10 +106,11 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      }, 'DeepThink').catch(() => {});
      await page.waitForTimeout(150);
 
+     const desiredSearchOn = !toolsProvided;
      await page.evaluate((wantOn) => {
          const aria = 'aria-pressed';
          const cls = 'ds-toggle-button';
-         const els = document.querySelectorAll('div');
+         const els = document.querySelectorAll('[aria-pressed]');
          for (let i = 0; i < els.length; i++) {
              const el = els[i];
              if (el.getAttribute(aria) === null) continue;
@@ -119,10 +120,27 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              const isOn = el.getAttribute(aria) === 'true';
              if (wantOn && !isOn) el.click();
              if (!wantOn && isOn) el.click();
-             return;
+             return true;
          }
-     }, !toolsProvided).catch(() => {});
+         return false;
+     }, desiredSearchOn).catch(() => false);
      await page.waitForTimeout(200);
+     const verifiedSearchState = await page.evaluate(() => {
+         const els = document.querySelectorAll('.ds-toggle-button[aria-pressed]');
+         for (let i = 0; i < els.length; i++) {
+             const span = els[i].querySelector('span');
+             if (span && span.textContent.trim() === 'Search') {
+                 return els[i].getAttribute('aria-pressed') === 'true';
+             }
+         }
+         return null;
+     }).catch(() => null);
+     if (verifiedSearchState === null) {
+         console.warn('[toggle] Could not verify DeepSeek Search toggle state; internal web tools will reject unverified Search turns.');
+     } else if (verifiedSearchState !== desiredSearchOn) {
+         console.warn('[toggle] DeepSeek Search toggle did not reach requested state=' + desiredSearchOn);
+     }
+     return verifiedSearchState;
  }
 
  async function readState(finalSnapshot = false) {
@@ -232,7 +250,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      }
  }
 
- async function runTurn(prompt, sink, bufferText, isCancelled = () => false) {
+ async function runTurn(prompt, sink, bufferText, isCancelled = () => false, includeLinks = false) {
      const abortIfCancelled = async () => {
          if (!isCancelled()) return;
          await stopGenerationBestEffort();
@@ -264,6 +282,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      let observedAnswer = '';
      let lastState = before;
      let emittedThink = '';
+     let uiAnswerLinks = [];
      let lastChange = Date.now();
      const start = Date.now();
      let sawNewMessage = false;
@@ -296,6 +315,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              throw new Error('Could not read the DeepSeek UI state: ' + (error.message || String(error)));
          }
          if (st.isGenerating) sawGeneratingSignal = true;
+         lastState = st;
 
          if (!sawNewMessage) {
              // Ignore user-message row-count changes; wait for a fresh assistant response.
@@ -319,14 +339,12 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              continue;
          }
 
-         lastState = st;
-         if (st.think) sawResponseContent = true;
-         if (st.answer) sawResponseContent = true;
-         // Track raw visible text for completion detection, independent of Markdown output.
          if (st.answer !== observedAnswer) {
              observedAnswer = st.answer || '';
              lastChange = Date.now();
          }
+         if (st.think) sawResponseContent = true;
+         if (st.answer) sawResponseContent = true;
 
          if (st.think && st.think.length > emittedThink.length && st.think.startsWith(emittedThink)) {
              const d = st.think.slice(emittedThink.length);
@@ -335,8 +353,8 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              lastChange = Date.now();
          }
 
-         // Buffer tool-enabled turns until completion. For regular streaming, emit
-         // only complete rendered Markdown blocks so already-sent formatting stays stable.
+         // Preserve rendered Markdown by streaming only complete DOM blocks.
+         // Buffered turns are parsed once at completion, preserving tool-call payloads.
          const stableMarkdown = typeof st.answerMarkdownStable === 'string' ? st.answerMarkdownStable : '';
          if (!bufferText && stableMarkdown.startsWith(emittedAnswer) && stableMarkdown.length > emittedAnswer.length) {
              parser.feed(stableMarkdown.slice(emittedAnswer.length));
@@ -377,16 +395,17 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
          console.warn('[turn-completion] explicit stop/send completion signal was not observed; used STABLE_MS fallback');
      }
 
-     // Take a final DOM snapshot so the trailing Markdown block is complete.
+     // Final DOM snapshot closes the trailing Markdown block and captures web sources.
      let fin = lastState;
      try {
          fin = await readState(true);
+         if (includeLinks && Array.isArray(fin.answerLinks)) uiAnswerLinks = fin.answerLinks;
      } catch (error) {
          console.warn('[markdown] final DOM snapshot failed; using last observed snapshot: ' + (error.message || String(error)));
      }
      const finalAnswer = fin.answerMarkdown || fin.answer || '';
      if (bufferText) {
-         // Tool parsing must use the complete protocol payload without Markdown rewriting.
+         // Do not rewrite tool-call protocol output; the parser handles the full payload.
          if (finalAnswer) parser.feed(finalAnswer);
          emittedAnswer = finalAnswer;
      } else if (finalAnswer.startsWith(emittedAnswer)) {
@@ -397,7 +416,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
          if (finalAnswer) parser.feed(finalAnswer);
          emittedAnswer = finalAnswer;
      } else {
-         console.warn('[markdown] final Markdown differed from the emitted stable prefix; check for a DeepSeek UI change.');
+         console.warn('[markdown] final Markdown differed from the emitted stable prefix.');
      }
      if (fin.think && fin.think.length > emittedThink.length && fin.think.startsWith(emittedThink)) {
          emitThinking(fin.think.slice(emittedThink.length));
@@ -432,6 +451,23 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      // or forwarding any part of it, otherwise a failed recovery can leak partial output.
      if (sink && (thinkOpened || textOpened)) sink.stopBlock();
 
+     if (includeLinks && finalTools.length === 0 && uiAnswerLinks.length > 0) {
+         const seenLinks = new Set();
+         const uniqueLinks = uiAnswerLinks.filter((link) => {
+             const url = typeof link.url === 'string' ? link.url.trim() : '';
+             if (!/^https?:\/\//i.test(url) || seenLinks.has(url)) return false;
+             seenLinks.add(url);
+             return true;
+         }).slice(0, 20).map((link) => {
+             const url = link.url.trim();
+             const label = typeof link.text === 'string' && link.text ? link.text : url;
+             return '- ' + label + ': ' + url;
+         });
+         if (uniqueLinks.length > 0) {
+             finalText = [finalText, 'Links surfaced by the DeepSeek UI:\n' + uniqueLinks.join('\n')].filter(Boolean).join('\n\n');
+         }
+     }
+
      if (finalTools.length > 0) {
          console.log('[tool-parser] parsed tool call(s): ' + finalTools.map((t) => t.name).join(', '));
      } else if (invalidToolCall) {
@@ -448,8 +484,73 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
          }
      }
 
-     return { text: finalText, thinking: emittedThink, toolCalls: finalTools, invalidToolCall };
+     if (includeLinks) {
+         const textURLCount = (finalText.match(/https?:\/\/[^\s<>"'`)\]]+/gi) || []).length;
+         console.log('[web-turn] captured_ui_links=' + uiAnswerLinks.length +
+             ' visible_text_urls=' + textURLCount +
+             ' answer_chars=' + finalText.length);
+     }
+     return { text: finalText, thinking: emittedThink, toolCalls: finalTools, invalidToolCall, sourceLinks: includeLinks ? uiAnswerLinks : [] };
  }
+
+/**
+ * Run a native DeepSeek Search turn in a clean chat.
+ *
+ * The main gateway prompt includes the client tool schemas and DSML instructions.
+ * Reusing that thread for an internal Search turn can make DeepSeek emit another
+ * gateway tool call instead of using the Search mode toggle. Keep internal Search
+ * turns isolated, then return to the original conversation before the model resumes.
+ */
+async function runIsolatedTurn(prompt, sink, bufferText, isCancelled = () => false, includeLinks = false) {
+    await ensurePage();
+    const originalUrl = await currentUrl();
+    if (!originalUrl) {
+        throw new Error('Cannot isolate a DeepSeek Search turn because the original conversation URL is unavailable.');
+    }
+
+    let operationError = null;
+    try {
+        await gotoNewChat();
+        const newChatUrl = await currentUrl();
+        if (newChatUrl && newChatUrl === originalUrl) {
+            throw new Error('DeepSeek stayed on the original chat; refusing to send an internal Search prompt into the user conversation.');
+        }
+        const searchState = await ensureTogglesOn(false);
+        if (searchState !== true) {
+            throw new Error('Could not verify that DeepSeek Search mode is enabled in the isolated chat.');
+        }
+        const output = await runTurn(prompt, sink, bufferText, isCancelled, includeLinks);
+        // A new DeepSeek chat may not receive its /a/chat/s/<id> URL until the
+        // first message is submitted, so check isolation after the turn completes.
+        const isolatedUrl = await currentUrl();
+        if (!isolatedUrl || isolatedUrl === originalUrl) {
+            throw new Error('DeepSeek did not use a distinct temporary chat for the isolated Search turn.');
+        }
+        console.log('[web-isolation] original_chat_changed=true');
+        return output;
+    } catch (error) {
+        operationError = error;
+        throw error;
+    } finally {
+        try {
+            const restored = await resumeUrl(originalUrl);
+            if (!restored) {
+                throw new Error('The original DeepSeek conversation could not be restored after an isolated Search turn.');
+            }
+            const searchState = await ensureTogglesOn(true);
+            if (searchState !== false) {
+                throw new Error('Could not verify that DeepSeek Search mode is disabled after restoring the original conversation.');
+            }
+        } catch (restoreError) {
+            if (operationError) {
+                console.warn('[web-isolation] failed to fully restore the original DeepSeek chat: ' +
+                    (restoreError.message || String(restoreError)));
+            } else {
+                throw restoreError;
+            }
+        }
+    }
+}
 
 async function shutdownBrowser() {
     try { if (ctx) await ctx.close(); } catch (e) {}
@@ -459,4 +560,4 @@ async function shutdownBrowser() {
     initPromise = null;
 }
 
-module.exports = { ensurePage, ensureTogglesOn, readState, clickSend, currentUrl, gotoNewChat, resumeUrl, runTurn, locked, shutdownBrowser };
+module.exports = { ensurePage, ensureTogglesOn, readState, clickSend, currentUrl, gotoNewChat, resumeUrl, runTurn, runIsolatedTurn, locked, shutdownBrowser };

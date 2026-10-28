@@ -51,6 +51,12 @@ function readStateInPage(options = {}) {
     const answerElement = last ? last.querySelector('.ds-assistant-message-main-content') : null;
     const think = thinkElement ? thinkElement.innerText : '';
     const answer = answerElement ? answerElement.innerText : '';
+    const answerLinks = answerElement
+        ? Array.from(answerElement.querySelectorAll('a[href]')).map((anchor) => ({
+            text: (anchor.innerText || anchor.getAttribute('aria-label') || anchor.getAttribute('title') || '').trim(),
+            url: anchor.href || anchor.getAttribute('href') || ''
+        })).filter((link) => /^https?:\/\//i.test(link.url))
+        : [];
     const markdownRoot = answerElement
         ? (answerElement.querySelector('.ds-markdown') || answerElement)
         : null;
@@ -232,6 +238,7 @@ function readStateInPage(options = {}) {
         answerKey: last ? (last.getAttribute('data-virtual-list-item-key') || null) : null,
         think,
         answer,
+        answerLinks,
         answerMarkdown: result.markdown,
         answerMarkdownStable: result.stableMarkdown,
         answerIsProtocol: result.protocolOutput,
