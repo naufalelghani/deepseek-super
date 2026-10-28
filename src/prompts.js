@@ -27,6 +27,19 @@ const PROJECT_AND_LANGUAGE_INSTRUCTIONS = [
     'When referencing agent skills, follow supported skill formats and conventions. Never claim a skill is installed or activated unless that has been verified.'
 ].join('\n');
 
+function originalUserRequestBlock(messages) {
+    const original = messages.find((message) =>
+        message.role === 'user' &&
+        !blocksOf(message.content).some((block) => block.type === 'tool_result')
+    );
+    if (!original) return '';
+    const request = renderMessage(original);
+    if (!request) return '';
+    const maxLength = Math.max(1024, Math.min(12000, Math.floor(MAX_REPLAY * 0.2)));
+    return '=== ORIGINAL USER REQUEST ===\n' +
+        truncateTextPreservingEnds(request, maxLength, '\n[...middle of original user request omitted...]\n');
+}
+
 const TOOL_RESULT_INSTRUCTIONS = [
     'Base claims on tool results that were actually received. Do not claim success unless the tool result confirms it.',
     'If the task is complete and the user requested raw output from a simple command, return only that output when it consists of one or more lines.',
@@ -110,6 +123,8 @@ function buildFullPrompt(system, messages, tools) {
 
     if (lastHasToolResult) {
         parts.push('=== TOOL RESULTS ===\n' + renderMessage(last));
+        const originalRequest = originalUserRequestBlock(messages);
+        if (originalRequest) parts.push(originalRequest);
         parts.push([
             '=== INSTRUCTIONS AFTER TOOL RESULTS ===',
             ...TOOL_RESULT_INSTRUCTIONS,
@@ -148,6 +163,8 @@ function buildResumePrompt(system, messages, tools, isToolResultTurn) {
         // truncation keeps the schemas needed for the next action.
         if (toolPrompt) parts.push('=== TOOLS AVAILABLE FOR THE NEXT STEP ===\n' + toolPrompt);
         parts.push('');
+        const originalRequest = originalUserRequestBlock(messages);
+        if (originalRequest) parts.push(originalRequest);
         parts.push('=== INSTRUCTIONS AFTER TOOL RESULTS ===');
         parts.push(...TOOL_RESULT_INSTRUCTIONS);
         parts.push('If the task is not complete, use the next required tool with one DeepSeek DSML calls block containing invoke/parameter tags.');
