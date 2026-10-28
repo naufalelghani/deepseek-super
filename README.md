@@ -69,7 +69,7 @@ Configuration is read from environment variables:
 | Variable | Default | Description |
 |---|---:|---|
 | `PORT` | `8787` | Local HTTP server port |
-| `MODEL_NAME` | `deepseek-super` | Fallback response model label when a request omits `model`; `/v1/models` always lists both aliases |
+| `MODEL_NAME` | `deepseek-super` | Fallback response model label when a request omits `model`; `/v1/models` lists the six configured model IDs |
 | `PROFILE_DIR` | `./deepseek-profile` | Persistent Chrome profile directory |
 | `DEEPSEEK_SUPER_TOKEN` | Unset | Optional explicit token override; if unset, a random token is created and stored in `.deepseek-super-token` |
 | `POLL_MS` | `200` | UI polling interval in milliseconds |
