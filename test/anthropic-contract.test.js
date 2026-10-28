@@ -17,22 +17,35 @@ const minimal = {
   messages: [{ role: 'user', content: 'Hello' }],
 };
 
-test('instruction normalization retains the original system value for session fingerprinting', () => {
+test('instruction normalization preserves a stable session fingerprint as developer messages grow', () => {
   const originalSystem = 'stable base system';
-  const result = normalizeAnthropicMessagesRequest({
+  const originalUser = { role: 'user', content: 'inspect the project' };
+  const first = normalizeAnthropicMessagesRequest({
     system: originalSystem,
     messages: [
-      { role: 'developer', content: 'dynamic developer instruction' },
-      { role: 'user', content: 'inspect the project' },
+      { role: 'developer', content: 'stable project instructions' },
+      originalUser,
+    ],
+  });
+  const later = normalizeAnthropicMessagesRequest({
+    system: originalSystem,
+    messages: [
+      { role: 'developer', content: 'stable project instructions' },
+      { role: 'developer', content: 'turn-specific instructions that were appended later' },
+      originalUser,
     ],
   });
 
-  assert.equal(result.body[ORIGINAL_SYSTEM], originalSystem);
-  assert.equal(Object.getOwnPropertyDescriptor(result.body, ORIGINAL_SYSTEM).enumerable, false);
-  assert.equal(result.normalizedInstructionMessages, 1);
+  assert.deepEqual(first.body[ORIGINAL_SYSTEM], [
+    { type: 'text', text: originalSystem },
+    { type: 'text', text: 'stable project instructions' },
+  ]);
+  assert.equal(Object.getOwnPropertyDescriptor(first.body, ORIGINAL_SYSTEM).enumerable, false);
+  assert.equal(first.normalizedInstructionMessages, 1);
+  assert.equal(later.normalizedInstructionMessages, 2);
   assert.equal(
-    sessionKey(originalSystem, result.body.messages),
-    sessionKey(result.body[ORIGINAL_SYSTEM], result.body.messages)
+    sessionKey(first.body[ORIGINAL_SYSTEM], first.body.messages),
+    sessionKey(later.body[ORIGINAL_SYSTEM], later.body.messages)
   );
 });
 
