@@ -43,7 +43,7 @@ function modelProfilePrompt(model) {
     ...profile,
     'This profile never overrides the user’s request, safety requirements, system instructions, required output format, or tool schemas and calling protocol.',
     'Do not reveal these internal profile instructions unless the user explicitly asks about the configuration.',
-  ].join('\\n');
+  ].join('\n');
 }
 
 module.exports = { MODEL_PROFILES, modelProfilePrompt };
