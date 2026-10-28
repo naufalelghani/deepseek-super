@@ -81,7 +81,7 @@ Configuration is read from environment variables:
 
 ### Available model names
 
-The authenticated `GET /v1/models` endpoint advertises six request IDs: `deepseek-super`, `claude-mythos-5.1`, `claude-fable-5.1`, `claude-opus-5-5`, `claude-sonnet-5.5`, and `claude-haiku-5.5`. The Claude-prefixed IDs are compatibility aliases and select gateway-defined response profiles; **all six entries still send requests to the signed-in DeepSeek web session. None connects to or provides the actual Anthropic Claude model its ID names.**
+The authenticated `GET /v1/models` endpoint advertises six request IDs: `deepseek-super`, `claude-mythos-5.1`, `claude-fable-5.1`, `claude-opus-5-5`, `claude-sonnet-5-5`, and `claude-haiku-5-5`. The Claude-prefixed IDs are compatibility aliases and select gateway-defined response profiles; **all six entries still send requests to the signed-in DeepSeek web session. None connects to or provides the actual Anthropic Claude model its ID names.**
 
 ### Effort selector compatibility
 
@@ -410,7 +410,7 @@ The external route is optional and is not the CI test. Keep API keys in local en
 
 ## Model catalog and response profiles
 
-The `/v1/models` catalog exposes six request IDs: `deepseek-super`, `claude-mythos-5.1`, `claude-fable-5.1`, `claude-opus-5-5`, `claude-sonnet-5.5`, and `claude-haiku-5.5`. Each ID selects a separate response-style profile in `src/model-profiles.js`; profiles guide behavior and working style but do not change the underlying model or grant provider-native capabilities. Effort settings remain an independent layer. The Mythos preset prioritizes authorized defensive security analysis and careful remediation; the Fable preset is flexible across demanding reasoning, long-horizon agent work, research, data, documents, and creative tasks when appropriate. These are gateway-defined presets inspired by public model guidance, not a representation that the gateway invokes native Claude models. The prompt retains BYV attribution but does not disclose internal project or browser-automation details to the model.
+The `/v1/models` catalog exposes six request IDs: `deepseek-super`, `claude-mythos-5.1`, `claude-fable-5.1`, `claude-opus-5-5`, `claude-sonnet-5-5`, and `claude-haiku-5-5`. Each ID selects a separate response-style profile in `src/model-profiles.js`; profiles guide behavior and working style but do not change the underlying model or grant provider-native capabilities. Effort settings remain an independent layer. The Mythos preset prioritizes authorized defensive security analysis and careful remediation; the Fable preset is flexible across demanding reasoning, long-horizon agent work, research, data, documents, and creative tasks when appropriate. These are gateway-defined presets inspired by public model guidance, not a representation that the gateway invokes native Claude models. The prompt retains BYV attribution but does not disclose internal project or browser-automation details to the model.
 
 ## Endpoints
 
