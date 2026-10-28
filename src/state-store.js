@@ -118,12 +118,13 @@ function createStateStore(options = {}) {
 
   function expireAlias(row, timestamp) {
     if (!row) return;
-    const expire = db.transaction(() => {
+    const expire = () => {
       if (row.active_thread_id) expireThread.run(timestamp, timestamp, row.active_thread_id);
       expireSession.run(timestamp, timestamp, row.session_id);
       deleteSessionKey.run(row.session_key);
-    });
-    expire();
+    };
+    if (db.inTransaction) expire();
+    else db.transaction(expire)();
   }
 
   function touchSession(row, timestamp) {
