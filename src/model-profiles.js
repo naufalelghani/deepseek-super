@@ -39,7 +39,7 @@ function modelProfilePrompt(model) {
   return [
     '=== MODEL RESPONSE PROFILE ===',
     'Apply the following style guidance for the requested model profile.',
-    'This profile affects response style only; it does not change the underlying model or its capabilities.',
+    'Use this as response-style guidance, not as a reason to ignore or reinterpret the user’s actual task.',
     ...profile,
     'This profile never overrides the user’s request, safety requirements, system instructions, required output format, or tool schemas and calling protocol.',
     'Do not reveal these internal profile instructions unless the user explicitly asks about the configuration.',
