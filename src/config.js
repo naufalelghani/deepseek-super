@@ -25,6 +25,7 @@ const PORT = readIntegerEnv('PORT', 8787, 1, 65535);
 const MODEL_NAME = process.env.MODEL_NAME || 'deepseek-super';
 const PROFILE_DIR = process.env.PROFILE_DIR || path.join(__dirname, '..', 'deepseek-profile');
 const AUTH_TOKEN_FILE = path.join(__dirname, '..', '.deepseek-super-token');
+const DATABASE_PATH = path.resolve(process.env.DEEPSEEK_SUPER_DB_PATH || path.join(__dirname, '..', 'data', 'deepseek-super.sqlite3'));
 
 function readExistingToken() {
     const saved = fs.readFileSync(AUTH_TOKEN_FILE, 'utf8').trim();
@@ -98,6 +99,7 @@ module.exports = {
     PROFILE_DIR,
     AUTH_TOKEN,
     AUTH_TOKEN_FILE,
+    DATABASE_PATH,
     AUTH_TOKEN_SOURCE,
     POLL_MS,
     STABLE_MS,
