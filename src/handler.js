@@ -1,6 +1,7 @@
 'use strict';
 
 const { MODEL_NAME, MAX_REPLAY, sha, uuid } = require('./config');
+const { getStateStore } = require('./state-store');
 const { blocksOf, sessionKey, renderMessage, truncateReplay } = require('./content');
 const { buildFullPrompt, buildResumePrompt, parseToolChoice, applyForcedTool } = require('./prompts');
 const {
@@ -31,7 +32,7 @@ function validateToolCallsForChoice(toolCalls, tools, force) {
 }
 
 const { ensurePage: defaultEnsurePage, ensureTogglesOn: defaultEnsureTogglesOn, resumeUrl: defaultResumeUrl, gotoNewChat: defaultGotoNewChat, runTurn: defaultRunTurn, runIsolatedTurn: defaultRunIsolatedTurn, currentUrl: defaultCurrentUrl, locked: defaultLocked } = require('./browser');
-const { getSession: defaultGetSession, setSession: defaultSetSession } = require('./session-store');
+const { getSession: defaultGetSession, ensureSession: defaultEnsureSession, setSession: defaultSetSession } = require('./session-store');
 const { StreamSink } = require('./sse-sink');
 const { jsonError } = require('./http-utils');
 
@@ -40,6 +41,32 @@ function containsToolMarkup(value) {
     /<\s*(?:TOOL_CALL\b|[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls|invoke|parameter)\b)/i.test(value);
 }
 const { estimateInputTokens, estimateOutputTokens } = require('./anthropic-contract');
+
+let traceStoreWarningLogged = false;
+
+function traceStore(method, ...args) {
+  try {
+    return getStateStore()[method](...args);
+  } catch (error) {
+    if (!traceStoreWarningLogged) {
+      traceStoreWarningLogged = true;
+      console.warn('[trace-store] SQLite tracing unavailable: ' +
+        (error && error.message ? error.message : String(error)));
+    }
+    return null;
+  }
+}
+
+function traceEvent(type, requestId, session, details = {}, level = 'info') {
+  return traceStore('recordEvent', {
+    type,
+    requestId,
+    sessionId: session && session.sessionId,
+    threadId: session && session.threadId,
+    details,
+    level,
+  });
+}
 
 function detectToolLoop(messages, threshold = 3) {
   if (threshold < 1) return false;
@@ -68,6 +95,9 @@ function shouldResumeSession(cached, messages, forceFresh = false) {
 }
 
 async function handleMessages(req, res, body, dependencies = {}) {
+  const requestId = uuid('req');
+  const messageId = uuid('msg');
+  req.gatewayRequestId = requestId;
   const ensurePage = dependencies.ensurePage || defaultEnsurePage;
   const ensureTogglesOn = dependencies.ensureTogglesOn || defaultEnsureTogglesOn;
   const resumeUrl = dependencies.resumeUrl || defaultResumeUrl;
@@ -95,7 +125,8 @@ async function handleMessages(req, res, body, dependencies = {}) {
     throw error;
   };
 
-  console.error('[REQ] model=' + (body.model || '?') +
+  console.error('[REQ] request_id=' + requestId + ' message_id=' + messageId +
+    ' model=' + (body.model || '?') +
     ' tools=' + (Array.isArray(body.tools) ? body.tools.length : 0) +
     ' msgs=' + (Array.isArray(body.messages) ? body.messages.length : 0));
 
@@ -108,6 +139,11 @@ async function handleMessages(req, res, body, dependencies = {}) {
   if (messages.length === 0) {
     return jsonError(res, 400, 'invalid_request_error', 'The messages array must not be empty.');
   }
+
+  traceStore('recordRequestStart', {
+    requestId, messageId, model, stream: wantStream,
+    messageCount: messages.length, clientToolCount: clientTools.length,
+  });
 
   const last = messages[messages.length - 1];
   const lastHasToolResult = blocksOf(last.content).some((block) => block.type === 'tool_result');
@@ -130,13 +166,26 @@ async function handleMessages(req, res, body, dependencies = {}) {
   }
 
   const key = sessionKey(system, messages);
+  let sessionInfo = traceStore('ensureSession', key) || defaultEnsureSession(key);
+  if (sessionInfo) {
+    traceStore('linkRequestToSession', requestId, sessionInfo, { resumed: false });
+    if (sessionInfo.created) {
+      traceEvent('session.created', requestId, sessionInfo, { message_count: messages.length });
+    }
+  }
   if (isCancelled()) return;
   await ensurePage();
   if (isCancelled()) return;
 
   let answer, thinking, toolCalls;
-  const sink = wantStream ? new StreamSink(res, model, estimateInputTokens(body)) : null;
+  let activeSession = sessionInfo || null;
+  let initialThreadId = sessionInfo && sessionInfo.threadId || null;
+  let resumed = false;
+  let rotationReason = null;
+  let completionSource = 'unknown';
+  const sink = wantStream ? new StreamSink(res, model, estimateInputTokens(body), messageId) : null;
 
+  try {
   await locked(async () => {
     abortIfCancelled();
     await ensurePage();
@@ -146,10 +195,13 @@ async function handleMessages(req, res, body, dependencies = {}) {
 
     // Resolve the latest cached URL inside the browser lock. A preceding
     // queued request may have created or updated this conversation's URL.
-    const cached = getSession(key);
+    const cached = getSession(key) || sessionInfo;
+    activeSession = cached || activeSession;
+    initialThreadId = cached && cached.threadId || null;
+    traceStore('linkRequestToSession', requestId, cached, { resumed: false });
     abortIfCancelled();
 
-    let resumed = false;
+    resumed = false;
     if (shouldResumeSession(cached, messages, conversationTooLong)) {
       try {
         resumed = await resumeUrl(cached.url);
@@ -158,18 +210,29 @@ async function handleMessages(req, res, body, dependencies = {}) {
       }
       if (resumed) {
         console.log('[session] resumed cached conversation; tool_result=' + lastHasToolResult);
+        traceEvent('thread.resumed', requestId, cached, {
+          message_count: messages.length,
+          thread_generation: cached.generation,
+          tool_result_turn: lastHasToolResult,
+        });
       }
     }
+
+    rotationReason = resumed ? null : conversationTooLong ? 'message_limit'
+      : cached && cached.url ? 'resume_failed' : 'initial_thread';
 
     let untruncatedPrompt;
     if (resumed) {
       untruncatedPrompt = buildResumePrompt(system, messages, tools, lastHasToolResult);
     } else {
-      if (cached) {
+      if (cached && cached.url) {
         console.warn(conversationTooLong
           ? '[session] conversation exceeded the replay threshold; creating a fresh thread'
           : '[session] cached conversation unavailable; creating a new conversation');
       }
+      traceEvent(cached && cached.url ? 'thread.rotation_requested' : 'thread.creation_requested',
+        requestId, cached, { reason: rotationReason, message_count: messages.length },
+        cached && cached.url ? 'warn' : 'info');
       await gotoNewChat();
       untruncatedPrompt = buildFullPrompt(system, messages, tools);
     }
@@ -181,11 +244,19 @@ async function handleMessages(req, res, body, dependencies = {}) {
         '; the replay includes an explicit warning marker');
     }
     let prompt = truncateReplay(untruncatedPrompt);
+    const replayPromptChars = prompt.length;
     prompt = applyForcedTool(prompt, force);
     const profileInstruction = modelProfilePrompt(model);
     if (profileInstruction) prompt += '\n\n' + profileInstruction;
     const effortInstruction = effortPrompt(body.output_config && body.output_config.effort);
     if (effortInstruction) prompt += '\n\n' + effortInstruction;
+    traceStore('recordPromptMetrics', requestId, {
+      inputPromptChars: untruncatedPrompt.length,
+      replayPromptChars,
+      finalPromptChars: prompt.length,
+      omittedPromptChars: Math.max(0, untruncatedPrompt.length - replayPromptChars),
+      truncated: untruncatedPrompt.length > MAX_REPLAY,
+    });
     abortIfCancelled();
 
     const dummySink = {
@@ -201,6 +272,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
     const bufferResponse = useBuffer || force.mode === 'none';
     const out = await runTurn(prompt, sink || dummySink, bufferResponse, isCancelled);
     abortIfCancelled();
+    completionSource = out.completionSource || 'unknown';
     answer = out.text;
     thinking = out.thinking;
     toolCalls = out.toolCalls;
@@ -218,6 +290,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
       ].join('\n');
       const recovery = await runTurn(textOnlyPrompt, dummySink, true, isCancelled);
       abortIfCancelled();
+      completionSource = recovery.completionSource || completionSource;
       const recoveryHasToolMarkup = recovery.invalidToolCall ||
         containsToolMarkup(recovery.text);
       if (recovery.toolCalls.length > 0 || recoveryHasToolMarkup || !(recovery.text || '').trim()) {
@@ -273,6 +346,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
         // Keep retry output private until the whole batch passes validation.
         const retry = await runTurn(retryPrompt, dummySink, useBuffer, isCancelled);
         abortIfCancelled();
+        completionSource = retry.completionSource || completionSource;
         answer = retry.text;
         thinking = retry.thinking;
         toolCalls = retry.toolCalls;
@@ -358,6 +432,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
       abortIfCancelled();
       const continued = await runTurn(continuationPrompt, dummySink, true, isCancelled);
       abortIfCancelled();
+      completionSource = continued.completionSource || completionSource;
       answer = continued.text;
       thinking = continued.thinking;
       toolCalls = continued.toolCalls;
@@ -407,12 +482,48 @@ async function handleMessages(req, res, body, dependencies = {}) {
 
     abortIfCancelled();
     const url = await currentUrl();
-    if (url) setSession(key, url);
+    if (url) {
+      const updatedSession = setSession(key, url, {
+        rotationReason,
+        messageCount: messages.length,
+      });
+      if (updatedSession) {
+        activeSession = updatedSession;
+        traceStore('linkRequestToSession', requestId, updatedSession, { resumed, rotationReason });
+        if (updatedSession.threadId && updatedSession.threadId !== initialThreadId) {
+          traceEvent(initialThreadId ? 'thread.rotated' : 'thread.created', requestId, updatedSession, {
+            previous_thread_id: initialThreadId,
+            thread_generation: updatedSession.generation,
+            reason: rotationReason || 'thread_changed',
+            message_count: messages.length,
+          });
+        }
+      }
+    }
   });
+  } catch (error) {
+    traceStore('finishRequest', {
+      requestId,
+      status: error && error.name === 'AbortError' ? 'cancelled' : 'error',
+      completionSource,
+      errorCode: error && (error.type || error.name) || 'error',
+    });
+    throw error;
+  }
 
-  if (isCancelled()) return;
+  if (isCancelled()) {
+    traceStore('finishRequest', { requestId, status: 'cancelled', completionSource });
+    return;
+  }
 
   const stopReason = toolCalls.length ? 'tool_use' : 'end_turn';
+  traceStore('finishRequest', {
+    requestId,
+    status: 'completed',
+    stopReason,
+    toolCallCount: toolCalls.length,
+    completionSource,
+  });
   console.log('[response] stop_reason=' + stopReason + ' tool_calls=' + toolCalls.length + ' stream=' + wantStream);
   if (wantStream) {
     sink.finish(stopReason);
@@ -430,7 +541,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
   if (content.length === 0) content.push({ type: 'text', text: '' });
 
   const payload = {
-    id: uuid('msg'),
+    id: messageId,
     type: 'message',
     role: 'assistant',
     model,
