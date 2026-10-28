@@ -66,6 +66,20 @@ test('validates tool schemas and tool_choice references', () => {
   );
 });
 
+test('accepts supported output effort levels and rejects unknown levels', () => {
+  for (const effort of ['low', 'medium', 'high', 'xhigh', 'max']) {
+    assert.equal(validateMessagesRequest({ ...minimal, output_config: { effort } }), null);
+  }
+  assert.match(
+    validateMessagesRequest({ ...minimal, output_config: { effort: 'extreme' } }).message,
+    /output_config.effort/
+  );
+  assert.match(
+    validateMessagesRequest({ ...minimal, output_config: 'high' }).message,
+    /output_config/
+  );
+});
+
 test('count_tokens validation does not require max_tokens', () => {
   const { max_tokens, ...request } = minimal;
   assert.equal(validateMessagesRequest(request, { countTokens: true }), null);
