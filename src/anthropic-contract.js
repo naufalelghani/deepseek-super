@@ -1,5 +1,7 @@
 'use strict';
 
+const ORIGINAL_SYSTEM = Symbol('deepseek-super.originalSystem');
+
 const { approxTokens } = require('./config');
 const { EFFORT_LEVELS } = require('./effort');
 
@@ -116,6 +118,7 @@ function normalizeAnthropicMessagesRequest(body) {
     return { body, normalizedInstructionMessages: 0 };
   }
 
+  const originalSystem = body.system === undefined ? '' : body.system;
   const systemBlocks = [];
   const messages = [];
   let normalizedInstructionMessages = 0;
@@ -145,8 +148,16 @@ function normalizeAnthropicMessagesRequest(body) {
     return { body, normalizedInstructionMessages: 0 };
   }
 
+  const normalizedBody = { ...body, system: systemBlocks, messages };
+  Object.defineProperty(normalizedBody, ORIGINAL_SYSTEM, {
+    value: originalSystem,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  });
+
   return {
-    body: { ...body, system: systemBlocks, messages },
+    body: normalizedBody,
     normalizedInstructionMessages,
   };
 }
@@ -181,4 +192,5 @@ module.exports = {
   validateMessagesRequest,
   estimateInputTokens,
   estimateOutputTokens,
+  ORIGINAL_SYSTEM,
 };
