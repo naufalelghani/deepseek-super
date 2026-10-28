@@ -38,12 +38,13 @@ const { sha, MAX_REPLAY } = require('./config');
      return parts.join('\n');
  }
 
- function sessionKey(_system, messages) {
+ function sessionKey(system, messages) {
      const firstUser = messages.find((m) => m.role === 'user');
-     // System/developer instructions can change during Claude Code compaction.
-     // Keep the fingerprint tied to the complete first user message so those
-     // changes do not fork an otherwise continuous gateway session.
+     // The handler passes the original system value captured by request
+     // normalization, excluding developer messages appended during compaction.
+     // Hash complete inputs to avoid prefix collisions between different tasks.
      return sha(JSON.stringify({
+         sys: flattenContent(system),
          u1: firstUser ? flattenContent(firstUser.content) : '',
      }));
  }
