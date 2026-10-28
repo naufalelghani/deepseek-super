@@ -1,6 +1,7 @@
 'use strict';
 
 const http = require('node:http');
+const { uuid } = require('./config');
 const { effortCapabilities } = require('./effort');
 // Virtual catalog IDs are client-facing profiles; requests are handled by this gateway.
 const AVAILABLE_MODELS = [
@@ -139,6 +140,9 @@ function createServer() {
       }
 
       const wantStream = body.stream === true;
+      const requestId = uuid('req');
+      req.gatewayRequestId = requestId;
+      res.setHeader('X-Gateway-Request-ID', requestId);
       res.setHeader('X-Token-Usage-Estimated', 'true');
       if (wantStream) {
         res.writeHead(200, {
