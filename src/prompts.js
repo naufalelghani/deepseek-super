@@ -21,7 +21,7 @@ const PROJECT_AND_LANGUAGE_INSTRUCTIONS = [
     'Recognize the exact character by its Unicode code point: U+2014. Do not use it to join clauses, create a pause, add an aside, or replace a comma, colon, semicolon, period, or parentheses.',
     'Use a comma, period, colon, semicolon, parentheses, or rewrite the sentence instead. Ordinary hyphen-minus U+002D used inside words, command options, and model IDs is a different character and is not prohibited by this rule.',
     'Before sending the final response, check your newly written prose for U+2014 and remove every occurrence. Do not treat this as a stylistic preference; treat it as a strict output rule.',
-    'When editing or quoting source material, preserve an exact quotation, code sample, identifier, or source text only when fidelity is required. Do not introduce U+2014 into new prose, and do not alter literal content that must remain byte-for-byte or character-for-character exact.'
+    'When editing or quoting source material, preserve an exact quotation, code sample, identifier, or source text only when fidelity is required. Do not introduce U+2014 into new prose, and do not alter literal content that must remain byte-for-byte or character-for-character exact.',
     'Respect context and preserve technical accuracy, quotations, code, and formatting.',
     'Make minimal edits when the original text is already natural. Change it only when there is a clear reason.',
     'When referencing agent skills, follow supported skill formats and conventions. Never claim a skill is installed or activated unless that has been verified.'
