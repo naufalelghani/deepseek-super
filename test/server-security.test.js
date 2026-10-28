@@ -64,7 +64,7 @@ test('server accepts a valid token for model discovery', async (t) => {
   const models = catalog.data;
   assert.deepEqual(models.map(({ id, display_name, line }) => ({ id, display_name, line })), [
     { id: 'deepseek-super', display_name: 'Deepseek Super', line: 'sonnet' },
-    { id: 'claude-mythos-5.1', display_name: 'Mythos 5.1', line: 'opus' },
+    { id: 'claude-mythos-5-1', display_name: 'Mythos 5.1', line: 'opus' },
     { id: 'claude-fable-5.1', display_name: 'Fable 5.1', line: 'sonnet' },
     { id: 'claude-opus-5-5', display_name: 'Opus 5.5', line: 'opus' },
     { id: 'claude-sonnet-5-5', display_name: 'Sonnet 5.5', line: 'sonnet' },
