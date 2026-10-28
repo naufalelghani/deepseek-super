@@ -182,6 +182,8 @@ async function handleMessages(req, res, body, dependencies = {}) {
       requestId,
       status: error && error.name === 'AbortError' ? 'cancelled' : 'error',
       errorCode: error && (error.type || error.name) || 'error',
+      sessionId: activeSession && activeSession.sessionId,
+      threadId: activeSession && activeSession.threadId,
     });
     throw error;
   }
@@ -286,6 +288,12 @@ async function handleMessages(req, res, body, dependencies = {}) {
     const out = await runTurn(prompt, sink || dummySink, bufferResponse, isCancelled);
     abortIfCancelled();
     completionSource = out.completionSource || 'unknown';
+    traceEvent('model.turn_completed', requestId, activeSession, {
+      phase: 'primary', completion_source: completionSource,
+      response_chars: (out.text || '').length,
+      tool_call_count: Array.isArray(out.toolCalls) ? out.toolCalls.length : 0,
+      invalid_tool_call: Boolean(out.invalidToolCall),
+    });
     answer = out.text;
     thinking = out.thinking;
     toolCalls = out.toolCalls;
@@ -304,6 +312,12 @@ async function handleMessages(req, res, body, dependencies = {}) {
       const recovery = await runTurn(textOnlyPrompt, dummySink, true, isCancelled);
       abortIfCancelled();
       completionSource = recovery.completionSource || completionSource;
+      traceEvent('model.turn_completed', requestId, activeSession, {
+        phase: 'text_only_recovery', completion_source: completionSource,
+        response_chars: (recovery.text || '').length,
+        tool_call_count: Array.isArray(recovery.toolCalls) ? recovery.toolCalls.length : 0,
+        invalid_tool_call: Boolean(recovery.invalidToolCall),
+      });
       const recoveryHasToolMarkup = recovery.invalidToolCall ||
         containsToolMarkup(recovery.text);
       if (recovery.toolCalls.length > 0 || recoveryHasToolMarkup || !(recovery.text || '').trim()) {
@@ -333,6 +347,10 @@ async function handleMessages(req, res, body, dependencies = {}) {
       }
 
       const maxRetries = 2;
+      traceEvent('tool_call.recovery_requested', requestId, activeSession, {
+        attempts_allowed: maxRetries,
+        reason_kind: out.invalidToolCall ? 'parse_error' : 'schema_validation',
+      }, 'warn');
       let recovered = false;
       let recoveryIssue = validation.error ||
         'The previous DSML tool-call markup was malformed or incomplete.';
@@ -360,6 +378,13 @@ async function handleMessages(req, res, body, dependencies = {}) {
         const retry = await runTurn(retryPrompt, dummySink, useBuffer, isCancelled);
         abortIfCancelled();
         completionSource = retry.completionSource || completionSource;
+        traceEvent('model.turn_completed', requestId, activeSession, {
+          phase: 'tool_call_recovery', attempt,
+          completion_source: completionSource,
+          response_chars: (retry.text || '').length,
+          tool_call_count: Array.isArray(retry.toolCalls) ? retry.toolCalls.length : 0,
+          invalid_tool_call: Boolean(retry.invalidToolCall),
+        });
         answer = retry.text;
         thinking = retry.thinking;
         toolCalls = retry.toolCalls;
@@ -376,13 +401,18 @@ async function handleMessages(req, res, body, dependencies = {}) {
 
         if (toolCalls.length > 0 && validation.valid && !retry.invalidToolCall) {
           recovered = true;
-          console.log('[retry] recovered on attempt ' + attempt +
+          console.log('[retry] request_id=' + requestId + ' recovered on attempt ' + attempt +
             ' — schema-valid tool calls=' + toolCalls.length);
+          traceEvent('tool_call.recovered', requestId, activeSession, {
+            attempt,
+            tool_call_count: toolCalls.length,
+          });
           break;
         }
 
         recoveryIssue = validation.error || 'The retry did not return a valid tool call.';
-        console.warn('[retry] attempt ' + attempt + ' did not produce schema-valid tool calls');
+        console.warn('[retry] request_id=' + requestId + ' attempt ' + attempt + ' did not produce schema-valid tool calls');
+        traceEvent('tool_call.recovery_attempt_failed', requestId, activeSession, { attempt }, 'warn');
       }
 
       if (!recovered) {
@@ -446,6 +476,12 @@ async function handleMessages(req, res, body, dependencies = {}) {
       const continued = await runTurn(continuationPrompt, dummySink, true, isCancelled);
       abortIfCancelled();
       completionSource = continued.completionSource || completionSource;
+      traceEvent('model.turn_completed', requestId, activeSession, {
+        phase: 'internal_web_continuation', completion_source: completionSource,
+        response_chars: (continued.text || '').length,
+        tool_call_count: Array.isArray(continued.toolCalls) ? continued.toolCalls.length : 0,
+        invalid_tool_call: Boolean(continued.invalidToolCall),
+      });
       answer = continued.text;
       thinking = continued.thinking;
       toolCalls = continued.toolCalls;
