@@ -215,7 +215,10 @@ test('base prompt includes humanizer rules, follows the current user language, a
     assert.match(prompt, /Remove AI clichés, generic openings, repetitive wording/);
     assert.match(prompt, /Preserve the author’s intent, facts, nuance, and important details/);
     assert.match(prompt, /match the author’s tone, vocabulary, rhythm/);
-    assert.match(prompt, /Do not use em dash punctuation \(U\+2014\)/);
+    assert.match(prompt, /EM DASH BAN: Never insert the Unicode character U\+2014, named EM DASH/);
+    assert.match(prompt, /This applies to every language and to every part of your response/);
+    assert.match(prompt, /Ordinary hyphen-minus U\+002D/);
+    assert.match(prompt, /Before sending the final response, check your newly written prose for U\+2014/);
     assert.match(prompt, /Respond in the language the user is currently using/);
     assert.match(prompt, /If the user switches languages, switch with them/);
     assert.match(prompt, /Never claim a skill is installed or activated unless that has been verified/);
