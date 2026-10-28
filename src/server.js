@@ -4,8 +4,10 @@ const http = require('node:http');
 const { effortCapabilities } = require('./effort');
 // Public virtual models shown to API clients. Both aliases currently use the DeepSeek web session.
 const AVAILABLE_MODELS = [
-  { id: 'deepseek-super', display_name: 'Deepseek Super' },
-  { id: 'claude-opus-5.5', display_name: 'Opus 5.5' },
+  // Claude Desktop's gateway discovery filters out opaque non-Claude IDs.
+  // These are UI compatibility IDs only; both are handled by the DeepSeek web backend.
+  { id: 'claude-sonnet-5-5', display_name: 'Deepseek Super', line: 'sonnet' },
+  { id: 'claude-opus-5-5', display_name: 'Opus 5.5', line: 'opus' },
 ];
 const { handleMessages } = require('./handler');
 const {
@@ -80,10 +82,11 @@ function createServer() {
     if (req.method === 'GET' && urlPath === '/v1/models') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       const createdAt = new Date().toISOString();
-      const data = AVAILABLE_MODELS.map(({ id, display_name }) => ({
+      const data = AVAILABLE_MODELS.map(({ id, display_name, line }) => ({
         id,
         type: 'model',
         display_name,
+        line,
         created_at: createdAt,
         allowed_fallback_models: [],
         capabilities: {
