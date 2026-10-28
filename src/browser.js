@@ -1,7 +1,8 @@
 'use strict';
 
 const { chromium } = require('playwright');
-const { PROFILE_DIR, POLL_MS, STABLE_MS, MAX_TURN_MS, HOLD_CHARS, MAX_PENDING_TURNS } = require('./config');
+const { readStateInPage } = require('./browser-dom');
+const { PROFILE_DIR, POLL_MS, STABLE_MS, MAX_TURN_MS, MAX_PENDING_TURNS } = require('./config');
 const { StreamParser, extractToolCallsFromText } = require('./tool-parser');
 const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, isIdleCompletionCandidate } = require('./turn-state');
 
@@ -124,69 +125,8 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      await page.waitForTimeout(200);
  }
 
- async function readState() {
-     return page.evaluate(() => {
-         const items = document.querySelectorAll('[data-virtual-list-item-key]');
-         let last = null;
-         for (let i = items.length - 1; i >= 0; i--) {
-             if (items[i].querySelector('.ds-assistant-message-main-content')) { last = items[i]; break; }
-         }
-
-         // Prefer explicit generation controls over guessing from response inactivity.
-         // DeepSeek may change these selectors, so a stable-time fallback remains available.
-         const stopSelector = [
-             'button[aria-label*="stop" i]',
-             'button[title*="stop" i]',
-             '[data-testid*="stop" i]',
-             '[class*="stop" i]',
-             'button[aria-label*="停止"]',
-             'button[title*="停止"]',
-             '[data-testid*="停止"]'
-         ].join(',');
-         const isVisible = (element) => {
-             if (!element || element.getAttribute('aria-hidden') === 'true') return false;
-             const style = window.getComputedStyle(element);
-             const rect = element.getBoundingClientRect();
-             return style.display !== 'none' && style.visibility !== 'hidden' &&
-                 Number(style.opacity || 1) !== 0 && rect.width > 0 && rect.height > 0;
-         };
-         const stopCandidates = Array.from(document.querySelectorAll(stopSelector));
-         const stopButtonVisible = stopCandidates.some(isVisible);
-         const primaryButton = document.querySelector('.bf38813a .ds-button--primary');
-         const primaryLabel = primaryButton ? [
-             primaryButton.getAttribute('aria-label') || '',
-             primaryButton.getAttribute('title') || '',
-             primaryButton.innerText || '',
-             typeof primaryButton.className === 'string' ? primaryButton.className : '',
-             Array.from(primaryButton.querySelectorAll('[aria-label],[title],svg,[class]'))
-                 .map((el) => [
-                     el.getAttribute('aria-label') || '',
-                     el.getAttribute('title') || '',
-                     typeof el.className === 'string' ? el.className : ''
-                 ].join(' '))
-                 .join(' ')
-         ].join(' ') : '';
-         const primaryIsStop = /stop|cancel|停止|取消/i.test(primaryLabel);
-         const isGenerating = stopButtonVisible || primaryIsStop;
-         const sendButtonEnabled = Boolean(primaryButton && !primaryIsStop &&
-             !primaryButton.classList.contains('ds-button--disabled') &&
-             !primaryButton.hasAttribute('disabled') &&
-             primaryButton.getAttribute('aria-disabled') !== 'true');
-         const completionSignalAvailable = Boolean(primaryButton &&
-             (stopCandidates.length > 0 || primaryIsStop));
-
-         const tEl = last ? last.querySelector('.ds-think-content .ds-markdown') : null;
-         const aEl = last ? last.querySelector('.ds-assistant-message-main-content') : null;
-         return {
-             count: items.length,
-             answerKey: last ? (last.getAttribute('data-virtual-list-item-key') || null) : null,
-             think: tEl ? tEl.innerText : '',
-             answer: aEl ? aEl.innerText : '',
-             isGenerating,
-             sendButtonEnabled,
-             completionSignalAvailable
-         };
-     });
+ async function readState(finalSnapshot = false) {
+     return page.evaluate(readStateInPage, { final: finalSnapshot });
  }
 
  async function clickSend(isCancelled = () => false) {
@@ -321,6 +261,8 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      });
 
      let emittedAnswer = '';
+     let observedAnswer = '';
+     let lastState = before;
      let emittedThink = '';
      let lastChange = Date.now();
      const start = Date.now();
@@ -365,6 +307,8 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
                  const changedKey = Boolean(st.answerKey && st.answerKey !== before.answerKey);
                  emittedThink = !changedKey && before.think && st.think.startsWith(before.think) ? before.think : '';
                  emittedAnswer = '';
+                 observedAnswer = st.answer || '';
+                 lastState = st;
                  thinkOpened = false; // New thinking starts a new content block.
              }
              lastChange = Date.now();
@@ -375,8 +319,14 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              continue;
          }
 
+         lastState = st;
          if (st.think) sawResponseContent = true;
          if (st.answer) sawResponseContent = true;
+         // Track raw visible text for completion detection, independent of Markdown output.
+         if (st.answer !== observedAnswer) {
+             observedAnswer = st.answer || '';
+             lastChange = Date.now();
+         }
 
          if (st.think && st.think.length > emittedThink.length && st.think.startsWith(emittedThink)) {
              const d = st.think.slice(emittedThink.length);
@@ -385,14 +335,13 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              lastChange = Date.now();
          }
 
-         if (st.answer && st.answer.startsWith(emittedAnswer)) {
-             const stableLen = Math.max(0, st.answer.length - HOLD_CHARS);
-             if (stableLen > emittedAnswer.length) {
-                 const d = st.answer.slice(emittedAnswer.length, stableLen);
-                 emittedAnswer = st.answer.slice(0, stableLen);
-                 parser.feed(d);
-                 lastChange = Date.now();
-             }
+         // Buffer tool-enabled turns until completion. For regular streaming, emit
+         // only complete rendered Markdown blocks so already-sent formatting stays stable.
+         const stableMarkdown = typeof st.answerMarkdownStable === 'string' ? st.answerMarkdownStable : '';
+         if (!bufferText && stableMarkdown.startsWith(emittedAnswer) && stableMarkdown.length > emittedAnswer.length) {
+             parser.feed(stableMarkdown.slice(emittedAnswer.length));
+             emittedAnswer = stableMarkdown;
+             lastChange = Date.now();
          }
 
          if (sawNewMessage && sawResponseContent) {
@@ -428,18 +377,32 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
          console.warn('[turn-completion] explicit stop/send completion signal was not observed; used STABLE_MS fallback');
      }
 
-     // Flush the remaining text after the UI has reported completion.
+     // Take a final DOM snapshot so the trailing Markdown block is complete.
+     let fin = lastState;
      try {
-         const fin = await readState();
-         if (fin.answer && fin.answer.startsWith(emittedAnswer) && fin.answer.length > emittedAnswer.length) {
-             parser.feed(fin.answer.slice(emittedAnswer.length));
-             emittedAnswer = fin.answer;
-         }
-         if (fin.think && fin.think.length > emittedThink.length && fin.think.startsWith(emittedThink)) {
-             emitThinking(fin.think.slice(emittedThink.length));
-             emittedThink = fin.think;
-         }
-     } catch (e) {}
+         fin = await readState(true);
+     } catch (error) {
+         console.warn('[markdown] final DOM snapshot failed; using last observed snapshot: ' + (error.message || String(error)));
+     }
+     const finalAnswer = fin.answerMarkdown || fin.answer || '';
+     if (bufferText) {
+         // Tool parsing must use the complete protocol payload without Markdown rewriting.
+         if (finalAnswer) parser.feed(finalAnswer);
+         emittedAnswer = finalAnswer;
+     } else if (finalAnswer.startsWith(emittedAnswer)) {
+         const remaining = finalAnswer.slice(emittedAnswer.length);
+         if (remaining) parser.feed(remaining);
+         emittedAnswer = finalAnswer;
+     } else if (!emittedAnswer) {
+         if (finalAnswer) parser.feed(finalAnswer);
+         emittedAnswer = finalAnswer;
+     } else {
+         console.warn('[markdown] final Markdown differed from the emitted stable prefix; check for a DeepSeek UI change.');
+     }
+     if (fin.think && fin.think.length > emittedThink.length && fin.think.startsWith(emittedThink)) {
+         emitThinking(fin.think.slice(emittedThink.length));
+         emittedThink = fin.think;
+     }
 
      parser.finish();
 
