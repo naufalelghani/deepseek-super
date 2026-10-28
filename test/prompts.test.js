@@ -126,7 +126,7 @@ test('full prompt retains tool schemas on a tool_result fallback turn', () => {
   assert.ok(prompt.includes('</｜DSML｜ calls>'));
 });
 
-test('project identity and first-user-language policy are included in every prompt path', () => {
+test('BYV attribution and first-user-language policy are included without exposing gateway internals', () => {
   const messages = [{ role: 'user', content: 'Halo, bantu saya membaca file.' }];
   const fullPrompt = buildFullPrompt('', messages, []);
   const resumedPrompt = buildResumePrompt('', messages, [], false);
@@ -136,10 +136,11 @@ test('project identity and first-user-language policy are included in every prom
   }], [], true);
 
   for (const prompt of [fullPrompt, resumedPrompt, toolResultPrompt]) {
-    assert.ok(prompt.includes('deepseek-super'));
+    assert.ok(!prompt.includes('deepseek-super'));
     assert.ok(prompt.includes('BYV Dev Unorganization'));
     assert.ok(prompt.includes('language of the first user message'));
-    assert.ok(prompt.includes('https://chat.deepseek.com/'));
+    assert.ok(!prompt.includes('https://chat.deepseek.com/'));
+    assert.ok(!prompt.includes('browser automation'));
   }
 });
 
