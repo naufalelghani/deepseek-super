@@ -14,7 +14,7 @@ For supported, more reliable agent integrations, consider the [official DeepSeek
 
 ## Requirements
 
-- Node.js 18 or later
+- Node.js 22 or later
 - Google Chrome installed
 - A DeepSeek account that can sign in through a browser
 
@@ -77,7 +77,28 @@ Configuration is read from environment variables:
 | `MAX_TURN_MS` | `300000` | Hard maximum duration of a single turn; a timeout is reported as a failure rather than success |
 | `MAX_REPLAY` | `60000` | Maximum replay prompt length in **characters**, not tokens |
 | `MAX_PENDING_TURNS` | `8` | Maximum active-plus-queued browser turns before new requests are rejected as overloaded |
+| `DEEPSEEK_SUPER_DB_PATH` | `./data/deepseek-super.sqlite3` | Path to the local SQLite database used for persistent sessions and request traces |
 | `CORS_ALLOWED_ORIGINS` | Empty | Optional comma-separated list of exact extra browser origins allowed to access the local gateway |
+
+### SQLite state and request tracing
+
+The gateway stores its session-to-DeepSeek-thread mapping and privacy-conscious request traces in a local SQLite database. The default location is `data/deepseek-super.sqlite3`; override it with `DEEPSEEK_SUPER_DB_PATH`. The database uses WAL mode, a bounded busy timeout, foreign-key checks, a schema version, and retention limits for trace data.
+
+Every Messages request gets a `request_id`, returned in the `X-Gateway-Request-ID` response header and printed in the `[REQ]` / `[response]` terminal logs. The database records prompt lengths before and after compaction, message/tool counts, session and thread generations, thread rotation reasons, stop reason, tool-call count, and how the browser completion was detected. It does not store raw prompts, tool inputs, tool results, or API tokens in trace events. The database does contain DeepSeek conversation URLs required for session resumption, so treat it as private local state.
+
+Inspect the latest requests:
+
+```bash
+npm run trace
+```
+
+Inspect one request and its ordered events:
+
+```bash
+npm run trace -- req_...
+```
+
+Stop the gateway before moving or deleting the database. The `data/` directory and SQLite database/WAL files are ignored by Git. For a fresh local trace history, stop the server and delete `data/deepseek-super.sqlite3` along with its `-wal` and `-shm` companions if present.
 
 ### Available model names
 
