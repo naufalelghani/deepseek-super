@@ -197,7 +197,7 @@ function applyForcedTool(prompt, force) {
             '1. Do NOT emit DSML calls/invoke/parameter tags or legacy <TOOL_CALL> tags.',
             '2. Do NOT call any tools. All tools are disabled for this turn.',
             '3. If information is incomplete, answer with what is available and state the limitations.',
-            '4. Respond in the language used in the first user message, unless the user explicitly asks to switch languages.',
+            '4. Respond in the language the user is currently using. If the user switches languages, switch with them unless they explicitly request another language.',
             '',
             prompt
         ].join('\n');
