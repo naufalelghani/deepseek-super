@@ -408,6 +408,10 @@ Remove-Item Env:ANTHROPIC_MODEL
 
 The external route is optional and is not the CI test. Keep API keys in local environment variables and never commit them to a public repository.
 
+## Model catalog and response profiles
+
+The `/v1/models` catalog exposes six request IDs: `deepseek-super`, `claude-mythos-5.1`, `claude-fable-5.1`, `claude-opus-5-5`, `claude-sonnet-5.5`, and `claude-haiku-5.5`. Each ID selects a separate response-style profile in `src/model-profiles.js`; profiles guide tone and approach but do not change the underlying model. Effort settings remain an independent layer. The prompt retains BYV attribution but does not disclose internal project or browser-automation details to the model.
+
 ## Endpoints
 
 - `GET /v1/models`
