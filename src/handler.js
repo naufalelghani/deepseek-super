@@ -96,7 +96,7 @@ function shouldResumeSession(cached, messages, forceFresh = false) {
 }
 
 async function handleMessages(req, res, body, dependencies = {}) {
-  const requestId = uuid('req');
+  const requestId = req.gatewayRequestId || uuid('req');
   const messageId = uuid('msg');
   req.gatewayRequestId = requestId;
   const ensurePage = dependencies.ensurePage || defaultEnsurePage;
@@ -162,7 +162,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
     : clientTools;
   const conversationTooLong = isConversationTooLong(messages);
   if (conversationTooLong) {
-    console.warn('[long-conv] message_count=' + messages.length +
+    console.warn('[long-conv] request_id=' + requestId + ' message_count=' + messages.length +
       '; starting a fresh DeepSeek thread with a bounded replay so tool use can continue');
   }
 
@@ -175,8 +175,20 @@ async function handleMessages(req, res, body, dependencies = {}) {
     }
   }
   if (isCancelled()) return;
-  await ensurePage();
-  if (isCancelled()) return;
+  try {
+    await ensurePage();
+  } catch (error) {
+    traceStore('finishRequest', {
+      requestId,
+      status: error && error.name === 'AbortError' ? 'cancelled' : 'error',
+      errorCode: error && (error.type || error.name) || 'error',
+    });
+    throw error;
+  }
+  if (isCancelled()) {
+    traceStore('finishRequest', { requestId, status: 'cancelled' });
+    return;
+  }
 
   let answer, thinking, toolCalls;
   let activeSession = sessionInfo || null;
@@ -210,7 +222,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
         console.warn('[session] failed to resume cached conversation:', error.message || String(error));
       }
       if (resumed) {
-        console.log('[session] resumed cached conversation; tool_result=' + lastHasToolResult);
+        console.log('[session] request_id=' + requestId + ' resumed cached conversation; tool_result=' + lastHasToolResult);
         traceEvent('thread.resumed', requestId, cached, {
           message_count: messages.length,
           thread_generation: cached.generation,
@@ -239,7 +251,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
     }
 
     if (untruncatedPrompt.length > MAX_REPLAY) {
-      console.warn('[prompt-truncate] input_chars=' + untruncatedPrompt.length +
+      console.warn('[prompt-truncate] request_id=' + requestId + ' input_chars=' + untruncatedPrompt.length +
         ' cap_chars=' + MAX_REPLAY +
         ' omitted_chars=' + (untruncatedPrompt.length - MAX_REPLAY) +
         '; the replay includes an explicit warning marker');
@@ -525,7 +537,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
     toolCallCount: toolCalls.length,
     completionSource,
   });
-  console.log('[response] stop_reason=' + stopReason + ' tool_calls=' + toolCalls.length + ' stream=' + wantStream);
+  console.log('[response] request_id=' + requestId + ' stop_reason=' + stopReason + ' tool_calls=' + toolCalls.length + ' stream=' + wantStream);
   if (wantStream) {
     sink.finish(stopReason);
     return res.end();
