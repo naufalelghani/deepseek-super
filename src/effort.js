@@ -32,7 +32,7 @@ function effortPrompt(effort) {
     'The client selected effort="' + effort + '". This gateway translates effort into response-style guidance; it does not change DeepSeek model weights or enable Claude-native reasoning.',
     ...EFFORT_GUIDANCE[effort],
     'These instructions do not override the user request, safety requirements, tool-call protocol, or any explicitly required output format.',
-  ].join('\\n');
+  ].join('\n');
 }
 
 function effortCapabilities() {
