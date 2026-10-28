@@ -40,7 +40,7 @@ function containsToolMarkup(value) {
   return typeof value === 'string' &&
     /<\s*(?:TOOL_CALL\b|[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls|invoke|parameter)\b)/i.test(value);
 }
-const { estimateInputTokens, estimateOutputTokens } = require('./anthropic-contract');
+const { estimateInputTokens, estimateOutputTokens, ORIGINAL_SYSTEM } = require('./anthropic-contract');
 
 let traceStoreWarningLogged = false;
 
@@ -166,7 +166,8 @@ async function handleMessages(req, res, body, dependencies = {}) {
       '; starting a fresh DeepSeek thread with a bounded replay so tool use can continue');
   }
 
-  const key = sessionKey(system, messages);
+  const stableSystem = body[ORIGINAL_SYSTEM] === undefined ? system : body[ORIGINAL_SYSTEM];
+  const key = sessionKey(stableSystem, messages);
   let sessionInfo = traceStore('ensureSession', key) || defaultEnsureSession(key);
   if (sessionInfo) {
     traceStore('linkRequestToSession', requestId, sessionInfo, { resumed: false });
