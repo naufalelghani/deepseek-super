@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { StreamParser, tryParseJSON, extractToolCallsFromText } = require('../src/tool-parser');
+const { StreamParser, tryParseJSON, extractToolCallsFromText, parseToolCallsFromText } = require('../src/tool-parser');
 
 test('tryParseJSON parses valid JSON and repairs common invalid backslashes', () => {
   assert.deepEqual(tryParseJSON('{"tool":"Bash","arguments":{"command":"pwd"}}'), { tool: 'Bash', arguments: { command: 'pwd' } });
@@ -186,4 +186,28 @@ test('stripDsmlTags removes an otherwise nameless DSML tag', () => {
   const { stripDsmlTags } = require('../src/tool-parser');
   assert.equal(stripDsmlTags('before </｜DSML｜> after'), 'before  after');
   assert.equal(stripDsmlTags('before <｜DSML｜> after'), 'before  after');
+});
+
+
+test('parseToolCallsFromText recovers a valid copied DSML response', () => {
+  const copied = 'Preparing files. <｜DSML｜ calls>' +
+    '<｜DSML｜ invoke name="Bash"><｜DSML｜ parameter name="command" string="true">pwd</｜DSML｜ parameter></｜DSML｜ invoke>' +
+    '</｜DSML｜ calls>';
+  const result = parseToolCallsFromText(copied);
+
+  assert.deepEqual(result.calls, [{ name: 'Bash', input: { command: 'pwd' } }]);
+  assert.equal(result.invalidToolCall, false);
+  assert.equal(result.text, 'Preparing files.');
+  assert.deepEqual(result.extractionErrors, []);
+});
+
+test('parseToolCallsFromText marks malformed copied DSML as invalid', () => {
+  const copied = '<｜DSML｜ calls><｜DSML｜ invoke name="Bash">' +
+    '<｜DSML｜ parameter name="command" string="false">not-json</｜DSML｜ parameter>' +
+    '</｜DSML｜ invoke></｜DSML｜ calls>';
+  const result = parseToolCallsFromText(copied);
+
+  assert.deepEqual(result.calls, []);
+  assert.equal(result.invalidToolCall, true);
+  assert.ok(result.parseErrors.length > 0);
 });
