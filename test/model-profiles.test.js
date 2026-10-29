@@ -101,8 +101,9 @@ test('Haiku profile prioritizes concise execution, humane tone, consistent safet
   assert.match(prompt, /Brevity is not permission to skip necessary work/i);
   assert.match(prompt, /smallest safe change/i);
   assert.match(prompt, /most targeted available verification/i);
-  assert.match(prompt, /warm, conversational tone/i);
+  assert.match(prompt, /efficient for focused requests/i);
   assert.match(prompt, /safety boundaries consistently across the whole conversation/i);
+  assert.doesNotMatch(prompt, /TONE AND RESPONSE FORMATTING|warm, respectful, conversational tone|Use headings, bold emphasis, bullets/i);
   assert.match(prompt, /current authoritative sources when available/i);
   assert.match(prompt, /never guess a dose from memory/i);
   assert.doesNotMatch(prompt, /copyright|intellectual property|anthropic_reminders/i);
