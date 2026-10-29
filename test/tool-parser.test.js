@@ -169,3 +169,21 @@ test('incomplete DSML wrappers retain parseable invokes for bounded recovery', (
   assert.equal(parser.incompleteToolBlock, true);
   assert.deepEqual(parser.toolCalls(), [{ name: 'Bash', input: { command: 'pwd' } }]);
 });
+
+
+test('StreamParser tolerates an invoke closing tag with its name omitted', () => {
+  const parser = new StreamParser(() => {});
+  parser.feed('<｜DSML｜ calls><｜DSML｜ invoke name="Bash">' +
+    '<｜DSML｜ parameter name="command" string="true">pwd</｜DSML｜ parameter>' +
+    '</｜DSML｜></｜DSML｜ calls>');
+  parser.finish();
+
+  assert.deepEqual(parser.toolCalls(), [{ name: 'Bash', input: { command: 'pwd' } }]);
+  assert.equal(parser.parseErrors.length, 0);
+});
+
+test('stripDsmlTags removes an otherwise nameless DSML tag', () => {
+  const { stripDsmlTags } = require('../src/tool-parser');
+  assert.equal(stripDsmlTags('before </｜DSML｜> after'), 'before  after');
+  assert.equal(stripDsmlTags('before <｜DSML｜> after'), 'before  after');
+});
