@@ -86,10 +86,16 @@ function readStateInPage(options = {}) {
         if (!root) return { markdown: '', stableMarkdown: '', protocolOutput: false };
         const rawText = root.innerText || root.textContent || '';
 
-        // Keep tool protocols unchanged; fences or delimiter edits can break parsing.
+        // Keep pure tool-protocol output byte-for-byte stable. When protocol markup
+        // shares a rendered response with rich Markdown (especially HTML tables),
+        // serialize the DOM instead: innerText flattens cells and loses Markdown pipes.
         const protocolPattern = /<\s*\/?\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls|invoke|parameter)\b/i;
         const legacyToolPattern = /<\s*\/?\s*TOOL_CALL\b/i;
-        if (protocolPattern.test(rawText) || legacyToolPattern.test(rawText)) {
+        const hasProtocolOutput = protocolPattern.test(rawText) || legacyToolPattern.test(rawText);
+        const hasRichMarkdown = Boolean(root.querySelector(
+            'table,h1,h2,h3,h4,h5,h6,ul,ol,pre,blockquote,hr,strong,b,em,i,del,s,strike,code,a[href],img[src],sub,sup,.katex-display'
+        ));
+        if (hasProtocolOutput && !hasRichMarkdown) {
             return {
                 markdown: rawText,
                 stableMarkdown: isFinal ? rawText : rawText.slice(0, Math.max(0, rawText.length - 64)),
@@ -243,13 +249,13 @@ function readStateInPage(options = {}) {
 
         const units = collectUnits(root);
         const markdown = units.join('\n\n').trim() || rawText.trim();
-        if (isFinal) return { markdown, stableMarkdown: markdown, protocolOutput: false };
+        if (isFinal) return { markdown, stableMarkdown: markdown, protocolOutput: hasProtocolOutput };
         // Hold the active trailing block; earlier block serialization is append-only.
         const stableUnits = units.slice(0, -1);
         return {
             markdown,
             stableMarkdown: stableUnits.length ? stableUnits.join('\n\n') + '\n\n' : '',
-            protocolOutput: false
+            protocolOutput: hasProtocolOutput
         };
     }
 
