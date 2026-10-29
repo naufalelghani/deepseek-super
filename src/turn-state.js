@@ -36,6 +36,18 @@ function shouldUseStableFallback(state, sawGeneratingSignal, idleMs, stableMs) {
 }
 
 
+function isComposerRestoredCompletionCandidate(state, sawComposerUnavailableSignal, idleMs, stableMs) {
+  return Boolean(
+    sawComposerUnavailableSignal === true &&
+    state &&
+    state.composerReady === true &&
+    state.isGenerating === false &&
+    Number.isFinite(idleMs) &&
+    Number.isFinite(stableMs) &&
+    idleMs >= stableMs
+  );
+}
+
 function isIdleCompletionCandidate(state, sawGeneratingSignal, idleMs, stableMs) {
   return Boolean(
     sawGeneratingSignal !== true &&
@@ -49,4 +61,4 @@ function isIdleCompletionCandidate(state, sawGeneratingSignal, idleMs, stableMs)
   );
 }
 
-module.exports = { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, isIdleCompletionCandidate };
+module.exports = { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, isIdleCompletionCandidate, isComposerRestoredCompletionCandidate };
