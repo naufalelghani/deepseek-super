@@ -4,7 +4,7 @@ const { chromium } = require('playwright');
 const { readStateInPage } = require('./browser-dom');
 const { PROFILE_DIR, POLL_MS, STABLE_MS, MAX_TURN_MS, MAX_PENDING_TURNS } = require('./config');
 const { StreamParser, extractToolCallsFromText } = require('./tool-parser');
-const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, isIdleCompletionCandidate } = require('./turn-state');
+const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, isIdleCompletionCandidate, isComposerRestoredCompletionCandidate } = require('./turn-state');
 
  let ctx = null;
  let page = null;
@@ -55,6 +55,9 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              const newContext = await chromium.launchPersistentContext(PROFILE_DIR, {
                  headless: false,
                  channel: 'chrome',
+                // Keep Chrome's sandbox enabled; Playwright otherwise adds --no-sandbox,
+                // which weakens browser isolation and triggers Chrome's warning banner.
+                chromiumSandbox: true,
                  viewport: { width: 1280, height: 900 },
                  args: ['--disable-blink-features=AutomationControlled'],
                  ignoreDefaultArgs: ['--enable-automation'],
@@ -288,6 +291,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      let sawNewMessage = false;
      let sawResponseContent = false;
      let sawGeneratingSignal = false;
+     let sawComposerUnavailableSignal = false;
      let completionSignalStreak = 0;
      let usedStableFallback = false;
      let completionSource = 'unknown';
@@ -316,6 +320,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              throw new Error('Could not read the DeepSeek UI state: ' + (error.message || String(error)));
          }
          if (st.isGenerating) sawGeneratingSignal = true;
+         if (st.composerReady === false) sawComposerUnavailableSignal = true;
          lastState = st;
 
          if (!sawNewMessage) {
@@ -367,10 +372,17 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              const idleMs = Date.now() - lastChange;
              const explicitCompletion = sawGeneratingSignal && isResponseComplete(st, sawGeneratingSignal);
              const inferredCompletion = isIdleCompletionCandidate(st, sawGeneratingSignal, idleMs, STABLE_MS);
-             if (explicitCompletion || inferredCompletion) {
+             // DeepSeek may temporarily remove the composer while generating. Its
+             // restoration plus a stable answer is a useful completion signal even
+             // when the empty input keeps the Send button disabled.
+             const composerRestoredCompletion = isComposerRestoredCompletionCandidate(
+                 st, sawComposerUnavailableSignal, idleMs, STABLE_MS
+             );
+             if (explicitCompletion || inferredCompletion || composerRestoredCompletion) {
                  completionSignalStreak++;
                  if (completionSignalStreak >= 3) {
-                     completionSource = explicitCompletion ? 'ui_explicit' : 'ui_idle_inferred';
+                     completionSource = explicitCompletion ? 'ui_explicit' :
+                         composerRestoredCompletion ? 'ui_composer_restored' : 'ui_idle_inferred';
                      break;
                  }
              } else {
@@ -387,6 +399,8 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
                      sendButtonEnabled: st.sendButtonEnabled,
                      completionSignalAvailable: st.completionSignalAvailable,
                      uiState: st.completionDebug || null,
+                     sawComposerUnavailableSignal,
+                     composerReady: st.composerReady === true,
                      idleMs,
                      stableMs: STABLE_MS,
                      answerChars: (st.answer || '').length
