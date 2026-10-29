@@ -83,7 +83,7 @@ function readStateInPage(options = {}) {
         : null;
 
     function serializeMarkdown(root, isFinal) {
-        if (!root) return { markdown: '', stableMarkdown: '', protocolOutput: false };
+        if (!root) return { markdown: '', stableMarkdown: '', protocolOutput: false, hasRichMarkdown: false };
         const rawText = root.innerText || root.textContent || '';
 
         // Keep pure tool-protocol output byte-for-byte stable. When protocol markup
@@ -99,7 +99,8 @@ function readStateInPage(options = {}) {
             return {
                 markdown: rawText,
                 stableMarkdown: isFinal ? rawText : rawText.slice(0, Math.max(0, rawText.length - 64)),
-                protocolOutput: true
+                protocolOutput: true,
+                hasRichMarkdown
             };
         }
 
@@ -249,13 +250,14 @@ function readStateInPage(options = {}) {
 
         const units = collectUnits(root);
         const markdown = units.join('\n\n').trim() || rawText.trim();
-        if (isFinal) return { markdown, stableMarkdown: markdown, protocolOutput: hasProtocolOutput };
+        if (isFinal) return { markdown, stableMarkdown: markdown, protocolOutput: hasProtocolOutput, hasRichMarkdown };
         // Hold the active trailing block; earlier block serialization is append-only.
         const stableUnits = units.slice(0, -1);
         return {
             markdown,
             stableMarkdown: stableUnits.length ? stableUnits.join('\n\n') + '\n\n' : '',
-            protocolOutput: hasProtocolOutput
+            protocolOutput: hasProtocolOutput,
+            hasRichMarkdown
         };
     }
 
@@ -269,6 +271,7 @@ function readStateInPage(options = {}) {
         answerMarkdown: result.markdown,
         answerMarkdownStable: result.stableMarkdown,
         answerIsProtocol: result.protocolOutput,
+        answerHasRichMarkdown: result.hasRichMarkdown,
         isGenerating,
         sendButtonEnabled,
         composerReady,
