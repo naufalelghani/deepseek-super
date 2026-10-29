@@ -2,6 +2,14 @@
 
 const { sha, MAX_REPLAY } = require('./config');
 
+const CLAUDE_MAX_REPLAY = 150000;
+
+function getMaxReplayForModel(model, fallbackMaxReplay = MAX_REPLAY) {
+    return typeof model === 'string' && /^claude-/i.test(model)
+        ? CLAUDE_MAX_REPLAY
+        : fallbackMaxReplay;
+}
+
  function blocksOf(content) {
      if (content == null) return [];
      if (typeof content === 'string') return [{ type: 'text', text: content }];
@@ -178,9 +186,9 @@ function compactToolSection(text, maxLength) {
     return text.slice(0, start) + compacted + text.slice(endIndex);
 }
 
-function truncateReplay(text) {
+function truncateReplay(text, maxReplay = MAX_REPLAY) {
     if (typeof text !== 'string') return '';
-    if (text.length <= MAX_REPLAY) return text;
+    if (text.length <= maxReplay) return text;
 
     const warning = '[WARNING: conversation replay was truncated; oversized system instructions, history, and tool results were compacted where needed. Project policy, available tool schemas, and the latest request were prioritized.]';
     const policyStart = text.indexOf('### ASSISTANT IDENTITY');
@@ -188,8 +196,8 @@ function truncateReplay(text) {
     // Keep the bounded head/tail strategy for unstructured prompt formats.
     if (policyStart === -1) {
         const marker = '\n\n[WARNING: conversation replay was truncated; middle content was omitted and earlier context may be missing.]\n\n';
-        const headLength = Math.min(4000, Math.max(0, MAX_REPLAY - marker.length));
-        const tailLength = Math.max(0, MAX_REPLAY - headLength - marker.length);
+        const headLength = Math.min(4000, Math.max(0, maxReplay - marker.length));
+        const tailLength = Math.max(0, maxReplay - headLength - marker.length);
         return text.slice(0, headLength) + marker +
             (tailLength > 0 ? text.slice(-tailLength) : '');
     }
@@ -212,11 +220,11 @@ function truncateReplay(text) {
     const policy = text.slice(policyStart, endIndex).trim();
     const restOriginal = policyEnd === -1 ? '' : text.slice(endIndex).trimStart();
 
-    let systemLimit = Math.min(8000, Math.floor(MAX_REPLAY * 0.16));
-    let historyLimit = Math.min(5000, Math.floor(MAX_REPLAY * 0.08));
-    let resultLimit = Math.min(12000, Math.floor(MAX_REPLAY * 0.20));
+    let systemLimit = Math.min(8000, Math.floor(maxReplay * 0.16));
+    let historyLimit = Math.min(5000, Math.floor(maxReplay * 0.08));
+    let resultLimit = Math.min(12000, Math.floor(maxReplay * 0.20));
 
-    const toolSectionLimit = Math.max(1000, Math.min(28000, Math.floor(MAX_REPLAY * 0.48)));
+    const toolSectionLimit = Math.max(1000, Math.min(28000, Math.floor(maxReplay * 0.48)));
     const compactedRestOriginal = compactToolSection(restOriginal, toolSectionLimit);
 
     const render = () => {
@@ -267,11 +275,11 @@ function truncateReplay(text) {
     let replay = render();
     for (const limitName of ['historyLimit', 'resultLimit', 'systemLimit']) {
         let attempts = 0;
-        while (replay.length > MAX_REPLAY && attempts < 5) {
+        while (replay.length > maxReplay && attempts < 5) {
             const limits = { historyLimit, resultLimit, systemLimit };
             const current = limits[limitName];
             if (current <= 0) break;
-            const excess = replay.length - MAX_REPLAY;
+            const excess = replay.length - maxReplay;
             const next = Math.max(0, current - Math.max(excess + 32, Math.ceil(current / 2)));
             if (limitName === 'historyLimit') historyLimit = next;
             else if (limitName === 'resultLimit') resultLimit = next;
@@ -281,7 +289,7 @@ function truncateReplay(text) {
         }
     }
 
-    if (replay.length > MAX_REPLAY) {
+    if (replay.length > maxReplay) {
         // Last resort for unusually large tool catalogs: sacrifice system/history
         // context first, then bound the remaining tool/request section from both ends.
         const rest = truncateMarkedSection(
@@ -311,7 +319,7 @@ function truncateReplay(text) {
             0,
             '[...tool result omitted...]\n'
         ).trim();
-        const budget = Math.max(0, MAX_REPLAY - policy.length - warning.length - 4);
+        const budget = Math.max(0, maxReplay - policy.length - warning.length - 4);
         const boundedRest = truncateTextPreservingEnds(
             rest,
             budget,
@@ -320,14 +328,14 @@ function truncateReplay(text) {
         replay = [policy, warning, boundedRest].filter(Boolean).join('\n\n');
     }
 
-    if (replay.length <= MAX_REPLAY) return replay;
+    if (replay.length <= maxReplay) return replay;
 
     // A very small custom MAX_REPLAY may not fit all mandatory text.
     return truncateTextPreservingEnds(
         replay,
-        MAX_REPLAY,
+        maxReplay,
         '\n[...critical replay content truncated to fit MAX_REPLAY...]\n'
     );
 }
 
-module.exports = { blocksOf, flattenContent, renderMessage, sessionKey, truncateReplay, truncateTextPreservingEnds };
+module.exports = { blocksOf, flattenContent, renderMessage, sessionKey, truncateReplay, truncateTextPreservingEnds, CLAUDE_MAX_REPLAY, getMaxReplayForModel };
