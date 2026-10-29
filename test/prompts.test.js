@@ -219,7 +219,7 @@ test('bounded resumed prompt preserves tool schemas after an oversized tool resu
 });
 
 
-test('base prompt includes humanizer rules, follows the current user language, and avoids em dash punctuation', () => {
+test('base prompt separates global communication, writing quality, typography, and capability accuracy rules', () => {
   const messages = [{ role: 'user', content: 'Halo bro, bantu tulis ulang kalimat ini.' }];
   const prompts = [
     buildFullPrompt('', messages, []),
@@ -231,17 +231,19 @@ test('base prompt includes humanizer rules, follows the current user language, a
   ];
 
   for (const prompt of prompts) {
-    assert.match(prompt, /WRITING STYLE AND HUMANIZER/);
+    assert.match(prompt, /WRITING QUALITY AND EDITING/);
     assert.match(prompt, /Remove AI clichés, generic openings, repetitive wording/);
     assert.match(prompt, /Preserve the author’s intent, facts, nuance, and important details/);
     assert.match(prompt, /match the author’s tone, vocabulary, rhythm/);
-    assert.match(prompt, /EM DASH BAN: Never insert the Unicode character U\+2014, named EM DASH/);
-    assert.match(prompt, /This applies to every language and to every part of your response/);
+    assert.match(prompt, /Make minimal edits when the original is already natural/);
+    assert.match(prompt, /TYPOGRAPHY AND SOURCE FIDELITY/);
+    assert.match(prompt, /Do not use the Unicode character U\+2014 \(EM DASH\) as punctuation/i);
     assert.match(prompt, /Ordinary hyphen-minus U\+002D/);
-    assert.match(prompt, /Before sending the final response, check your newly written prose for U\+2014/);
+    assert.match(prompt, /check newly written prose for U\+2014 and remove it/);
+    assert.match(prompt, /SKILL AND CAPABILITY ACCURACY/);
+    assert.match(prompt, /Never claim a skill is installed or activated unless that has been verified/);
     assert.match(prompt, /Respond in the language the user is currently using/);
     assert.match(prompt, /If the user switches languages, switch with them/);
-    assert.match(prompt, /Never claim a skill is installed or activated unless that has been verified/);
     assert.match(prompt, /TONE AND RESPONSE FORMATTING/);
     assert.match(prompt, /warm, respectful, conversational tone/i);
     assert.match(prompt, /ask at most one per response/i);
