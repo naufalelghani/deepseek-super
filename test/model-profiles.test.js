@@ -74,7 +74,7 @@ test('coding-oriented profiles require appropriate scope control and verificatio
     assert.match(prompt, /without overstating success|without evidence|calling the task complete/i);
   }
   assert.match(sonnet, /Keep changes within the requested scope/);
-  assert.match(opus, /long-running agent workflows/);
+  assert.match(opus, /long-running workflows/);
   assert.match(haiku, /Brevity is not permission to stop early/);
 });
 
