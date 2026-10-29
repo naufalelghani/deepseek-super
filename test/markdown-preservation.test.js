@@ -88,6 +88,7 @@ test('preserves Markdown tables inside mixed DSML Write tool-call output', async
 
         const state = await page.evaluate(readStateInPage, { final: true });
         assert.equal(state.answerIsProtocol, true);
+        assert.equal(state.answerHasRichMarkdown, true);
         assert.match(state.answerMarkdown, /<｜DSML｜ invoke name="Write">/);
         assert.match(state.answerMarkdown, /\| No \| Bagian \| Isi utama \|/);
         assert.match(state.answerMarkdown, /\| --- \| --- \| --- \|/);
