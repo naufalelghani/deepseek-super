@@ -242,6 +242,12 @@ test('base prompt includes humanizer rules, follows the current user language, a
     assert.match(prompt, /Respond in the language the user is currently using/);
     assert.match(prompt, /If the user switches languages, switch with them/);
     assert.match(prompt, /Never claim a skill is installed or activated unless that has been verified/);
+    assert.match(prompt, /TONE AND RESPONSE FORMATTING/);
+    assert.match(prompt, /warm, respectful, conversational tone/i);
+    assert.match(prompt, /ask at most one per response/i);
+    assert.match(prompt, /Use headings, bold emphasis, bullets, and numbered lists sparingly/i);
+    assert.match(prompt, /When declining a request, do not use bullets/i);
+    assert.match(prompt, /verify that it is actually available before claiming to inspect it/i);
     assert.doesNotMatch(prompt, /\u2014/);
   }
 });
