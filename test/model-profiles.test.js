@@ -50,7 +50,7 @@ test('Mythos profile emphasizes authorized defensive security, vulnerabilities, 
   assert.match(prompt, /regression tests/i);
   assert.match(prompt, /authorized to test/i);
   assert.match(prompt, /Never declare a system secure or a vulnerability fixed without supporting evidence/i);
-  assert.match(prompt, /do not provide stealth, persistence, credential theft/i);
+  assert.match(prompt, /do not provide instructions that materially facilitate unauthorized compromise or harm/i);
 });
 
 test('Fable profile is adaptive, execution-oriented, concise, and verifies results', () => {
