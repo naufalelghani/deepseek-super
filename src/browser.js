@@ -59,8 +59,6 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
                 // which weakens browser isolation and triggers Chrome's warning banner.
                 chromiumSandbox: true,
                  viewport: { width: 1280, height: 900 },
-                 args: ['--disable-blink-features=AutomationControlled'],
-                 ignoreDefaultArgs: ['--enable-automation'],
              });
 
              try {
