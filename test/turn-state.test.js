@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, isIdleCompletionCandidate } = require('../src/turn-state');
+const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, isIdleCompletionCandidate, isComposerRestoredCompletionCandidate } = require('../src/turn-state');
 
 test('a user-message count increase alone is not a fresh assistant response', () => {
   assert.equal(hasNewAssistantResponse({ answerKey: 'assistant-1', answer: 'bad output', count: 4 }, { answerKey: 'assistant-1', answer: 'bad output', count: 5 }), false);
@@ -66,4 +66,14 @@ test('idle completion can be inferred from available UI controls after a stable 
   assert.equal(isIdleCompletionCandidate({ ...complete, isGenerating: true }, false, 9000, 2000), false);
   assert.equal(isIdleCompletionCandidate({ ...complete, sendButtonEnabled: false }, false, 9000, 2000), false);
   assert.equal(isIdleCompletionCandidate(complete, true, 9000, 2000), false);
+});
+
+
+test('restored composer plus a stable answer can confirm completion when Send remains disabled', () => {
+  const restored = { composerReady: true, isGenerating: false, sendButtonEnabled: false };
+  assert.equal(isComposerRestoredCompletionCandidate(restored, true, 1999, 2000), false);
+  assert.equal(isComposerRestoredCompletionCandidate(restored, true, 2000, 2000), true);
+  assert.equal(isComposerRestoredCompletionCandidate(restored, false, 5000, 2000), false);
+  assert.equal(isComposerRestoredCompletionCandidate({ ...restored, composerReady: false }, true, 5000, 2000), false);
+  assert.equal(isComposerRestoredCompletionCandidate({ ...restored, isGenerating: true }, true, 5000, 2000), false);
 });
