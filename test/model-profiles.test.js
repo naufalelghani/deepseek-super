@@ -70,7 +70,7 @@ test('coding-oriented profiles require appropriate scope control and verificatio
   const opus = modelProfilePrompt('claude-opus-5-5');
   const haiku = modelProfilePrompt('claude-haiku-5-5');
   for (const prompt of [sonnet, opus, haiku]) {
-    assert.match(prompt, /run relevant tests|run the most relevant tests|run the most targeted available verification/i);
+    assert.match(prompt, /run relevant tests|run the most relevant tests|run relevant checks|run the most targeted available verification/i);
     assert.match(prompt, /without overstating success|without evidence|calling the task complete/i);
   }
   assert.match(sonnet, /Keep changes within the requested scope/);
