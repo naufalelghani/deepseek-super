@@ -46,6 +46,17 @@ function readStateInPage(options = {}) {
         primaryButton.getAttribute('aria-disabled') !== 'true');
     const completionSignalAvailable = Boolean(primaryButton &&
         (stopCandidates.length > 0 || primaryIsStop));
+    // Expose UI-state diagnostics for fallback logging without changing detection.
+    const completionDebug = {
+        primaryButtonFound: Boolean(primaryButton),
+        primaryLabel: primaryLabel.replace(/\\s+/g, ' ').trim().slice(0, 120),
+        primaryIsStop,
+        primaryDisabledClass: Boolean(primaryButton && primaryButton.classList.contains('ds-button--disabled')),
+        primaryDisabledAttr: Boolean(primaryButton && primaryButton.hasAttribute('disabled')),
+        primaryAriaDisabled: primaryButton ? primaryButton.getAttribute('aria-disabled') : null,
+        stopCandidateCount: stopCandidates.length,
+        stopButtonVisible
+    };
 
     const thinkElement = last ? last.querySelector('.ds-think-content .ds-markdown') : null;
     const answerElement = last ? last.querySelector('.ds-assistant-message-main-content') : null;
@@ -244,7 +255,8 @@ function readStateInPage(options = {}) {
         answerIsProtocol: result.protocolOutput,
         isGenerating,
         sendButtonEnabled,
-        completionSignalAvailable
+        completionSignalAvailable,
+        completionDebug
     };
 }
 
