@@ -27,7 +27,7 @@ const PROJECT_AND_LANGUAGE_INSTRUCTIONS = [
     'When referencing agent skills, follow supported skill formats and conventions. Never claim a skill is installed or activated unless that has been verified.'
 ].join('\n');
 
-function originalUserRequestBlock(messages) {
+function originalUserRequestBlock(messages, maxReplay = MAX_REPLAY) {
     const original = messages.find((message) =>
         message.role === 'user' &&
         !blocksOf(message.content).some((block) => block.type === 'tool_result')
@@ -35,7 +35,7 @@ function originalUserRequestBlock(messages) {
     if (!original) return '';
     const request = renderMessage(original);
     if (!request) return '';
-    const maxLength = Math.max(1024, Math.min(12000, Math.floor(MAX_REPLAY * 0.2)));
+    const maxLength = Math.max(1024, Math.min(12000, Math.floor(maxReplay * 0.2)));
     return '=== ORIGINAL USER REQUEST ===\n' +
         truncateTextPreservingEnds(request, maxLength, '\n[...middle of original user request omitted...]\n');
 }
@@ -100,7 +100,7 @@ function toolsToPrompt(tools) {
     return lines.join('\n');
 }
 
-function buildFullPrompt(system, messages, tools) {
+function buildFullPrompt(system, messages, tools, maxReplay = MAX_REPLAY) {
     const parts = [];
     if (system) parts.push('### SYSTEM\n' + flattenContent(system));
     parts.push(PROJECT_AND_LANGUAGE_INSTRUCTIONS);
@@ -123,7 +123,7 @@ function buildFullPrompt(system, messages, tools) {
 
     if (lastHasToolResult) {
         parts.push('=== TOOL RESULTS ===\n' + renderMessage(last));
-        const originalRequest = originalUserRequestBlock(messages);
+        const originalRequest = originalUserRequestBlock(messages, maxReplay);
         if (originalRequest) parts.push(originalRequest);
         parts.push([
             '=== INSTRUCTIONS AFTER TOOL RESULTS ===',
@@ -139,7 +139,7 @@ function buildFullPrompt(system, messages, tools) {
     return parts.join('\n\n');
 }
 
-function buildResumePrompt(system, messages, tools, isToolResultTurn) {
+function buildResumePrompt(system, messages, tools, isToolResultTurn, maxReplay = MAX_REPLAY) {
     const last = messages[messages.length - 1] || { role: 'user', content: '' };
 
     if (isToolResultTurn) {
@@ -156,14 +156,14 @@ function buildResumePrompt(system, messages, tools, isToolResultTurn) {
         // often appear at either boundary; the outer replay cap still bounds total size.
         parts.push(truncateTextPreservingEnds(
             renderedToolResult,
-            Math.max(1024, Math.floor(MAX_REPLAY * 0.6))
+            Math.max(1024, Math.floor(maxReplay * 0.6))
         ));
         parts.push('');
         // Put the tool contract after potentially large results so bounded replay
         // truncation keeps the schemas needed for the next action.
         if (toolPrompt) parts.push('=== TOOLS AVAILABLE FOR THE NEXT STEP ===\n' + toolPrompt);
         parts.push('');
-        const originalRequest = originalUserRequestBlock(messages);
+        const originalRequest = originalUserRequestBlock(messages, maxReplay);
         if (originalRequest) parts.push(originalRequest);
         parts.push('=== INSTRUCTIONS AFTER TOOL RESULTS ===');
         parts.push(...TOOL_RESULT_INSTRUCTIONS);
