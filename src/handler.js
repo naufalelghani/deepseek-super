@@ -2,7 +2,7 @@
 
 const { MODEL_NAME, MAX_REPLAY, sha, uuid } = require('./config');
 const { getStateStore } = require('./state-store');
-const { blocksOf, sessionKey, renderMessage, truncateReplay } = require('./content');
+const { blocksOf, sessionKey, renderMessage, truncateReplay, getMaxReplayForModel } = require('./content');
 const { buildFullPrompt, buildResumePrompt, parseToolChoice, applyForcedTool } = require('./prompts');
 const {
   DEEPSEEK_WEB_TOOLS,
@@ -136,6 +136,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
   const clientTools = Array.isArray(body.tools) ? body.tools : [];
   const wantStream = body.stream === true;
   const model = body.model || MODEL_NAME;
+  const maxReplay = getMaxReplayForModel(model, MAX_REPLAY);
 
   if (messages.length === 0) {
     return jsonError(res, 400, 'invalid_request_error', 'The messages array must not be empty.');
@@ -246,7 +247,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
 
     let untruncatedPrompt;
     if (resumed) {
-      untruncatedPrompt = buildResumePrompt(system, messages, tools, lastHasToolResult);
+      untruncatedPrompt = buildResumePrompt(system, messages, tools, lastHasToolResult, maxReplay);
     } else {
       if (cached && cached.url) {
         console.warn(conversationTooLong
@@ -257,16 +258,16 @@ async function handleMessages(req, res, body, dependencies = {}) {
         requestId, cached, { reason: rotationReason, message_count: messages.length },
         cached && cached.url ? 'warn' : 'info');
       await gotoNewChat();
-      untruncatedPrompt = buildFullPrompt(system, messages, tools);
+      untruncatedPrompt = buildFullPrompt(system, messages, tools, maxReplay);
     }
 
-    if (untruncatedPrompt.length > MAX_REPLAY) {
+    if (untruncatedPrompt.length > maxReplay) {
       console.warn('[prompt-truncate] request_id=' + requestId + ' input_chars=' + untruncatedPrompt.length +
-        ' cap_chars=' + MAX_REPLAY +
-        ' omitted_chars=' + (untruncatedPrompt.length - MAX_REPLAY) +
+        ' cap_chars=' + maxReplay +
+        ' omitted_chars=' + (untruncatedPrompt.length - maxReplay) +
         '; the replay includes an explicit warning marker');
     }
-    let prompt = truncateReplay(untruncatedPrompt);
+    let prompt = truncateReplay(untruncatedPrompt, maxReplay);
     const replayPromptChars = prompt.length;
     prompt = applyForcedTool(prompt, force);
     const profileInstruction = modelProfilePrompt(model);
@@ -275,10 +276,11 @@ async function handleMessages(req, res, body, dependencies = {}) {
     if (effortInstruction) prompt += '\n\n' + effortInstruction;
     traceStore('recordPromptMetrics', requestId, {
       inputPromptChars: untruncatedPrompt.length,
+      maxReplayChars: maxReplay,
       replayPromptChars,
       finalPromptChars: prompt.length,
       omittedPromptChars: Math.max(0, untruncatedPrompt.length - replayPromptChars),
-      truncated: untruncatedPrompt.length > MAX_REPLAY,
+      truncated: untruncatedPrompt.length > maxReplay,
     });
     abortIfCancelled();
 
