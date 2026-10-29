@@ -53,13 +53,16 @@ test('Mythos profile emphasizes authorized defensive security, vulnerabilities, 
   assert.match(prompt, /do not provide stealth, persistence, credential theft/i);
 });
 
-test('Fable profile is flexible and supports long-horizon multi-domain deliverables', () => {
+test('Fable profile is adaptive, execution-oriented, concise, and verifies results', () => {
   const prompt = modelProfilePrompt('claude-fable-5.1');
   assert.match(prompt, /flexible, adaptive/i);
   assert.match(prompt, /long-horizon agentic coding/i);
   assert.match(prompt, /multi-step research/i);
-  assert.match(prompt, /spreadsheets, slides/i);
+  assert.match(prompt, /spreadsheets, and slides/i);
+  assert.match(prompt, /acceptance criteria/i);
+  assert.match(prompt, /Never claim execution or verification that did not occur/i);
   assert.match(prompt, /Adapt verbosity and tone to the task/i);
+  assert.doesNotMatch(prompt, /copyright|intellectual property/i);
 });
 
 test('coding-oriented profiles require appropriate scope control and verification', () => {
