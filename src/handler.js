@@ -155,9 +155,10 @@ async function handleMessages(req, res, body, dependencies = {}) {
     force = { mode: 'none' };
   }
 
-  // Keep client-enforced tool_choice and loop-recovery semantics intact.
-  // DeepSeek-backed web tools are internal orchestration tools for auto selection only.
-  const tools = force.mode === 'auto'
+  // Gateway-native web tools belong to the deepseek-super profile only.
+  // Claude compatibility profiles use the caller's tools (for example Claude Code's
+  // own WebSearch/WebFetch tools) without injecting DeepSeek-specific alternatives.
+  const tools = force.mode === 'auto' && model === MODEL_NAME
     ? clientTools.concat(DEEPSEEK_WEB_TOOLS)
     : clientTools;
   const conversationTooLong = isConversationTooLong(messages);
