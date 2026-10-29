@@ -4,7 +4,7 @@
 >
 > This file records issues for later reference. Do not start work, change implementation, create a fix commit, or open a fix PR for an item below unless the user explicitly asks to fix or resume that specific item. When the user does ask, use the issue ID below to resume the investigation.
 
-Last updated: 2026-10-29
+Last updated: 2026-10-30
 
 ## DEFERRED-001: DeepSeek UI response-completion detection
 
@@ -165,6 +165,31 @@ This intentionally avoids suppressing automation indicators. Chrome may display 
 Do not claim the banner is fixed in a live browser until Chrome has been relaunched and checked. The user-provided screenshot is evidence of the warning; no screenshot or local profile/authentication data is committed.
 
 Relevant files: `src/browser.js`, `deepseek-login.js`.
+
+
+
+## DSML-001: Malformed DSML parsing and Copy fallback
+
+**Status: FIX IMPLEMENTED - LIVE UI VERIFICATION PENDING.**
+
+### Changes
+
+- The DSML `invoke` closing-tag regex now tolerates a missing `invoke` name in a malformed closing tag such as `</｜DSML｜>`, while keeping the opening `invoke` requirement unchanged.
+- Orphan-tag cleanup now removes empty-name DSML tags as well, preventing a leftover `</｜DSML｜>` tag from leaking into user-facing text.
+- DOM remains the primary source. Only when the DOM-derived tool-call parse is invalid does the gateway try one best-effort recovery by hovering the latest assistant message, clicking a recognizable Copy control, and parsing the copied text with a fresh parser.
+- Clipboard permissions are temporarily granted for the `https://chat.deepseek.com` origin and cleared afterward. The Copy action can replace the operating-system clipboard; no clipboard contents are written to logs.
+- The copied result must still contain at least one structurally valid tool call and pass the existing client-schema and `tool_choice` validation. Failure to find/read Copy or parse its output falls back to the existing bounded correction/error path. The fallback never executes a tool itself or blindly replays the request.
+
+### Verification required
+
+1. Run `npm test` and `npm run check`; the added parser tests cover the missing-name closing tag, orphan-tag cleanup, successful copied DSML parsing, and malformed copied DSML rejection.
+2. On a freshly launched signed-in DeepSeek browser, capture a controlled parser-failure case and verify that the latest assistant Copy button is found and the clipboard text retains parseable DSML.
+3. Verify normal tool calls do not click Copy, invalid copied output does not forward partial tool batches, and the fallback does not cause a duplicate tool execution.
+4. Confirm current GitHub Actions for the PR head passes before treating CI verification as complete.
+
+The Copy-button selectors are best-effort accessibility/attribute selectors and can become stale if DeepSeek changes its UI. The live DOM/clipboard behavior is not proven by unit tests alone.
+
+Relevant files: `src/tool-parser.js`, `src/browser.js`, `test/tool-parser.test.js`.
 
 
 
