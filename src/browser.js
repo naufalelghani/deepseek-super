@@ -546,7 +546,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      if (bufferText && fin.answerIsProtocol && fin.answerHasRichMarkdown) {
          const copiedSource = await readLatestAssistantTextViaCopy(finalAnswer);
          const hasToolProtocol = typeof copiedSource === 'string' &&
-             /<\\s*\\/?\\s*[｜|]{1,2}\\s*DSML\\s*[｜|]{1,2}\\s*(?:tool_calls|calls|invoke|parameter)\\b/i.test(copiedSource);
+             /<\s*\/?\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls|invoke|parameter)\b/i.test(copiedSource);
          if (hasToolProtocol) {
              finalAnswer = copiedSource;
              console.info('[markdown] using assistant Copy source for mixed DSML/Markdown; chars=' + finalAnswer.length);
