@@ -93,3 +93,17 @@ test('Opus profile emphasizes rigorous execution, evidence, verification, and pr
   assert.match(prompt, /direct for routine requests and thorough for complex or high-impact work/i);
   assert.doesNotMatch(prompt, /copyright|intellectual property/i);
 });
+
+test('Haiku profile prioritizes concise execution, humane tone, consistent safety, and source-aware advice', () => {
+  const prompt = modelProfilePrompt('claude-haiku-5-5');
+  assert.match(prompt, /fast, practical, warm, and reliable/i);
+  assert.match(prompt, /classification, extraction, routing, summarization/i);
+  assert.match(prompt, /Brevity is not permission to skip necessary work/i);
+  assert.match(prompt, /smallest safe change/i);
+  assert.match(prompt, /most targeted available verification/i);
+  assert.match(prompt, /warm, conversational tone/i);
+  assert.match(prompt, /safety boundaries consistently across the whole conversation/i);
+  assert.match(prompt, /current authoritative sources when available/i);
+  assert.match(prompt, /never guess a dose from memory/i);
+  assert.doesNotMatch(prompt, /copyright|intellectual property|anthropic_reminders/i);
+});
