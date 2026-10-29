@@ -75,11 +75,11 @@ No claim that the banner is resolved should be made until the browser has been c
 
 ## DEFERRED-003: Large prompt replay truncation
 
-**Status: DEFERRED - FIX ONLY IF REQUESTED**
+**Status: PARTIALLY ADDRESSED: model-specific replay caps implemented. Further compaction optimization remains DEFERRED - FIX ONLY IF REQUESTED.**
 
 ### Summary
 
-Live logs show replay inputs substantially larger than the configured MAX_REPLAY=60000 character limit. Examples include:
+Replay limits are now selected by model ID: IDs beginning with `claude-` use 150,000 characters, while `deepseek-super` and non-Claude IDs continue using the existing `MAX_REPLAY` value (60,000 characters by default). The log examples below are from before this change and show why the Claude-specific increase was requested:
 
 | Input characters | Cap characters | Characters omitted |
 | ---: | ---: | ---: |
@@ -92,7 +92,7 @@ The gateway inserts an explicit truncation warning and prioritizes current instr
 
 1. Use request IDs and the existing trace metadata to identify which prompt sections contribute most to the replay size, without logging or sharing secrets or full private prompts.
 2. Check whether system instructions, tool descriptions, older history, and tool results can be compacted more effectively while preserving the latest request and required tool schemas.
-3. Keep the configured bound and explicit truncation notice unless a deliberate, tested design change replaces them.
+3. The model-specific caps are implemented. Do not raise them further or redesign compaction unless the user explicitly requests it. Keep the explicit truncation notice.
 4. Add tests for oversized multi-step Claude Code conversations and tool-result continuations; confirm the latest task and necessary tools remain intact.
 
 Relevant areas include src/content.js, src/prompts.js, src/handler.js, and the existing replay/prompt tests.
@@ -107,4 +107,6 @@ On 2026-10-29, after the currently committed changes:
 - Live completion diagnostics still reported source: stable_fallback.
 - The Chrome warning banner's status after a fresh launch was not confirmed in the latest test report.
 
-Passing unit tests does not establish that the live DeepSeek UI selectors or Chrome launch behavior are correct. Keep all entries in this file deferred until the user explicitly requests work on them.
+Passing unit tests does not establish that the live DeepSeek UI selectors or Chrome launch behavior are correct. Keep the remaining issues deferred until the user explicitly requests work on them.
+
+On 2026-10-29, the replay cap was changed at the user's request: Claude-prefixed model IDs use 150,000 characters; DeepSeek retains its existing 60,000-character default. Live confirmation for this change is pending.
