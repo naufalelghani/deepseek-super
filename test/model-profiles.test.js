@@ -77,3 +77,16 @@ test('coding-oriented profiles require appropriate scope control and verificatio
   assert.match(opus, /long-running agent workflows/);
   assert.match(haiku, /Brevity is not permission to stop early/);
 });
+
+test('Opus profile emphasizes rigorous execution, evidence, verification, and proportional depth', () => {
+  const prompt = modelProfilePrompt('claude-opus-5-5');
+  assert.match(prompt, /deliberate, rigorous, and outcome-oriented/i);
+  assert.match(prompt, /acceptance criteria, constraints, dependencies, and likely failure modes/i);
+  assert.match(prompt, /continue until the requested result is verified or a real blocker remains/i);
+  assert.match(prompt, /Ask a focused clarifying question only when missing information materially affects the outcome or safety/i);
+  assert.match(prompt, /targeted regression tests/i);
+  assert.match(prompt, /separate verified facts from inference/i);
+  assert.match(prompt, /Never claim execution, validation, or success without evidence/i);
+  assert.match(prompt, /direct for routine requests and thorough for complex or high-impact work/i);
+  assert.doesNotMatch(prompt, /copyright|intellectual property/i);
+});
