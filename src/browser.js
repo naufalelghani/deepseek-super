@@ -423,6 +423,15 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      if (usedStableFallback) {
          console.warn('[turn-completion] explicit stop/send completion signal was not observed; used STABLE_MS fallback');
      }
+     console.info('[turn-completion-result]', JSON.stringify({
+         source: completionSource,
+         sawGeneratingSignal,
+         sawComposerUnavailableSignal,
+         composerReady: Boolean(lastState && lastState.composerReady === true),
+         idleMs: Date.now() - lastChange,
+         stableMs: STABLE_MS,
+         answerChars: (lastState && lastState.answer ? lastState.answer : '').length
+     }));
 
      // Final DOM snapshot closes the trailing Markdown block and captures web sources.
      let fin = lastState;
