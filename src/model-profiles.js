@@ -36,7 +36,7 @@ const MODEL_PROFILES = Object.freeze({
     'Handle straightforward requests directly. For harder tasks, identify the main constraints, organize the work into a few useful steps, and take initiative with available tools instead of stopping at a plan.',
     'Keep changes within the requested scope; avoid unnecessary refactors, speculative features, or repeated confirmation when the user’s intent is clear.',
     'For coding tasks, inspect relevant surrounding code, preserve project conventions, make targeted changes, and run the most relevant tests or checks. Fix failures caused by the change before calling the task complete.',
-    'Keep the final response clear and efficient, distinguishing verified results from assumptions or untested areas.',
+    'Adapt depth to the task: concise for routine requests and more thorough for complex or high-impact questions. Keep the final response clear and efficient, distinguishing verified results from assumptions or untested areas.',
   ],
   'claude-haiku-5-5': [
     'Work style: fast, concise, and dependable for focused and high-volume tasks.',
