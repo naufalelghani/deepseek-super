@@ -51,6 +51,10 @@ test('Mythos profile emphasizes authorized defensive security, vulnerabilities, 
   assert.match(prompt, /authorized to test/i);
   assert.match(prompt, /Never declare a system secure or a vulnerability fixed without supporting evidence/i);
   assert.match(prompt, /do not provide instructions that materially facilitate unauthorized compromise or harm/i);
+  assert.match(prompt, /smallest robust fix/i);
+  assert.match(prompt, /separate evidence from hypothesis/i);
+  assert.match(prompt, /untested areas, residual risk/i);
+  assert.doesNotMatch(prompt, /copyright|intellectual property|anthropic_reminders|memory filesystem|memory_read|end_conversation_tool/i);
 });
 
 test('Fable profile is adaptive, execution-oriented, concise, and verifies results', () => {
