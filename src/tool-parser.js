@@ -428,4 +428,41 @@
 
  }
 
-module.exports = { StreamParser, tryParseJSON, tryParseJSON_v1, sanitizeToolCall, extractToolCallsFromText, holdbackLen, OPEN_RE, CLOSE_RE, parseDsmlToolBlock, stripDsmlTags };
+function parseToolCallsFromText(text) {
+    if (typeof text !== 'string') {
+        return { calls: [], text: '', invalidToolCall: true, parseErrors: [], extractionErrors: [] };
+    }
+
+    const parser = new StreamParser(() => {});
+    parser.feed(text);
+    parser.finish();
+
+    const sawDsmlMarkup = /<\s*\/?\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls|invoke|parameter)\b/i.test(text);
+    let calls = parser.toolCalls();
+    let cleanedText = parser.textOut;
+    let extractionErrors = [];
+
+    if (calls.length === 0 && (cleanedText || sawDsmlMarkup)) {
+        const extractionSource = sawDsmlMarkup ? text : cleanedText;
+        const extracted = extractToolCallsFromText(extractionSource);
+        if (extracted.calls.length > 0) calls = extracted.calls;
+        cleanedText = extracted.text;
+        extractionErrors = Array.isArray(extracted.errors) ? extracted.errors : [];
+    }
+
+    const invalidToolCall = (parser.sawToolMarkup &&
+        (calls.length === 0 || parser.parseErrors.length > 0)) ||
+        (sawDsmlMarkup &&
+            (calls.length === 0 || parser.parseErrors.length > 0 || extractionErrors.length > 0));
+
+    return {
+        calls,
+        text: cleanedText,
+        invalidToolCall,
+        parseErrors: parser.parseErrors.slice(),
+        extractionErrors,
+    };
+}
+
+
+module.exports = { StreamParser, tryParseJSON, tryParseJSON_v1, sanitizeToolCall, extractToolCallsFromText, holdbackLen, OPEN_RE, CLOSE_RE, parseDsmlToolBlock, stripDsmlTags, parseToolCallsFromText };
