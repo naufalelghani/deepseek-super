@@ -3,7 +3,7 @@
 const { chromium } = require('playwright');
 const { readStateInPage } = require('./browser-dom');
 const { PROFILE_DIR, POLL_MS, STABLE_MS, MAX_TURN_MS, MAX_PENDING_TURNS } = require('./config');
-const { StreamParser, extractToolCallsFromText } = require('./tool-parser');
+const { StreamParser, extractToolCallsFromText, parseToolCallsFromText } = require('./tool-parser');
 const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, isIdleCompletionCandidate, isComposerRestoredCompletionCandidate } = require('./turn-state');
 
  let ctx = null;
@@ -147,6 +147,92 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
  async function readState(finalSnapshot = false) {
      return page.evaluate(readStateInPage, { final: finalSnapshot });
  }
+
+ async function readLatestAssistantTextViaCopy(expectedText = '') {
+     if (!page || page.isClosed()) return null;
+
+     const copySelector = [
+         'button[aria-label="copy" i]',
+         'button[title="copy" i]',
+         '[role="button"][aria-label="copy" i]',
+         '[role="button"][title="copy" i]',
+         'button[aria-label*="copy message" i]',
+         'button[title*="copy message" i]',
+         '[role="button"][aria-label*="copy message" i]',
+         'button[aria-label*="copy response" i]',
+         'button[title*="copy response" i]',
+         '[role="button"][aria-label*="copy response" i]',
+         'button[aria-label="复制"]',
+         'button[title="复制"]',
+         '[role="button"][aria-label="复制"]',
+         '[role="button"][title="复制"]',
+         '[data-testid*="copy-message" i]',
+         '[data-testid*="copy-response" i]'
+     ].join(',');
+
+     const context = page.context();
+     let permissionsGranted = false;
+     try {
+         const clipboardSupported = await page.evaluate(() =>
+             Boolean(navigator.clipboard && typeof navigator.clipboard.readText === 'function'));
+         if (!clipboardSupported) {
+             console.warn('[tool-parser] clipboard fallback unavailable: Clipboard API is not supported by this page.');
+             return null;
+         }
+
+         // Grant clipboard access only for the DeepSeek origin and only while
+         // performing this recovery attempt. Never log clipboard contents.
+         await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+             origin: 'https://chat.deepseek.com'
+         });
+         permissionsGranted = true;
+         const readClipboard = () => page.evaluate(async () => navigator.clipboard.readText());
+         const previousClipboard = await readClipboard().catch(() => '');
+
+         const assistantItem = page.locator(
+             '[data-virtual-list-item-key]:has(.ds-assistant-message-main-content)'
+         ).last();
+         if (await assistantItem.count() === 0) {
+             console.warn('[tool-parser] clipboard fallback unavailable: latest assistant message was not found.');
+             return null;
+         }
+
+         // DeepSeek may only reveal message actions on hover.
+         await assistantItem.hover({ timeout: 1500 }).catch(() => {});
+         const buttons = assistantItem.locator(copySelector);
+         const count = await buttons.count();
+         for (let i = count - 1; i >= 0; i--) {
+             const button = buttons.nth(i);
+             if (!(await button.isVisible().catch(() => false))) continue;
+
+             await button.click({ timeout: 2500 });
+             const deadline = Date.now() + 1200;
+             let copiedText = '';
+             do {
+                 copiedText = await readClipboard().catch(() => '');
+                 if (copiedText.trim() &&
+                     (copiedText !== previousClipboard || copiedText === expectedText)) {
+                     return copiedText;
+                 }
+                 await page.waitForTimeout(75);
+             } while (Date.now() < deadline);
+
+             console.warn('[tool-parser] clipboard fallback did not produce new text; ignoring stale clipboard contents.');
+             return null;
+         }
+
+         console.warn('[tool-parser] clipboard fallback unavailable: no visible assistant Copy button matched known labels.');
+         return null;
+     } catch (error) {
+         console.warn('[tool-parser] clipboard fallback failed: ' + (error.message || String(error)));
+         return null;
+     } finally {
+         if (permissionsGranted) {
+             try { await context.clearPermissions(); } catch (error) {}
+         }
+     }
+ }
+
 
  async function clickSend(isCancelled = () => false) {
      const timeoutAt = Date.now() + 15000;
@@ -478,9 +564,33 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      }
      // A partially valid batch is still invalid: forwarding only its valid subset
      // would silently omit requested actions and could leave the client out of sync.
-     const invalidToolCall = (parser.sawToolMarkup &&
+     let invalidToolCall = (parser.sawToolMarkup &&
          (finalTools.length === 0 || parser.parseErrors.length > 0)) ||
          (sawDsmlMarkup && (finalTools.length === 0 || parser.parseErrors.length > 0 || extractionErrors.length > 0));
+
+     // DOM remains the primary source. Only when its DSML parse is invalid do
+     // we click Copy on the latest assistant message and try parsing that text
+     // with a fresh parser, preventing state from the failed parse from leaking.
+     if (invalidToolCall) {
+         console.warn('[tool-parser] DOM parsing failed; attempting assistant Copy fallback.');
+         const copiedText = await readLatestAssistantTextViaCopy(finalAnswer);
+         if (copiedText) {
+             const copied = parseToolCallsFromText(copiedText);
+             if (!copied.invalidToolCall && copied.calls.length > 0) {
+                 finalTools = copied.calls;
+                 finalText = copied.text;
+                 extractionErrors = [];
+                 invalidToolCall = false;
+                 console.info('[tool-parser] recovered via assistant Copy; tool_calls=' + finalTools.length +
+                     ' copied_chars=' + copiedText.length);
+             } else {
+                 console.warn('[tool-parser] assistant Copy fallback did not produce a complete valid DSML parse; ' +
+                     'tool_calls=' + copied.calls.length +
+                     ' parse_errors=' + copied.parseErrors.length +
+                     ' extraction_errors=' + copied.extractionErrors.length);
+             }
+         }
+     }
 
      // Close any live thinking/text block, but defer buffered text and every tool
      // block to the handler. It must validate the complete tool batch before emitting
