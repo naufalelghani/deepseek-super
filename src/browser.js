@@ -172,6 +172,9 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
 
      const context = page.context();
      let permissionsGranted = false;
+     let previousClipboard = '';
+     let previousClipboardCaptured = false;
+     let copyAttempted = false;
      try {
          const clipboardSupported = await page.evaluate(() =>
              Boolean(navigator.clipboard && typeof navigator.clipboard.readText === 'function'));
@@ -187,7 +190,13 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
          });
          permissionsGranted = true;
          const readClipboard = () => page.evaluate(async () => navigator.clipboard.readText());
-         const previousClipboard = await readClipboard().catch(() => '');
+         try {
+             previousClipboard = await readClipboard();
+             previousClipboardCaptured = true;
+         } catch (error) {
+             console.warn('[tool-parser] clipboard fallback skipped: could not preserve the existing clipboard.');
+             return null;
+         }
 
          const assistantItem = page.locator(
              '[data-virtual-list-item-key]:has(.ds-assistant-message-main-content)'
@@ -205,6 +214,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              const button = buttons.nth(i);
              if (!(await button.isVisible().catch(() => false))) continue;
 
+             copyAttempted = true;
              await button.click({ timeout: 2500 });
              const deadline = Date.now() + 1200;
              let copiedText = '';
@@ -227,6 +237,13 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
          console.warn('[tool-parser] clipboard fallback failed: ' + (error.message || String(error)));
          return null;
      } finally {
+         if (permissionsGranted && previousClipboardCaptured && copyAttempted) {
+             try {
+                 await page.evaluate(async (text) => navigator.clipboard.writeText(text), previousClipboard);
+             } catch (error) {
+                 console.warn('[tool-parser] could not restore the pre-existing clipboard contents.');
+             }
+         }
          if (permissionsGranted) {
              try { await context.clearPermissions(); } catch (error) {}
          }
@@ -525,7 +542,18 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      } catch (error) {
          console.warn('[markdown] final DOM snapshot failed; using last observed snapshot: ' + (error.message || String(error)));
      }
-     const finalAnswer = fin.answerMarkdown || fin.answer || '';
+     let finalAnswer = fin.answerMarkdown || fin.answer || '';
+     if (bufferText && fin.answerIsProtocol && fin.answerHasRichMarkdown) {
+         const copiedSource = await readLatestAssistantTextViaCopy(finalAnswer);
+         const hasToolProtocol = typeof copiedSource === 'string' &&
+             /<\\s*\\/?\\s*[｜|]{1,2}\\s*DSML\\s*[｜|]{1,2}\\s*(?:tool_calls|calls|invoke|parameter)\\b/i.test(copiedSource);
+         if (hasToolProtocol) {
+             finalAnswer = copiedSource;
+             console.info('[markdown] using assistant Copy source for mixed DSML/Markdown; chars=' + finalAnswer.length);
+         } else {
+             console.warn('[markdown] Copy source unavailable for mixed DSML/Markdown; using DOM serialization fallback.');
+         }
+     }
      if (bufferText) {
          // Do not rewrite tool-call protocol output; the parser handles the full payload.
          if (finalAnswer) parser.feed(finalAnswer);
