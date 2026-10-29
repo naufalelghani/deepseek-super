@@ -203,7 +203,7 @@ test('DSML Write content preserves Python indentation and blank lines exactly', 
     '            out.append(ln)',
     '        i += 1',
     '        continue',
-  ].join('\\n');
+  ].join('\n');
   const payload = '<｜DSML｜ calls><｜DSML｜ invoke name="Write">' +
     '<｜DSML｜ parameter name="file_path" string="true">fmt.py</｜DSML｜ parameter>' +
     '<｜DSML｜ parameter name="content" string="true">' + content + '</｜DSML｜ parameter>' +
