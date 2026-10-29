@@ -49,7 +49,7 @@ function readStateInPage(options = {}) {
     // Expose UI-state diagnostics for fallback logging without changing detection.
     const completionDebug = {
         primaryButtonFound: Boolean(primaryButton),
-        primaryLabel: primaryLabel.replace(/\\s+/g, ' ').trim().slice(0, 120),
+        primaryLabel: primaryLabel.replace(/\s+/g, ' ').trim().slice(0, 120),
         primaryIsStop,
         primaryDisabledClass: Boolean(primaryButton && primaryButton.classList.contains('ds-button--disabled')),
         primaryDisabledAttr: Boolean(primaryButton && primaryButton.hasAttribute('disabled')),
