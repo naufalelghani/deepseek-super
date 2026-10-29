@@ -189,6 +189,33 @@ test('stripDsmlTags removes an otherwise nameless DSML tag', () => {
 });
 
 
+test('DSML Write content preserves Python indentation and blank lines exactly', () => {
+  const content = [
+    'while i < len(lines):',
+    '    ln = lines[i]',
+    '',
+    '    if in_code:',
+    "        if re.match(r'^\\d+\\.\\d+\\s', ln):",
+    "            out.append('```')",
+    "            out.append('')",
+    '            in_code = False',
+    '        else:',
+    '            out.append(ln)',
+    '        i += 1',
+    '        continue',
+  ].join('\\n');
+  const payload = '<｜DSML｜ calls><｜DSML｜ invoke name="Write">' +
+    '<｜DSML｜ parameter name="file_path" string="true">fmt.py</｜DSML｜ parameter>' +
+    '<｜DSML｜ parameter name="content" string="true">' + content + '</｜DSML｜ parameter>' +
+    '</｜DSML｜ invoke></｜DSML｜ calls>';
+  const result = parseToolCallsFromText(payload);
+
+  assert.equal(result.invalidToolCall, false);
+  assert.equal(result.calls.length, 1);
+  assert.equal(result.calls[0].name, 'Write');
+  assert.equal(result.calls[0].input.content, content);
+});
+
 test('parseToolCallsFromText recovers a valid copied DSML response', () => {
   const copied = 'Preparing files. <｜DSML｜ calls>' +
     '<｜DSML｜ invoke name="Bash"><｜DSML｜ parameter name="command" string="true">pwd</｜DSML｜ parameter></｜DSML｜ invoke>' +
