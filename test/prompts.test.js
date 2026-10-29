@@ -272,9 +272,13 @@ test('shared safety guidance is present in all prompt paths and excludes copyrig
     assert.match(prompt, /SAFETY AND WELLBEING/);
     assert.match(prompt, /Protect minors/);
     assert.match(prompt, /age-appropriate and non-romantic/i);
+    assert.match(prompt, /Do not assist a minor in sexualizing themselves/i);
+    assert.match(prompt, /focused on recognizing patterns/i);
     assert.match(prompt, /weapons or explosives/);
     assert.match(prompt, /authorized defensive analysis/);
     assert.match(prompt, /self-harm or acute distress/);
+    assert.match(prompt, /do not provide methods or affirm suicidal intent/i);
+    assert.match(prompt, /In an active crisis/i);
     assert.match(prompt, /whole conversation, not one message in isolation/i);
     assert.match(prompt, /ask at most one focused clarification/i);
     assert.match(prompt, /disordered eating is apparent/i);
