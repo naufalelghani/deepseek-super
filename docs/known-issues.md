@@ -137,6 +137,37 @@ Those states must not be treated as interchangeable. In particular, a response m
 Relevant areas: `src/browser-dom.js`, `src/browser.js`, `src/turn-state.js`, and `test/turn-state.test.js`.
 
 
+## DEFERRED-005: Unsupported Chrome automation flag warning
+
+**Status: FIX IMPLEMENTED - LIVE VERIFICATION PENDING.**
+
+### Observation
+
+A screenshot supplied on 2026-10-29 shows Chrome's banner:
+
+`You are using an unsupported command-line flag: --disable-blink-features=AutomationControlled. Stability and security will suffer.`
+
+The flag was configured in both `src/browser.js` (gateway startup) and `deepseek-login.js` (manual login startup). Both launch paths also removed Playwright's default `--enable-automation` argument.
+
+### Change made
+
+On the PR branch, removed `args: ['--disable-blink-features=AutomationControlled']` and `ignoreDefaultArgs: ['--enable-automation']` from both launch configurations. Chrome now uses Playwright's standard automation arguments; `chromiumSandbox: true` remains configured for the gateway.
+
+This intentionally avoids suppressing automation indicators. Chrome may display its normal automation infobar, but the unsupported-flag warning should no longer be triggered by this flag.
+
+### Verification still required
+
+1. Stop both the gateway and any Chrome process using the persistent profile.
+2. Launch `node deepseek-login.js` and then, after closing it, `npm start`.
+3. Confirm the unsupported-flag banner is gone and verify login, persistent-profile reuse, and a normal gateway turn.
+4. Run `npm test` and `npm run check`; review the GitHub Actions run for the resulting PR head.
+
+Do not claim the banner is fixed in a live browser until Chrome has been relaunched and checked. The user-provided screenshot is evidence of the warning; no screenshot or local profile/authentication data is committed.
+
+Relevant files: `src/browser.js`, `deepseek-login.js`.
+
+
+
 ## Verification record
 
 On 2026-10-29, after the currently committed changes:
