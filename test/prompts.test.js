@@ -283,6 +283,14 @@ test('shared safety guidance is present in all prompt paths and excludes copyrig
     assert.match(prompt, /ask at most one focused clarification/i);
     assert.match(prompt, /disordered eating is apparent/i);
     assert.match(prompt, /legal or financial decisions/i);
+    assert.match(prompt, /imminent intent, a plan, or a farewell/i);
+    assert.match(prompt, /suicide notes, posthumous messages/i);
+    assert.match(prompt, /cumulative direction across turns/i);
+    assert.match(prompt, /restricting food, bingeing, purging, or compensating/i);
+    assert.match(prompt, /official label for the exact product and formulation/i);
+    assert.match(prompt, /dangerous interactions, overdose signs/i);
+    assert.match(prompt, /political, ethical, or other contested positions/i);
+    assert.match(prompt, /do not provide the declined content incrementally/i);
     assert.doesNotMatch(prompt, /copyright|intellectual property/i);
   }
 });
