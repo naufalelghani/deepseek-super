@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { blocksOf, flattenContent, renderMessage, sessionKey, truncateReplay, truncateTextPreservingEnds } = require('../src/content');
 const { approxTokens, MAX_REPLAY } = require('../src/config');
+const { CLAUDE_MAX_REPLAY, getMaxReplayForModel } = require('../src/content');
 
 test('blocksOf normalizes strings and handles empty content', () => {
   assert.deepEqual(blocksOf('hello'), [{ type: 'text', text: 'hello' }]);
@@ -134,4 +135,27 @@ test('truncateTextPreservingEnds retains the beginning and ending of oversized c
   assert.match(truncated, /^BEGIN_MARKER/);
   assert.match(truncated, /_END_MARKER$/);
   assert.match(truncated, /content truncated/);
+});
+
+
+test('replay cap is model-specific: Claude profiles get 150k and DeepSeek keeps its configured limit', () => {
+  const claudeModels = [
+    'claude-mythos-5-1',
+    'claude-fable-5.1',
+    'claude-opus-5-5',
+    'claude-sonnet-5-5',
+    'claude-haiku-5-5',
+  ];
+  for (const model of claudeModels) {
+    assert.equal(getMaxReplayForModel(model, MAX_REPLAY), CLAUDE_MAX_REPLAY, model);
+  }
+  assert.equal(CLAUDE_MAX_REPLAY, 150000);
+  assert.equal(getMaxReplayForModel('deepseek-super', MAX_REPLAY), MAX_REPLAY);
+
+  const prompt = 'p'.repeat(120000);
+  const claudeReplay = truncateReplay(prompt, getMaxReplayForModel('claude-mythos-5-1', MAX_REPLAY));
+  const deepseekReplay = truncateReplay(prompt, getMaxReplayForModel('deepseek-super', MAX_REPLAY));
+  assert.equal(claudeReplay.length, prompt.length, '120k characters fit within the Claude limit');
+  assert.ok(deepseekReplay.length <= MAX_REPLAY, 'DeepSeek remains bounded by MAX_REPLAY');
+  assert.match(deepseekReplay, /WARNING: conversation replay was truncated/);
 });
