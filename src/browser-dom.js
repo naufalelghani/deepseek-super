@@ -39,6 +39,12 @@ function readStateInPage(options = {}) {
             ].join(' ')).join(' ')
     ].join(' ') : '';
     const primaryIsStop = /stop|cancel|停止|取消/i.test(primaryLabel);
+    const composerTextarea = document.querySelector('textarea[placeholder="Message DeepSeek"]');
+    const composerTextareaVisible = isVisible(composerTextarea);
+    const primaryButtonVisible = isVisible(primaryButton);
+    // Composer readiness is separate from Send enabled state: after a response,
+    // the empty textarea can correctly leave the Send button disabled.
+    const composerReady = Boolean(composerTextareaVisible && primaryButtonVisible && !primaryIsStop);
     const isGenerating = stopButtonVisible || primaryIsStop;
     const sendButtonEnabled = Boolean(primaryButton && !primaryIsStop &&
         !primaryButton.classList.contains('ds-button--disabled') &&
@@ -55,7 +61,11 @@ function readStateInPage(options = {}) {
         primaryDisabledAttr: Boolean(primaryButton && primaryButton.hasAttribute('disabled')),
         primaryAriaDisabled: primaryButton ? primaryButton.getAttribute('aria-disabled') : null,
         stopCandidateCount: stopCandidates.length,
-        stopButtonVisible
+        stopButtonVisible,
+        textareaFound: Boolean(composerTextarea),
+        textareaVisible: composerTextareaVisible,
+        primaryButtonVisible,
+        composerReady
     };
 
     const thinkElement = last ? last.querySelector('.ds-think-content .ds-markdown') : null;
@@ -255,6 +265,7 @@ function readStateInPage(options = {}) {
         answerIsProtocol: result.protocolOutput,
         isGenerating,
         sendButtonEnabled,
+        composerReady,
         completionSignalAvailable,
         completionDebug
     };
