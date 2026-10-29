@@ -245,3 +245,14 @@ test('base prompt includes humanizer rules, follows the current user language, a
     assert.doesNotMatch(prompt, /\u2014/);
   }
 });
+
+
+test('Claude-specific resume budget preserves larger tool results before outer replay truncation', () => {
+  const { CLAUDE_MAX_REPLAY } = require('../src/content');
+  const toolOutput = 'TOOL_RESULT_LARGE_MARKER_' + 'r'.repeat(70000) + '_TOOL_RESULT_END';
+  const prompt = buildResumePrompt('', [{
+    role: 'user',
+    content: [{ type: 'tool_result', tool_use_id: 'toolu_large_claude', content: toolOutput }],
+  }], [], true, CLAUDE_MAX_REPLAY);
+  assert.ok(prompt.includes(toolOutput), 'a 70k result should fit within the Claude-specific 90k tool-result budget');
+});
