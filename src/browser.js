@@ -551,7 +551,12 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              finalAnswer = copiedSource;
              console.info('[markdown] using assistant Copy source for mixed DSML/Markdown; chars=' + finalAnswer.length);
          } else {
-             console.warn('[markdown] Copy source unavailable for mixed DSML/Markdown; using DOM serialization fallback.');
+             // The DOM serializer may collapse whitespace inside raw tool arguments.
+             // Fail closed rather than risk writing silently corrupted files.
+             throw new Error(
+                 'Could not obtain the original DeepSeek response for a mixed DSML/Markdown tool call. ' +
+                 'The tool call was not forwarded because file content may lose indentation.'
+             );
          }
      }
      if (bufferText) {
