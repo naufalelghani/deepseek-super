@@ -554,6 +554,10 @@ server.listen(config.PORT, '127.0.0.1');
 
 For normal shutdown when using `createServer()` directly, close the HTTP server and call `shutdownBrowser()` from `deepseek-super/src/browser` to close the Chrome context as well. For regular CLI usage, run `npm start` so the built-in shutdown handlers are enabled.
 
+## Deferred fixes and known issues
+
+Items recorded in [docs/known-issues.md](docs/known-issues.md) are intentionally deferred and labeled **DEFERRED - FIX ONLY IF REQUESTED**. Do not resume or implement those fixes unless the user explicitly requests a specific item.
+
 ## Troubleshooting tool calls
 
 If DeepSeek generates invalid DSML markup or attempts the disallowed legacy `<TOOL_CALL>` JSON wrapper, the gateway sends up to two correction prompts in the same conversation. Recovery prompts require DSML and never parse or forward legacy-format calls. The parser processes only the newest assistant response, not the user message that was just added to the UI. Logs record the payload length, whether the block was truncated, and the parsing failure reason.
