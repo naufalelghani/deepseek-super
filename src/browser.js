@@ -386,6 +386,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
                      isGenerating: st.isGenerating,
                      sendButtonEnabled: st.sendButtonEnabled,
                      completionSignalAvailable: st.completionSignalAvailable,
+                     uiState: st.completionDebug || null,
                      idleMs,
                      stableMs: STABLE_MS,
                      answerChars: (st.answer || '').length
