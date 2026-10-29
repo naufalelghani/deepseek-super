@@ -457,7 +457,7 @@ function parseToolCallsFromText(text) {
 
     return {
         calls,
-        text: cleanedText,
+        text: cleanedText.trim(),
         invalidToolCall,
         parseErrors: parser.parseErrors.slice(),
         extractionErrors,
