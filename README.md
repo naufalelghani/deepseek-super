@@ -75,7 +75,9 @@ Configuration is read from environment variables:
 | `POLL_MS` | `200` | UI polling interval in milliseconds |
 | `STABLE_MS` | `4000` | Completion fallback idle period, used only if a UI completion signal was not observed |
 | `MAX_TURN_MS` | `300000` | Hard maximum duration of a single turn; a timeout is reported as a failure rather than success |
-| `MAX_REPLAY` | `60000` | Maximum replay prompt length in **characters**, not tokens |
+| `MAX_REPLAY` | `60000` | Maximum replay prompt length in **characters**, not tokens, for DeepSeek and non-Claude model IDs |
+
+**Model-specific replay limits:** request IDs beginning with `claude-` use a 150,000-character replay cap. `deepseek-super` continues to use `MAX_REPLAY`, which defaults to 60,000 characters and can still be overridden by its existing environment variable. These are character limits, not model-token limits.
 | `MAX_PENDING_TURNS` | `8` | Maximum active-plus-queued browser turns before new requests are rejected as overloaded |
 | `DEEPSEEK_SUPER_DB_PATH` | `./data/deepseek-super.sqlite3` | Path to the local SQLite database used for persistent sessions and request traces |
 | `CORS_ALLOWED_ORIGINS` | Empty | Optional comma-separated list of exact extra browser origins allowed to access the local gateway |
