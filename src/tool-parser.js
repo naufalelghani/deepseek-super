@@ -7,9 +7,9 @@
  const OPEN_RE = /<\s*TOOL_CALL\s*>|<\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls)\s*>/i;
  const CLOSE_RE = DSML_CALLS_CLOSE_RE;
  const DSML_CALLS_BLOCK_RE = /<\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls)\s*>([\s\S]*?)<\s*\/\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls)\s*>/gi;
- const DSML_INVOKE_RE_SOURCE = '<\\s*[｜|]{1,2}\\s*DSML\\s*[｜|]{1,2}\\s*invoke\\b([^>]*)>([\\s\\S]*?)<\\s*\\/\\s*[｜|]{1,2}\\s*DSML\\s*[｜|]{1,2}\\s*invoke\\s*>';
+ const DSML_INVOKE_RE_SOURCE = '<\\s*[｜|]{1,2}\\s*DSML\\s*[｜|]{1,2}\\s*invoke\\b([^>]*)>([\\s\\S]*?)<\\s*\\/\\s*[｜|]{1,2}\\s*DSML\\s*[｜|]{1,2}\\s*(?:invoke)?\\s*>';
  const DSML_PARAMETER_RE_SOURCE = '<\\s*[｜|]{1,2}\\s*DSML\\s*[｜|]{1,2}\\s*parameter\\b([^>]*)>([\\s\\S]*?)<\\s*\\/\\s*[｜|]{1,2}\\s*DSML\\s*[｜|]{1,2}\\s*parameter\\s*>';
- const DSML_ORPHAN_TAG_RE = /<\s*\/?\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls|invoke|parameter)\b[^>]*>/gi;
+ const DSML_ORPHAN_TAG_RE = /<\s*\/?\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:(?:tool_calls|calls|invoke|parameter)\b[^>]*)?>/gi;
 
  function holdbackLen(s) {
      const max = Math.min(s.length, 48);
