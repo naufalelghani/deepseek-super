@@ -256,3 +256,25 @@ test('Claude-specific resume budget preserves larger tool results before outer r
   }], [], true, CLAUDE_MAX_REPLAY);
   assert.ok(prompt.includes(toolOutput), 'a 70k result should fit within the Claude-specific 90k tool-result budget');
 });
+
+test('shared safety guidance is present in all prompt paths and excludes copyright-specific rules', () => {
+  const messages = [{ role: 'user', content: 'Help me with a task.' }];
+  const prompts = [
+    buildFullPrompt('', messages, []),
+    buildResumePrompt('', messages, [], false),
+    buildResumePrompt('', [{
+      role: 'user',
+      content: [{ type: 'tool_result', tool_use_id: 'toolu_safety', content: 'OK' }],
+    }], [], true),
+  ];
+
+  for (const prompt of prompts) {
+    assert.match(prompt, /SAFETY AND WELLBEING/);
+    assert.match(prompt, /Protect minors/);
+    assert.match(prompt, /weapons or explosives/);
+    assert.match(prompt, /authorized defensive analysis/);
+    assert.match(prompt, /self-harm or acute distress/);
+    assert.match(prompt, /legal or financial decisions/i);
+    assert.doesNotMatch(prompt, /copyright|intellectual property/i);
+  }
+});
