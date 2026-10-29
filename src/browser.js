@@ -381,6 +381,15 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              // interval before falling back. This reduces false completion during
              // short pauses between DeepSeek output chunks.
              if (shouldUseStableFallback(st, sawGeneratingSignal, idleMs, STABLE_MS)) {
+                 console.warn('[turn-completion-debug]', JSON.stringify({
+                     sawGeneratingSignal,
+                     isGenerating: st.isGenerating,
+                     sendButtonEnabled: st.sendButtonEnabled,
+                     completionSignalAvailable: st.completionSignalAvailable,
+                     idleMs,
+                     stableMs: STABLE_MS,
+                     answerChars: (st.answer || '').length
+                 }));
                  usedStableFallback = true;
                  completionSource = 'stable_fallback';
                  break;
