@@ -97,6 +97,46 @@ The gateway inserts an explicit truncation warning and prioritizes current instr
 
 Relevant areas include src/content.js, src/prompts.js, src/handler.js, and the existing replay/prompt tests.
 
+
+## DEFERRED-004: DeepSeek UI stopped-response continuation
+
+**Status: DEFERRED - INVESTIGATION ONLY; do not change implementation unless explicitly requested.**
+
+### Observation from the user-provided snapshot
+
+On 2026-10-29, the user supplied an HTML capture of the DeepSeek Chat UI during a FlowDesk coding task. The capture contains all of the following:
+
+- A message reading `Server is temporarily unavailable.`
+- An assistant response marked `Stopped`.
+- The partial assistant text describes inspection progress and says the expected `scripts/build.mjs` file was not found.
+- A visible `Continue` button is associated with the stopped response.
+
+This establishes that the captured page rendered a stopped-response state with a Continue affordance. It does **not** establish the exact backend failure, the reason generation stopped, what request the Continue button submits, whether it reuses the same message/thread, or whether the gateway's replay behavior caused the stop. The snapshot contains no DevTools network trace proving the button's behavior. Do not infer those details from DOM text alone.
+
+The HTML capture also contains identifying metadata unrelated to the bug report. Do not commit the raw capture or copy its IP/session/account metadata into repository documentation.
+
+### Why it matters to the gateway
+
+The UI may offer a native continuation path after an interrupted response. This could be distinct from:
+- a user sending a new follow-up prompt,
+- a response ending naturally,
+- the gateway deciding that generation has completed,
+- a transient server error, or
+- a client-triggered cancellation.
+
+Those states must not be treated as interchangeable. In particular, a response marked `Stopped` must not be reported as a successful completed answer without additional evidence.
+
+### Investigation when explicitly requested
+
+1. Reproduce a controlled long-running coding turn and capture sanitized DOM snapshots during generation, after it becomes `Stopped`, and after activating `Continue`.
+2. Inspect browser Network activity for the Continue action and record only redacted method/path, non-sensitive status/stop metadata, and whether the same UI conversation/message continues. Never save or share cookies, authorization headers, tokens, full private prompts, or unredacted conversation URLs.
+3. Compare the native Continue action with sending a new follow-up prompt. Also test transient server-unavailable errors, natural completion, manual cancellation, and long-output interruption separately.
+4. Review `src/browser-dom.js`, `src/browser.js`, and `src/turn-state.js` to determine how stopped messages, Continue controls, and completion signals interact. Do not assume hashed CSS classes are stable selectors; prefer repeatable semantic/accessibility signals where available.
+5. Add regression tests only after the behavior is reproducible. A partial or stopped answer must not be classified as complete, and continuation must not blindly replay tool actions or duplicate side effects. Preserve the existing `MAX_TURN_MS` failure behavior.
+
+Relevant areas: `src/browser-dom.js`, `src/browser.js`, `src/turn-state.js`, and `test/turn-state.test.js`.
+
+
 ## Verification record
 
 On 2026-10-29, after the currently committed changes:
