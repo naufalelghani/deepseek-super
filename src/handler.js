@@ -1,6 +1,6 @@
 'use strict';
 
-const { MODEL_NAME, MAX_REPLAY, sha, uuid } = require('./config');
+const { BACKEND, MODEL_NAME, MAX_REPLAY, sha, uuid } = require('./config');
 const { getStateStore } = require('./state-store');
 const { blocksOf, sessionKey, renderMessage, truncateReplay, getMaxReplayForModel } = require('./content');
 const { buildFullPrompt, buildResumePrompt, parseToolChoice, applyForcedTool } = require('./prompts');
@@ -159,7 +159,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
   // Gateway-native web tools belong to the deepseek-super profile only.
   // Claude compatibility profiles use the caller's tools (for example Claude Code's
   // own WebSearch/WebFetch tools) without injecting DeepSeek-specific alternatives.
-  const tools = force.mode === 'auto' && model === MODEL_NAME
+  const tools = BACKEND === 'deepseek' && force.mode === 'auto' && model === MODEL_NAME
     ? clientTools.concat(DEEPSEEK_WEB_TOOLS)
     : clientTools;
   const conversationTooLong = isConversationTooLong(messages);
@@ -439,7 +439,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
     // are returned as Anthropic tool_use blocks; internal results are placed back
     // into the same DeepSeek conversation before it continues.
     let internalWebRounds = 0;
-    while (toolCalls.some(isDeepSeekWebTool)) {
+    while (BACKEND === 'deepseek' && toolCalls.some(isDeepSeekWebTool)) {
       const internalCalls = toolCalls.filter(isDeepSeekWebTool);
       const clientCalls = toolCalls.filter((call) => !isDeepSeekWebTool(call));
       internalWebRounds++;

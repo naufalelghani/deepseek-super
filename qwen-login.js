@@ -48,7 +48,7 @@ async function waitForQwenComposer(page) {
           rect.height > 0;
       })
     );
-  }, { timeout: LOGIN_TIMEOUT_MS });
+  }, null, { timeout: LOGIN_TIMEOUT_MS });
 }
 
 async function main() {

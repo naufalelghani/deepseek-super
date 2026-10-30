@@ -99,7 +99,7 @@ Only stop processes shown for the project's `deepseek-profile`. Do not terminate
 
 ### Separate Qwen Chrome profile (manual browser use)
 
-You can keep a separate Chrome profile for the Qwen web app at [https://chat.qwen.ai/](https://chat.qwen.ai/). This profile is independent of the gateway's `deepseek-profile/` and is for manual Qwen browser use only; it does not connect the current gateway to Qwen.
+The Qwen backend uses this separate `qwen-profile/` directory and never shares the DeepSeek profile. Sign in manually with `node qwen-login.js` before starting the Qwen server.
 
 To open a dedicated persistent Chrome session through Playwright and sign in manually, run:
 
@@ -156,17 +156,44 @@ $qwenProcesses | ForEach-Object {
 
 Review the process list before stopping anything. Only stop processes shown for `qwen-profile/`; do not terminate unrelated Chrome processes. The Qwen profile can be opened again with the first command after it is no longer in use.
 
-### 2. Start the gateway
+### 2. Start the gateway and select a backend
 
-After the login helper exits and Chrome has closed, start the server:
+Use the root \`server.js\` entry point and select exactly one backend.
 
-```bash
-npm start
-```
+**DeepSeek**
 
-The server uses the same `deepseek-profile/` directory. Do not run `node deepseek-login.js` and `npm start` at the same time: both use the same Chrome profile and may conflict.
+\`\`\`powershell
+node server.js --deepseek
+\`\`\`
 
-Default endpoint: `http://127.0.0.1:8787`
+The DeepSeek mode uses \`deepseek-profile/\`, the DeepSeek login helper, and the DeepSeek-native Search/WebFetch adapter. The existing \`npm start\` command remains a DeepSeek shortcut.
+
+**Qwen**
+
+First complete manual sign-in through the dedicated Qwen profile:
+
+\`\`\`powershell
+node qwen-login.js
+\`\`\`
+
+After the helper verifies the Qwen chat page and closes Chrome, start the Qwen backend:
+
+\`\`\`powershell
+node server.js --qwen
+\`\`\`
+
+Qwen mode uses \`qwen-profile/\` and the model currently selected in the Qwen web UI. Its default API model ID is \`qwen-web\`. Claude-prefixed IDs are response-style compatibility profiles, not native Anthropic models. Qwen mode does not inject DeepSeek-native Search/WebFetch tools. Client-declared tools use the shared DSML tool-call parser.
+
+The supplied Qwen page snapshot exposes a chat ID in message DOM, but not a stable navigable conversation URL. To avoid accidentally continuing in the wrong thread, Qwen mode starts a fresh chat for each Messages request and replays the conversation history received from the API client. This is less efficient than DeepSeek's cached-thread resumption and remains subject to changes in Qwen's web UI.
+
+Do not run a login helper, manual Chrome window, and server at the same time against the same profile. DeepSeek and Qwen use separate profile directories. Only one backend can bind to the default port at a time; to run both simultaneously, start one with another \`PORT\`, for example:
+
+\`\`\`powershell
+$env:PORT = "8788"
+node server.js --qwen
+\`\`\`
+
+Default endpoint: \`http://127.0.0.1:8787\`
 
 ## Configuration and local security
 
@@ -562,13 +589,15 @@ Anthropic-compatible client / AI agent (for example, Claude Code)
 Local deepseek-super gateway
   - validates and normalizes the request
   - renders system instructions, chat history, and tool schemas as prompt text
-  - serializes access to a single Playwright Chrome profile
+  - selects DeepSeek or Qwen at process startup
+  - serializes access to the selected persistent Chrome profile
         |
         v
-Playwright + your signed-in Chrome profile
+Playwright + the selected signed-in Chrome profile
         |
-        v
-https://chat.deepseek.com/ (DeepSeek web UI)
+        +---- https://chat.deepseek.com/ (DeepSeek mode)
+        |
+        +---- https://chat.qwen.ai/ (Qwen mode)
         |
         | assistant text is read back from the page
         v
@@ -582,7 +611,7 @@ Client/agent executes its own tools and sends tool_result back
 
 Tool calling is prompt-based rather than a native tool protocol offered by the website. Tool names, schemas, and the JSON format are described in prompts; the gateway parses the resulting text. Model-generated tool arguments are untrusted input and must be validated by the client before any tool is executed. DeepSeek's web UI does not report the same telemetry as a dedicated API, so local token usage and caching fields cannot be treated as provider billing data.
 
-The session cache key is a SHA-256 fingerprint of the complete top-level system instructions and the first user message. Hashing the complete values avoids avoidable collisions caused by truncating the fingerprint inputs, but the Anthropic Messages request format does not provide a standard, stable conversation ID. As a result, two independent conversations with the same system instructions and identical first user message can still resolve to the same cached DeepSeek chat. This adapter is safest for one active agent conversation per local gateway; do not assume separate clients receive hard session isolation.
+DeepSeek and Qwen use separate default SQLite state files and browser profiles. The session cache key is a SHA-256 fingerprint of the complete top-level system instructions and the first user message. Hashing the complete values avoids avoidable collisions caused by truncating the fingerprint inputs, but the Anthropic Messages request format does not provide a standard, stable conversation ID. As a result, two independent conversations with the same system instructions and identical first user message can still resolve to the same cached DeepSeek chat. This adapter is safest for one active agent conversation per local gateway; do not assume separate clients receive hard session isolation.
 
 The browser is a single shared resource. Requests are serialized through a bounded queue; when the queue is full, the server reports overload instead of allowing an unbounded backlog. If a client disconnects while a turn is running, the gateway best-effort clicks a visible stop/cancel control, stops polling, and releases the queue. This cancellation is best-effort because the website does not expose a documented API for cancelling a generation. Completion detection first uses the UI's observable stop/send controls when detected; `STABLE_MS` is an inactivity fallback only when the explicit signal has not been observed. UI changes can break these selectors, and the `MAX_TURN_MS` deadline is reported as a failure rather than a completed answer.
 
@@ -628,7 +657,8 @@ Official references:
 deepseek-super/
 ├── deepseek-login.js          # Manual DeepSeek sign-in helper
 ├── qwen-login.js              # Manual Qwen sign-in helper
-├── deepseek-super-server.js   # Backward-compatible entry point
+├── server.js                  # CLI entry point: --deepseek or --qwen
+├── deepseek-super-server.js   # Backward-compatible DeepSeek entry point
 ├── package.json
 ├── README.md
 ├── .gitignore
@@ -642,7 +672,11 @@ deepseek-super/
 │   ├── prompts.js             # Prompt building, tool_choice, and tool schemas
 │   ├── tool-parser.js         # Streaming DSML parsing and normalization
 │   ├── session-store.js       # Conversation URL cache
-│   ├── browser.js             # Playwright, polling, and browser turn runner
+│   ├── backend-selection.js   # CLI backend argument parser
+│   ├── browser.js             # Backend browser-driver selector
+│   ├── browser-deepseek.js    # DeepSeek Playwright driver
+│   ├── browser-qwen.js        # Qwen Playwright driver
+│   ├── browser-qwen-dom.js    # Qwen DOM state reader
 │   ├── turn-state.js          # Turn state detection
 │   ├── sse-sink.js            # Anthropic SSE serialization
 │   ├── handler.js             # Messages endpoint handler

@@ -1,10 +1,10 @@
 'use strict';
 
 const http = require('node:http');
-const { uuid } = require('./config');
+const { BACKEND, uuid } = require('./config');
 const { effortCapabilities } = require('./effort');
 // Virtual catalog IDs are client-facing profiles; requests are handled by this gateway.
-const AVAILABLE_MODELS = [
+const DEEPSEEK_MODELS = [
   { id: 'deepseek-super', display_name: 'Deepseek Super', line: 'sonnet' },
   { id: 'claude-mythos-5-1', display_name: 'Mythos 5.1', line: 'opus' },
   { id: 'claude-fable-5.1', display_name: 'Fable 5.1', line: 'sonnet' },
@@ -12,6 +12,15 @@ const AVAILABLE_MODELS = [
   { id: 'claude-sonnet-5-5', display_name: 'Sonnet 5.5', line: 'sonnet' },
   { id: 'claude-haiku-5-5', display_name: 'Haiku 5.5', line: 'haiku' },
 ];
+const QWEN_MODELS = [
+  { id: 'qwen-web', display_name: 'Qwen Web (model selected in Qwen)', line: 'sonnet' },
+  { id: 'claude-mythos-5-1', display_name: 'Mythos 5.1 profile on Qwen', line: 'opus' },
+  { id: 'claude-fable-5.1', display_name: 'Fable 5.1 profile on Qwen', line: 'sonnet' },
+  { id: 'claude-opus-5-5', display_name: 'Opus 5.5 profile on Qwen', line: 'opus' },
+  { id: 'claude-sonnet-5-5', display_name: 'Sonnet 5.5 profile on Qwen', line: 'sonnet' },
+  { id: 'claude-haiku-5-5', display_name: 'Haiku 5.5 profile on Qwen', line: 'haiku' },
+];
+const AVAILABLE_MODELS = BACKEND === 'qwen' ? QWEN_MODELS : DEEPSEEK_MODELS;
 const { handleMessages } = require('./handler');
 const {
   jsonError,

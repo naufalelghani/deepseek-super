@@ -21,11 +21,24 @@ function readIntegerEnv(name, fallback, min, max) {
     return fallback;
 }
 
+const BACKEND = String(process.env.DEEPSEEK_SUPER_BACKEND || 'deepseek').trim().toLowerCase();
+if (BACKEND !== 'deepseek' && BACKEND !== 'qwen') {
+    throw new Error('DEEPSEEK_SUPER_BACKEND must be either "deepseek" or "qwen".');
+}
 const PORT = readIntegerEnv('PORT', 8787, 1, 65535);
-const MODEL_NAME = process.env.MODEL_NAME || 'deepseek-super';
-const PROFILE_DIR = process.env.PROFILE_DIR || path.join(__dirname, '..', 'deepseek-profile');
+const MODEL_NAME = process.env.MODEL_NAME || (BACKEND === 'qwen' ? 'qwen-web' : 'deepseek-super');
+const DEFAULT_PROFILE_DIR = BACKEND === 'qwen'
+    ? (process.env.QWEN_PROFILE_DIR || path.join(__dirname, '..', 'qwen-profile'))
+    : (process.env.DEEPSEEK_PROFILE_DIR || path.join(__dirname, '..', 'deepseek-profile'));
+const PROFILE_DIR = process.env.PROFILE_DIR || DEFAULT_PROFILE_DIR;
 const AUTH_TOKEN_FILE = path.join(__dirname, '..', '.deepseek-super-token');
-const DATABASE_PATH = path.resolve(process.env.DEEPSEEK_SUPER_DB_PATH || path.join(__dirname, '..', 'data', 'deepseek-super.sqlite3'));
+const DEFAULT_DATABASE_PATH = path.join(
+    __dirname,
+    '..',
+    'data',
+    BACKEND === 'qwen' ? 'qwen.sqlite3' : 'deepseek-super.sqlite3'
+);
+const DATABASE_PATH = path.resolve(process.env.DEEPSEEK_SUPER_DB_PATH || DEFAULT_DATABASE_PATH);
 
 function readExistingToken() {
     const saved = fs.readFileSync(AUTH_TOKEN_FILE, 'utf8').trim();
@@ -94,6 +107,7 @@ const sha = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const approxTokens = (value) => Math.max(1, Math.ceil((value || '').length / 4));
 
 module.exports = {
+    BACKEND,
     PORT,
     MODEL_NAME,
     PROFILE_DIR,

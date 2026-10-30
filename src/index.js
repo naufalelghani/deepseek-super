@@ -8,7 +8,9 @@ function start() {
   const server = createServer();
   server.listen(config.PORT, '127.0.0.1', () => {
     console.log('=== deepseek-super server ===');
+    console.log('Backend    : ' + config.BACKEND);
     console.log('Model      : ' + config.MODEL_NAME);
+    console.log('Profile    : ' + config.PROFILE_DIR);
     console.log('Endpoint   : http://127.0.0.1:' + config.PORT);
     console.log('Routes     : POST /v1/messages, POST /v1/messages/count_tokens, GET /v1/models');
     console.log('Auth       : required');
