@@ -50,6 +50,53 @@ Both are listed in `.gitignore` because they contain authentication data. **Neve
 
 If the profile is already signed in, you do not need to authenticate again: make sure the chat page is ready and press Enter in the terminal. If the session has expired, rerun `node deepseek-login.js` and sign in manually. After you press Enter, the chat-composer check has a default timeout of 10 minutes; change it with the `DEEPSEEK_LOGIN_TIMEOUT_MS` environment variable if needed.
 
+### Windows PowerShell: open or release the persistent Chrome profile
+
+The gateway, login helper, and manual Chrome session must not use `deepseek-profile/` at the same time. Stop `npm start` and close any Chrome window using this profile before opening it manually.
+
+To open the project's persistent profile in regular Chrome for a manual DeepSeek login:
+
+```powershell
+$profile = "C:\Users\USER\Documents\deepseek-chat\deepseek-super\deepseek-profile"
+
+$candidates = @(
+    "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+    "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+    "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+)
+
+$chrome = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+if (-not $chrome) {
+    throw "Google Chrome executable tidak ditemukan."
+}
+
+Start-Process -FilePath $chrome -ArgumentList "--user-data-dir=`"$profile`" https://chat.deepseek.com/"
+```
+
+Complete the login manually in the Chrome window. When finished, close every Chrome window using this profile before running `node deepseek-login.js` or `npm start`.
+
+If Playwright reports **"Opening in existing browser session"**, the profile may still be held by a background Chrome process. The following commands list only Chrome processes whose command line references this project's profile, then stop those matching processes. Review the listed processes before stopping them:
+
+```powershell
+$profile = "C:\Users\USER\Documents\deepseek-chat\deepseek-super\deepseek-profile"
+
+$profileProcesses = Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" |
+    Where-Object {
+        $_.CommandLine -and
+        $_.CommandLine.Contains($profile) -and
+        $_.CommandLine.Contains("--user-data-dir")
+    }
+
+$profileProcesses | Select-Object ProcessId, ParentProcessId, CommandLine
+
+$profileProcesses | ForEach-Object {
+    Stop-Process -Id $_.ProcessId -Force
+}
+```
+
+Only stop processes shown for the project's `deepseek-profile`. Do not terminate unrelated Chrome processes. After the profile is no longer in use, run `node deepseek-login.js` or `npm start` as needed.
+
 ### 2. Start the gateway
 
 After the login helper exits and Chrome has closed, start the server:
