@@ -208,6 +208,32 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
 
          // DeepSeek may only reveal message actions on hover.
          await assistantItem.hover({ timeout: 1500 }).catch(() => {});
+
+         // Current DeepSeek UI uses an unlabeled div[role="button"] for Copy.
+         // In the assistant row, it is the first action button after the message.
+         // Scope this selector to that row so we never click regenerate/vote/share.
+         const structuralCopyButton = assistantItem.locator(
+             ':scope > .ds-message + .ds-flex > .ds-flex > [role="button"].ds-button'
+         ).first();
+         if (await structuralCopyButton.count() > 0 &&
+             await structuralCopyButton.isVisible().catch(() => false)) {
+             copyAttempted = true;
+             await structuralCopyButton.click({ timeout: 2500 });
+             const deadline = Date.now() + 1200;
+             let copiedText = '';
+             do {
+                 copiedText = await readClipboard().catch(() => '');
+                 if (copiedText.trim() &&
+                     (copiedText !== previousClipboard || copiedText === expectedText)) {
+                     return copiedText;
+                 }
+                 await page.waitForTimeout(75);
+             } while (Date.now() < deadline);
+
+             console.warn('[tool-parser] structural Copy button did not produce new text; ignoring stale clipboard contents.');
+         }
+
+         // Retain accessible-label fallbacks for other DeepSeek UI variants.
          const buttons = assistantItem.locator(copySelector);
          const count = await buttons.count();
          for (let i = count - 1; i >= 0; i--) {
@@ -231,7 +257,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              return null;
          }
 
-         console.warn('[tool-parser] clipboard fallback unavailable: no visible assistant Copy button matched known labels.');
+         console.warn('[tool-parser] clipboard fallback unavailable: no structural or labeled assistant Copy button matched.');
          return null;
      } catch (error) {
          console.warn('[tool-parser] clipboard fallback failed: ' + (error.message || String(error)));
