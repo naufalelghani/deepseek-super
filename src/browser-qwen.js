@@ -1,6 +1,7 @@
 'use strict';
 
 const { chromium } = require('playwright');
+const path = require('node:path');
 const {
   PROFILE_DIR,
   POLL_MS,
@@ -10,6 +11,8 @@ const {
 } = require('./config');
 const { readQwenStateInPage } = require('./browser-qwen-dom');
 const { parseToolCallsFromText } = require('./tool-parser');
+const { restoreStorageState, saveStorageState } = require('./incognito-auth');
+const AUTH_STATE_PATH = path.join(__dirname, '..', 'qwen-auth.json');
 
 const QWEN_URL = 'https://chat.qwen.ai/';
 const COMPOSER_SELECTOR = 'textarea.message-input-textarea';
@@ -70,8 +73,11 @@ async function ensurePage() {
       const newContext = await chromium.launchPersistentContext(PROFILE_DIR, {
         headless: false,
         channel: 'chrome',
+        args: ['--incognito'],
         viewport: { width: 1280, height: 900 },
       });
+
+      await restoreStorageState(newContext, AUTH_STATE_PATH, 'qwen');
 
       try {
         const newPage = newContext.pages()[0] || await newContext.newPage();
@@ -446,6 +452,7 @@ async function runTurn(prompt, sink, bufferText, isCancelled = () => false, incl
     console.warn('[qwen-parser] tool-call markup was detected but could not be parsed completely.');
   }
 
+  await saveAuthState();
   return {
     text: finalText,
     thinking: '',
@@ -460,7 +467,17 @@ async function runIsolatedTurn() {
   throw new Error('Qwen backend does not provide the DeepSeek-native isolated Search adapter.');
 }
 
+async function saveAuthState() {
+  if (!ctx) return;
+  try {
+    await saveStorageState(ctx, AUTH_STATE_PATH, 'qwen');
+  } catch (error) {
+    console.warn('[qwen-auth] could not save Incognito session backup: ' + (error.message || String(error)));
+  }
+}
+
 async function shutdownBrowser() {
+  await saveAuthState();
   try { if (ctx) await ctx.close(); } catch {}
   ctx = null;
   page = null;
