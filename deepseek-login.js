@@ -87,10 +87,10 @@ async function main() {
     console.log('Session backup file verified:', STORAGE_STATE_PATH);
 
     console.log('');
-    console.log('Login step completed in Incognito mode. Chrome's temporary session is backed up to:');
+    console.log("Login step completed in Incognito mode. Chrome's temporary session is backed up to:");
     console.log('  ' + STORAGE_STATE_PATH);
-    console.log('The gateway uses this same profile. Closing this browser now so');
-    console.log('the server can open the profile without a Chrome profile lock.');
+    console.log('The gateway restores this snapshot into its own Incognito session. Closing this browser');
+    console.log('now releases the project user-data directory for the server.');
   } finally {
     if (context) {
       await context.close().catch(() => {});
