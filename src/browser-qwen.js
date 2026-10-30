@@ -108,10 +108,27 @@ async function readState(finalSnapshot = false) {
   return page.evaluate(readQwenStateInPage, { final: finalSnapshot });
 }
 
+function parseQwenChatUrl(value) {
+  try {
+    const parsed = new URL(value);
+    if (parsed.origin !== 'https://chat.qwen.ai') return null;
+    const match = /^\\/c\\/([A-Za-z0-9_-]{16,128})\\/?$/.exec(parsed.pathname);
+    if (!match) return null;
+    return {
+      chatId: match[1],
+      url: 'https://chat.qwen.ai/c/' + match[1],
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function currentChatId() {
   return page.evaluate(() => {
     const message = document.querySelector('.chat-user-message-container[data-chat-id]');
-    return message ? message.getAttribute('data-chat-id') : null;
+    if (message) return message.getAttribute('data-chat-id');
+    const match = /^\\/c\\/([A-Za-z0-9_-]{16,128})\\/?$/.exec(window.location.pathname);
+    return match ? match[1] : null;
   });
 }
 
@@ -150,10 +167,44 @@ async function gotoNewChat() {
   textarea = page.locator(COMPOSER_SELECTOR).first();
 }
 
-async function resumeUrl() {
-  // The supplied page snapshot exposes a chat ID in the DOM, but no stable URL
-  // for navigation. The API conversation is replayed into a fresh Qwen chat.
-  return false;
+async function currentUrl() {
+  if (!page || page.isClosed()) return null;
+  const active = parseQwenChatUrl(page.url());
+  if (!active) return null;
+  const domChatId = await currentChatId().catch(() => null);
+  if (domChatId && domChatId !== active.chatId) return null;
+  return active.url;
+}
+
+async function resumeUrl(value) {
+  await ensurePage();
+  const target = parseQwenChatUrl(value);
+  if (!target) return false;
+
+  try {
+    await page.goto(target.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await waitForComposer(page, 30000);
+    await page.waitForFunction((chatId) => {
+      const message = document.querySelector('.chat-user-message-container[data-chat-id]');
+      return window.location.pathname === '/c/' + chatId &&
+        Boolean(message && message.getAttribute('data-chat-id') === chatId);
+    }, target.chatId, { timeout: 30000 });
+    await page.waitForTimeout(300);
+
+    const activeChatId = await currentChatId();
+    const activeUrl = await currentUrl();
+    if (activeChatId !== target.chatId || activeUrl !== target.url) {
+      console.warn('[qwen-session] requested chat did not match the active Qwen conversation.');
+      return false;
+    }
+
+    textarea = page.locator(COMPOSER_SELECTOR).first();
+    return true;
+  } catch (error) {
+    console.warn('[qwen-session] failed to resume cached Qwen chat: ' +
+      (error.message || String(error)));
+    return false;
+  }
 }
 
 async function stopGenerationBestEffort() {
@@ -419,7 +470,7 @@ module.exports = {
   ensureTogglesOn,
   readState,
   clickSend,
-  currentUrl: async () => null,
+  currentUrl,
   currentChatId,
   gotoNewChat,
   resumeUrl,
