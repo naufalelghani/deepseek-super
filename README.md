@@ -184,7 +184,7 @@ node server.js --qwen
 
 Qwen mode uses `qwen-profile/` and the model currently selected in the Qwen web UI. Its default API model ID is `qwen-web`. Claude-prefixed IDs are response-style compatibility profiles, not native Anthropic models. Qwen mode does not inject DeepSeek-native Search/WebFetch tools. Client-declared tools use the shared DSML tool-call parser.
 
-The supplied Qwen page snapshot exposes a chat ID in message DOM, but not a stable navigable conversation URL. To avoid accidentally continuing in the wrong thread, Qwen mode starts a fresh chat for each Messages request and replays the conversation history received from the API client. This is less efficient than DeepSeek's cached-thread resumption and remains subject to changes in Qwen's web UI.
+Qwen conversation URLs use `https://chat.qwen.ai/c/<chat-id>`. The gateway saves that URL after a successful turn and navigates back to it for follow-up Messages requests, including `tool_result` round trips. Before continuing, it verifies that the route and the chat ID exposed by the active user-message DOM match. If the cached URL cannot be restored or the conversation exceeds the replay threshold, Qwen mode starts a new chat and replays the API history. This behavior depends on Qwen's web UI remaining compatible.
 
 Do not run a login helper, manual Chrome window, and server at the same time against the same profile. DeepSeek and Qwen use separate profile directories. Only one backend can bind to the default port at a time; to run both simultaneously, start one with another `PORT`, for example:
 
@@ -606,12 +606,12 @@ Parser converts DSML calls to JSON argument objects and Anthropic-style tool_use
         v
 Client/agent executes its own tools and sends tool_result back
         |
-        +---- the gateway resumes the same DeepSeek chat when possible
+        +---- the gateway resumes the cached DeepSeek or Qwen chat when possible
 ```
 
 Tool calling is prompt-based rather than a native tool protocol offered by the website. Tool names, schemas, and the JSON format are described in prompts; the gateway parses the resulting text. Model-generated tool arguments are untrusted input and must be validated by the client before any tool is executed. The selected web UI does not report the same telemetry as a dedicated API, so local token usage and caching fields cannot be treated as provider billing data.
 
-DeepSeek and Qwen use separate default SQLite state files and browser profiles. The session cache key is a SHA-256 fingerprint of the complete top-level system instructions and the first user message. Hashing the complete values avoids avoidable collisions caused by truncating the fingerprint inputs, but the Anthropic Messages request format does not provide a standard, stable conversation ID. As a result, two independent conversations with the same system instructions and identical first user message can still resolve to the same cached DeepSeek chat. This adapter is safest for one active agent conversation per local gateway; do not assume separate clients receive hard session isolation. Qwen starts a fresh web chat per Messages request and replays API history because the inspected page snapshot did not expose a stable thread URL.
+DeepSeek and Qwen use separate default SQLite state files and browser profiles. The session cache key is a SHA-256 fingerprint of the complete top-level system instructions and the first user message. Hashing the complete values avoids avoidable collisions caused by truncating the fingerprint inputs, but the Anthropic Messages request format does not provide a standard, stable conversation ID. As a result, two independent conversations with the same system instructions and identical first user message can still resolve to the same cached DeepSeek chat. This adapter is safest for one active agent conversation per local gateway; do not assume separate clients receive hard session isolation. Qwen stores its stable `/c/<chat-id>` conversation URL and resumes that thread for follow-up Messages requests when the cached URL can be verified; it starts a fresh chat and replays API history only when resumption fails or the conversation reaches the replay threshold.
 
 The browser is a single shared resource. Requests are serialized through a bounded queue; when the queue is full, the server reports overload instead of allowing an unbounded backlog. If a client disconnects while a turn is running, the gateway best-effort clicks a visible stop/cancel control, stops polling, and releases the queue. This cancellation is best-effort because the website does not expose a documented API for cancelling a generation. Completion detection first uses the UI's observable stop/send controls when detected; `STABLE_MS` is an inactivity fallback only when the explicit signal has not been observed. UI changes can break these selectors, and the `MAX_TURN_MS` deadline is reported as a failure rather than a completed answer.
 
@@ -629,7 +629,7 @@ For a supported API path, the [official DeepSeek API documentation](https://api-
 
 - Requests containing `tools` include tool names, descriptions, and `input_schema` definitions in local prompt instructions.
 - Recognized tool calls are returned as Anthropic `tool_use` blocks; the gateway does not execute client-side tools. Claude Code or the client is responsible for executing them.
-- The client must send tool results back as `tool_result` blocks referencing the original `tool_use_id`. The gateway continues the same DeepSeek chat URL and can request another tool if the task is not complete. The model returns a final answer when the available results are sufficient or a safety limit is reached.
+- The client must send tool results back as `tool_result` blocks referencing the original `tool_use_id`. The gateway resumes the cached chat URL for the selected backend and can request another tool if the task is not complete. The model returns a final answer when the available results are sufficient or a safety limit is reached.
 - Model-generated tool payloads must still be checked. Validate tool names and input shapes in the parser/client; do not trust generated JSON blindly.
 - `tool_choice` is mapped locally. Anthropic-specific semantics such as `disable_parallel_tool_use` are not automatically available, and some compatibility behavior may differ from the official API.
 
