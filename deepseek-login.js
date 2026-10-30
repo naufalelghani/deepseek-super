@@ -25,9 +25,8 @@ async function main() {
     console.log('Profile:', PROFILE_DIR);
     console.log('A Chrome window will open. Complete login yourself in that window.');
 
-    // Create the persistent profile directory explicitly so its presence is
-    // predictable before Chrome starts. Playwright will populate it with the
-    // browser profile and authentication data.
+    // Create the project-specific Chrome user-data directory explicitly.
+    // Incognito cookies are temporary; reusable auth is stored separately in the ignored snapshot.
     fs.mkdirSync(PROFILE_DIR, { recursive: true });
 
     context = await chromium.launchPersistentContext(PROFILE_DIR, {
@@ -77,14 +76,14 @@ async function main() {
       fs.statSync(STORAGE_STATE_PATH).size > 0;
 
     if (!profileExists) {
-      throw new Error('The persistent profile directory was not created: ' + PROFILE_DIR);
+      throw new Error('The project user-data directory was not created: ' + PROFILE_DIR);
     }
     if (!authFileExists) {
       throw new Error('The session backup was not created: ' + STORAGE_STATE_PATH);
     }
 
     console.log('Session backup saved locally:', STORAGE_STATE_PATH);
-    console.log('Persistent profile directory verified:', PROFILE_DIR);
+    console.log('Project Incognito user-data directory verified:', PROFILE_DIR);
     console.log('Session backup file verified:', STORAGE_STATE_PATH);
 
     console.log('');
