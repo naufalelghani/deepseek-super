@@ -1,12 +1,13 @@
 'use strict';
 
-// Open Qwen Studio in a dedicated persistent Chrome profile so the user can
-// complete sign-in manually. This profile is separate from deepseek-profile/.
+// Open Qwen Studio in an Incognito Chrome window with a project-specific user-data directory.
+// Auth is explicitly backed up to a separate ignored JSON file for the gateway to restore.
 
 const fs = require('node:fs');
 const path = require('node:path');
 const readline = require('node:readline/promises');
 const { chromium } = require('playwright');
+const { restoreStorageState, saveStorageState } = require('./src/incognito-auth');
 
 const QWEN_URL = 'https://chat.qwen.ai/';
 const PROFILE_DIR = process.env.QWEN_PROFILE_DIR || path.join(__dirname, 'qwen-profile');
@@ -64,9 +65,11 @@ async function main() {
     context = await chromium.launchPersistentContext(PROFILE_DIR, {
       headless: false,
       channel: 'chrome',
+      args: ['--incognito'],
       viewport: { width: 1280, height: 900 },
     });
 
+    await restoreStorageState(context, STORAGE_STATE_PATH, 'qwen');
     const page = context.pages()[0] || await context.newPage();
     await page.goto(QWEN_URL, {
       waitUntil: 'domcontentloaded',
@@ -115,7 +118,7 @@ async function main() {
     }
 
     fs.mkdirSync(path.dirname(STORAGE_STATE_PATH), { recursive: true });
-    await context.storageState({ path: STORAGE_STATE_PATH });
+    await saveStorageState(context, STORAGE_STATE_PATH, 'qwen');
 
     const profileExists = fs.existsSync(PROFILE_DIR) && fs.statSync(PROFILE_DIR).isDirectory();
     const authFileExists = fs.existsSync(STORAGE_STATE_PATH) &&
@@ -135,8 +138,8 @@ async function main() {
     console.log('Qwen token-cookie marker:', tokenCookiePresent ? 'detected' : 'not detected');
 
     console.log('');
-    console.log('Qwen login setup completed. The persistent session is stored in:');
-    console.log('  ' + PROFILE_DIR);
+    console.log('Qwen login setup completed in Incognito mode. The temporary session is backed up to:');
+    console.log('  ' + STORAGE_STATE_PATH);
     console.log('The browser will now close so the profile is not left locked.');
   } finally {
     if (context) {
