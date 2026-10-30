@@ -319,7 +319,8 @@ async function runTurn(prompt, sink, bufferText, isCancelled = () => false, incl
     }
 
     const idleMs = Date.now() - lastChange;
-    const explicitCompletion = Boolean(state.answer && (state.statusComplete || state.copyAvailable));
+    const explicitCompletion = Boolean(state.answer && !state.isGenerating &&
+      (state.statusComplete || state.copyAvailable));
     if (explicitCompletion) {
       completionStreak++;
       if (completionStreak >= 3) {

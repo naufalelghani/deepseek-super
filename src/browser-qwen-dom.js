@@ -23,8 +23,12 @@ function readQwenStateInPage(options = {}) {
   const statusClass = statusCard && typeof statusCard.className === 'string'
     ? statusCard.className
     : '';
-  const statusComplete = /completed|complete|finished|done/i.test(statusTitle) ||
-    /status-card-completed/i.test(statusClass);
+  const messageClass = last && typeof last.className === 'string' ? last.className : '';
+  const awaitingResponse = /qwen-chat-message-awaiting-response/.test(messageClass);
+  const statusComplete = !awaitingResponse && (
+    /completed|complete|finished|done/i.test(statusTitle) ||
+    /status-card-completed/i.test(statusClass)
+  );
 
   const copyButton = last
     ? last.querySelector('.response-message-footer-actions button[aria-label="Copy"]')
@@ -67,7 +71,8 @@ function readQwenStateInPage(options = {}) {
     composerReady: isVisible(composer),
     sendButtonEnabled: Boolean(sendButton && !sendButton.disabled),
     completionSignalAvailable: Boolean(statusTitle || isVisible(copyButton)),
-    isGenerating: Boolean(statusCard && !statusComplete),
+    isGenerating: awaitingResponse || Boolean(statusCard && !statusComplete),
+    awaitingResponse,
     statusTitle,
     statusComplete,
     copyAvailable: isVisible(copyButton),
