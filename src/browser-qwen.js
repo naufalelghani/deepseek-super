@@ -112,7 +112,7 @@ function parseQwenChatUrl(value) {
   try {
     const parsed = new URL(value);
     if (parsed.origin !== 'https://chat.qwen.ai') return null;
-    const match = /^\\/c\\/([A-Za-z0-9_-]{16,128})\\/?$/.exec(parsed.pathname);
+    const match = /^\/c\/([A-Za-z0-9_-]{16,128})\/?$/.exec(parsed.pathname);
     if (!match) return null;
     return {
       chatId: match[1],
@@ -125,7 +125,7 @@ function parseQwenChatUrl(value) {
 
 async function currentChatId() {
   return page.evaluate(() => {
-    const routeMatch = /^\\/c\\/([A-Za-z0-9_-]{16,128})\\/?$/.exec(window.location.pathname);
+    const routeMatch = /^\/c\/([A-Za-z0-9_-]{16,128})\/?$/.exec(window.location.pathname);
     if (routeMatch) return routeMatch[1];
     const message = document.querySelector('.chat-user-message-container[data-chat-id]');
     return message ? message.getAttribute('data-chat-id') : null;
@@ -153,7 +153,7 @@ async function gotoNewChat() {
   await waitForComposer(page);
   if (previousChatId) {
     await page.waitForFunction((oldChatId) => {
-      const routeMatch = /^\\/c\\/([A-Za-z0-9_-]{16,128})\\/?$/.exec(window.location.pathname);
+      const routeMatch = /^\/c\/([A-Za-z0-9_-]{16,128})\/?$/.exec(window.location.pathname);
       const message = document.querySelector('.chat-user-message-container[data-chat-id]');
       const currentId = routeMatch
         ? routeMatch[1]
