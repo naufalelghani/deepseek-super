@@ -125,10 +125,10 @@ function parseQwenChatUrl(value) {
 
 async function currentChatId() {
   return page.evaluate(() => {
+    const routeMatch = /^\\/c\\/([A-Za-z0-9_-]{16,128})\\/?$/.exec(window.location.pathname);
+    if (routeMatch) return routeMatch[1];
     const message = document.querySelector('.chat-user-message-container[data-chat-id]');
-    if (message) return message.getAttribute('data-chat-id');
-    const match = /^\\/c\\/([A-Za-z0-9_-]{16,128})\\/?$/.exec(window.location.pathname);
-    return match ? match[1] : null;
+    return message ? message.getAttribute('data-chat-id') : null;
   });
 }
 
@@ -153,9 +153,12 @@ async function gotoNewChat() {
   await waitForComposer(page);
   if (previousChatId) {
     await page.waitForFunction((oldChatId) => {
+      const routeMatch = /^\\/c\\/([A-Za-z0-9_-]{16,128})\\/?$/.exec(window.location.pathname);
       const message = document.querySelector('.chat-user-message-container[data-chat-id]');
-      const currentChatId = message ? message.getAttribute('data-chat-id') : null;
-      return currentChatId !== oldChatId;
+      const currentId = routeMatch
+        ? routeMatch[1]
+        : message ? message.getAttribute('data-chat-id') : null;
+      return currentId !== oldChatId;
     }, previousChatId, { timeout: 15000 }).catch(() => {});
   }
   await page.waitForTimeout(350);
