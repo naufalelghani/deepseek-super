@@ -34,27 +34,25 @@ Run the login helper before starting the gateway server:
 node deepseek-login.js
 ```
 
-The script opens Chrome with the persistent profile in `deepseek-profile/`. Authentication is **manual**:
+The script opens Chrome in **Incognito mode** using the project-specific user-data directory `deepseek-profile/`. Authentication is **manual**:
 
 1. On the DeepSeek page, click **Log in / Sign in**.
 2. Choose **Sign in with Google**.
 3. Complete Google's sign-in, consent, CAPTCHA, or two-factor authentication in the browser yourself.
-4. Once the DeepSeek chat composer is visible and ready, return to the terminal and press **Enter**. The script verifies the composer, ensures the `deepseek-profile/` directory exists, writes `deepseek-auth.json`, verifies that both artifacts were created, and closes Chrome so the profile is not left locked.
+4. Once the DeepSeek chat composer is visible and ready, return to the terminal and press **Enter**. The script verifies the composer, exports the reusable cookie/localStorage subset to `deepseek-auth.json`, verifies the user-data directory and snapshot, and closes Chrome so the directory is released.
 
 After successful login verification, two local artifacts should be present in the repository root:
 
-- `deepseek-profile/` — Chrome's persistent user profile, including the login session. The script creates this directory before launching Chrome.
-- `deepseek-auth.json` — a storage-state backup written after the DeepSeek chat composer is verified.
+- `deepseek-profile/` — the project-specific Chrome user-data directory. The gateway launches it in Incognito mode; the Incognito cookie store is temporary and is cleared when all Incognito windows close.
+- `deepseek-auth.json` — a local Playwright storage-state snapshot. The gateway restores its cookies/localStorage into each new Incognito context and refreshes the snapshot after completed turns and clean shutdown.
 
-Both are listed in `.gitignore` because they contain authentication data. **Never commit or share these files.** If saving `deepseek-auth.json` fails, the login helper reports an error rather than reporting the setup as successful.
+Both paths are listed in `.gitignore`. **The JSON snapshot contains reusable authentication cookies/session data: never commit, upload, or share it.** Incognito mode does not mean the project stores no authentication data on disk; the separate snapshot is intentionally retained so the gateway can authenticate after the login helper closes Chrome. If the saved session expires, rerun `node deepseek-login.js` and sign in manually. The chat-composer check has a default timeout of 10 minutes; change it with `DEEPSEEK_LOGIN_TIMEOUT_MS` if needed.
 
-If the profile is already signed in, you do not need to authenticate again: make sure the chat page is ready and press Enter in the terminal. If the session has expired, rerun `node deepseek-login.js` and sign in manually. After you press Enter, the chat-composer check has a default timeout of 10 minutes; change it with the `DEEPSEEK_LOGIN_TIMEOUT_MS` environment variable if needed.
-
-### Windows PowerShell: open or release the persistent Chrome profile
+### Windows PowerShell: open or release the project Chrome user-data directory
 
 The gateway, login helper, and manual Chrome session must not use `deepseek-profile/` at the same time. Stop `npm start` and close any Chrome window using this profile before opening it manually.
 
-To open the project's persistent profile in regular Chrome for a manual DeepSeek login:
+To inspect the project's isolated user-data directory in an Incognito window (use `node deepseek-login.js` when you need to refresh the saved gateway session):
 
 ```powershell
 $profile = "C:\Users\USER\Documents\deepseek-chat\deepseek-super\deepseek-profile"
@@ -71,10 +69,10 @@ if (-not $chrome) {
     throw "Google Chrome executable tidak ditemukan."
 }
 
-Start-Process -FilePath $chrome -ArgumentList "--user-data-dir=`"$profile`" https://chat.deepseek.com/"
+Start-Process -FilePath $chrome -ArgumentList "--incognito --user-data-dir=`"$profile`" https://chat.deepseek.com/"
 ```
 
-Complete the login manually in the Chrome window. When finished, close every Chrome window using this profile before running `node deepseek-login.js` or `npm start`.
+This manual Incognito window is for temporary inspection. To create or refresh the gateway's reusable auth snapshot, use `node deepseek-login.js`. Close every Chrome window using this user-data directory before running the helper or server.
 
 If Playwright reports **"Opening in existing browser session"**, the profile may still be held by a background Chrome process. The following commands list only Chrome processes whose command line references this project's profile, then stop those matching processes. Review the listed processes before stopping them:
 
@@ -99,21 +97,21 @@ Only stop processes shown for the project's `deepseek-profile`. Do not terminate
 
 ### Separate Qwen Chrome profile (manual browser use)
 
-The Qwen backend uses this separate `qwen-profile/` directory and never shares the DeepSeek profile. Sign in manually with `node qwen-login.js` before starting the Qwen server.
+The Qwen backend uses a separate Incognito context and project user-data directory `qwen-profile/`; it never shares the DeepSeek session. Sign in with `node qwen-login.js` before starting the Qwen server.
 
-To open a dedicated persistent Chrome session through Playwright and sign in manually, run:
+To open an Incognito Chrome session through Playwright and sign in manually, run:
 
 ```powershell
 node qwen-login.js
 ```
 
-The helper opens Chrome with `qwen-profile/`, waits for you to complete Qwen's sign-in flow in the browser, checks that the page is on the Qwen HTTPS domain and that a chat composer is visible, and saves a separate `qwen-auth.json` storage-state backup. It also reports whether Qwen's documented `token` cookie was detected; that cookie check is diagnostic and is not treated as definitive proof of account authentication. The browser closes after the backup is saved.
+The helper opens Chrome in Incognito mode with the `qwen-profile/` project user-data directory, restores any existing local auth snapshot, waits for you to complete Qwen's sign-in flow if needed, checks the Qwen HTTPS domain and composer, and saves a separate `qwen-auth.json` storage-state backup. It also reports whether Qwen's documented `token` cookie was detected; that check is diagnostic, not definitive proof of authentication. The browser closes after the backup is saved.
 
-The helper accepts `QWEN_PROFILE_DIR` to override the profile directory and `QWEN_LOGIN_TIMEOUT_MS` to change the composer wait timeout (default: 10 minutes). The `qwen-profile/` directory and `qwen-auth.json` contain authentication state; both are ignored by Git and must not be committed or shared.
+The helper accepts `QWEN_PROFILE_DIR` to override the user-data directory and `QWEN_LOGIN_TIMEOUT_MS` to change the composer wait timeout (default: 10 minutes). The `qwen-profile/` directory is a project-specific Incognito user-data directory. `qwen-auth.json` stores reusable cookies/localStorage separately so the gateway can restore login after Incognito closes. It is ignored by Git but is highly sensitive; never commit or share it.
 
 You can keep a separate Chrome profile for the Qwen web app at [https://chat.qwen.ai/](https://chat.qwen.ai/). This profile is independent of the gateway's `deepseek-profile/` and is for manual Qwen browser use only; it does not connect the current gateway to Qwen.
 
-To open Qwen in regular Chrome with a dedicated `qwen-profile/` directory:
+To inspect Qwen in an Incognito Chrome window with its dedicated `qwen-profile/` directory:
 
 ```powershell
 $profile = "C:\Users\USER\Documents\deepseek-chat\deepseek-super\qwen-profile"
@@ -130,10 +128,10 @@ if (-not $chrome) {
     throw "Google Chrome executable tidak ditemukan."
 }
 
-Start-Process -FilePath $chrome -ArgumentList "--user-data-dir=`"$profile`" https://chat.qwen.ai/"
+Start-Process -FilePath $chrome -ArgumentList "--incognito --user-data-dir=`"$profile`" https://chat.qwen.ai/"
 ```
 
-Sign in to Qwen manually in the Chrome window. Close every Chrome window using `qwen-profile/` before starting another browser instance with that same profile.
+This manual Incognito window is for temporary inspection. Use `node qwen-login.js` to create or refresh the gateway's reusable auth snapshot. Close every Chrome window using `qwen-profile/` before starting another browser instance with that same user-data directory.
 
 If Chrome reports that the profile is already in use, list and stop only processes whose command line references this Qwen profile:
 
@@ -203,7 +201,7 @@ Configuration is read from environment variables:
 |---|---:|---|
 | `PORT` | `8787` | Local HTTP server port |
 | `MODEL_NAME` | `deepseek-super` | Fallback response model label when a request omits `model`; `/v1/models` lists the six configured model IDs |
-| `PROFILE_DIR` | `./deepseek-profile` | Persistent Chrome profile directory |
+| `PROFILE_DIR` | `./deepseek-profile` | Project-specific Chrome user-data directory, launched in Incognito mode |
 | `DEEPSEEK_SUPER_TOKEN` | Unset | Optional explicit token override; if unset, a random token is created and stored in `.deepseek-super-token` |
 | `POLL_MS` | `200` | UI polling interval in milliseconds |
 | `STABLE_MS` | `4000` | Completion fallback idle period, used only if a UI completion signal was not observed |
@@ -590,10 +588,10 @@ Local deepseek-super gateway
   - validates and normalizes the request
   - renders system instructions, chat history, and tool schemas as prompt text
   - selects DeepSeek or Qwen at process startup
-  - serializes access to the selected persistent Chrome profile
+  - serializes access to the selected backend's Incognito Chrome context and project user-data directory
         |
         v
-Playwright + the selected signed-in Chrome profile
+Playwright + the selected Incognito Chrome context (auth restored from the local snapshot)
         |
         +---- https://chat.deepseek.com/ (DeepSeek mode)
         |
