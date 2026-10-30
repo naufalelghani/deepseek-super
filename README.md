@@ -109,7 +109,7 @@ The helper opens Chrome in Incognito mode with the `qwen-profile/` project user-
 
 The helper accepts `QWEN_PROFILE_DIR` to override the user-data directory and `QWEN_LOGIN_TIMEOUT_MS` to change the composer wait timeout (default: 10 minutes). The `qwen-profile/` directory is a project-specific Incognito user-data directory. `qwen-auth.json` stores reusable cookies/localStorage separately so the gateway can restore login after Incognito closes. It is ignored by Git but is highly sensitive; never commit or share it.
 
-You can keep a separate Chrome profile for the Qwen web app at [https://chat.qwen.ai/](https://chat.qwen.ai/). This profile is independent of the gateway's `deepseek-profile/` and is for manual Qwen browser use only; it does not connect the current gateway to Qwen.
+The gateway uses `qwen-profile/` only when started with `node server.js --qwen`; it remains separate from `deepseek-profile/` and its authentication snapshot.
 
 To inspect Qwen in an Incognito Chrome window with its dedicated `qwen-profile/` directory:
 
