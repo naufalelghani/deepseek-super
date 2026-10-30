@@ -114,7 +114,7 @@ async function main() {
       cookie.domain.toLowerCase().includes('qwen.ai')
     );
     if (!tokenCookiePresent) {
-      console.warn('[qwen-login] Qwen token cookie was not detected. The browser profile will still be saved, but confirm that sign-in completed successfully.');
+      console.warn('[qwen-login] Qwen token cookie was not detected. The auth snapshot will still be written, but confirm that sign-in completed successfully.');
     }
 
     fs.mkdirSync(path.dirname(STORAGE_STATE_PATH), { recursive: true });
@@ -126,21 +126,21 @@ async function main() {
       fs.statSync(STORAGE_STATE_PATH).size > 0;
 
     if (!profileExists) {
-      throw new Error('The Qwen profile directory was not created: ' + PROFILE_DIR);
+      throw new Error('The Qwen project user-data directory was not created: ' + PROFILE_DIR);
     }
     if (!authFileExists) {
       throw new Error('The Qwen session backup was not created: ' + STORAGE_STATE_PATH);
     }
 
     console.log('Session backup saved locally:', STORAGE_STATE_PATH);
-    console.log('Persistent Qwen profile verified:', PROFILE_DIR);
+    console.log('Project Incognito user-data directory verified:', PROFILE_DIR);
     console.log('Session backup file verified:', STORAGE_STATE_PATH);
     console.log('Qwen token-cookie marker:', tokenCookiePresent ? 'detected' : 'not detected');
 
     console.log('');
     console.log('Qwen login setup completed in Incognito mode. The temporary session is backed up to:');
     console.log('  ' + STORAGE_STATE_PATH);
-    console.log('The browser will now close so the profile is not left locked.');
+    console.log('The browser will now close so the project user-data directory is not left locked.');
   } finally {
     if (context) {
       await context.close().catch(() => {});
