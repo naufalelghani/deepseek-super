@@ -1,10 +1,13 @@
 'use strict';
 
 const { chromium } = require('playwright');
+const path = require('node:path');
 const { readStateInPage } = require('./browser-dom');
 const { PROFILE_DIR, POLL_MS, STABLE_MS, MAX_TURN_MS, MAX_PENDING_TURNS } = require('./config');
 const { StreamParser, extractToolCallsFromText, parseToolCallsFromText } = require('./tool-parser');
 const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, isIdleCompletionCandidate, isComposerRestoredCompletionCandidate } = require('./turn-state');
+const { restoreStorageState, saveStorageState } = require('./incognito-auth');
+const AUTH_STATE_PATH = path.join(__dirname, '..', 'deepseek-auth.json');
 
  let ctx = null;
  let page = null;
@@ -55,11 +58,14 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              const newContext = await chromium.launchPersistentContext(PROFILE_DIR, {
                  headless: false,
                  channel: 'chrome',
+                 args: ['--incognito'],
                 // Keep Chrome's sandbox enabled; Playwright otherwise adds --no-sandbox,
                 // which weakens browser isolation and triggers Chrome's warning banner.
                 chromiumSandbox: true,
                  viewport: { width: 1280, height: 900 },
              });
+
+             await restoreStorageState(newContext, AUTH_STATE_PATH, 'deepseek');
 
              try {
                  const newPage = newContext.pages()[0] || await newContext.newPage();
@@ -695,6 +701,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              ' visible_text_urls=' + textURLCount +
              ' answer_chars=' + finalText.length);
      }
+     await saveAuthState();
      return { text: finalText, thinking: emittedThink, toolCalls: finalTools, invalidToolCall, sourceLinks: includeLinks ? uiAnswerLinks : [], completionSource };
  }
 
@@ -757,7 +764,17 @@ async function runIsolatedTurn(prompt, sink, bufferText, isCancelled = () => fal
     }
 }
 
+async function saveAuthState() {
+    if (!ctx) return;
+    try {
+        await saveStorageState(ctx, AUTH_STATE_PATH, 'deepseek');
+    } catch (error) {
+        console.warn('[deepseek-auth] could not save Incognito session backup: ' + (error.message || String(error)));
+    }
+}
+
 async function shutdownBrowser() {
+    await saveAuthState();
     try { if (ctx) await ctx.close(); } catch (e) {}
     ctx = null;
     page = null;
