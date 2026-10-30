@@ -158,42 +158,42 @@ Review the process list before stopping anything. Only stop processes shown for 
 
 ### 2. Start the gateway and select a backend
 
-Use the root \`server.js\` entry point and select exactly one backend.
+Use the root `server.js` entry point and select exactly one backend.
 
 **DeepSeek**
 
-\`\`\`powershell
+```powershell
 node server.js --deepseek
-\`\`\`
+```
 
-The DeepSeek mode uses \`deepseek-profile/\`, the DeepSeek login helper, and the DeepSeek-native Search/WebFetch adapter. The existing \`npm start\` command remains a DeepSeek shortcut.
+The DeepSeek mode uses `deepseek-profile/`, the DeepSeek login helper, and the DeepSeek-native Search/WebFetch adapter. The existing `npm start` command remains a DeepSeek shortcut.
 
 **Qwen**
 
 First complete manual sign-in through the dedicated Qwen profile:
 
-\`\`\`powershell
+```powershell
 node qwen-login.js
-\`\`\`
+```
 
 After the helper verifies the Qwen chat page and closes Chrome, start the Qwen backend:
 
-\`\`\`powershell
+```powershell
 node server.js --qwen
-\`\`\`
+```
 
-Qwen mode uses \`qwen-profile/\` and the model currently selected in the Qwen web UI. Its default API model ID is \`qwen-web\`. Claude-prefixed IDs are response-style compatibility profiles, not native Anthropic models. Qwen mode does not inject DeepSeek-native Search/WebFetch tools. Client-declared tools use the shared DSML tool-call parser.
+Qwen mode uses `qwen-profile/` and the model currently selected in the Qwen web UI. Its default API model ID is `qwen-web`. Claude-prefixed IDs are response-style compatibility profiles, not native Anthropic models. Qwen mode does not inject DeepSeek-native Search/WebFetch tools. Client-declared tools use the shared DSML tool-call parser.
 
 The supplied Qwen page snapshot exposes a chat ID in message DOM, but not a stable navigable conversation URL. To avoid accidentally continuing in the wrong thread, Qwen mode starts a fresh chat for each Messages request and replays the conversation history received from the API client. This is less efficient than DeepSeek's cached-thread resumption and remains subject to changes in Qwen's web UI.
 
-Do not run a login helper, manual Chrome window, and server at the same time against the same profile. DeepSeek and Qwen use separate profile directories. Only one backend can bind to the default port at a time; to run both simultaneously, start one with another \`PORT\`, for example:
+Do not run a login helper, manual Chrome window, and server at the same time against the same profile. DeepSeek and Qwen use separate profile directories. Only one backend can bind to the default port at a time; to run both simultaneously, start one with another `PORT`, for example:
 
-\`\`\`powershell
+```powershell
 $env:PORT = "8788"
 node server.js --qwen
-\`\`\`
+```
 
-Default endpoint: \`http://127.0.0.1:8787\`
+Default endpoint: `http://127.0.0.1:8787`
 
 ## Configuration and local security
 
@@ -485,11 +485,11 @@ Unit tests cover argument validation, URL safety, focused search/fetch turns, so
 
 ### Tool-call and browser recovery
 
-The gateway prompts DeepSeek to emit DSML calls using `<｜DSML｜ calls>`, `<｜DSML｜ invoke>`, and `<｜DSML｜ parameter>` blocks. String parameters are read as raw text with `string="true"`; non-string values are parsed as JSON with `string="false"`. The parser accepts DeepSeek V4 `tool_calls` and V4.1 `calls` spellings, and rejects legacy `<TOOL_CALL>` JSON wrappers rather than treating them as tool calls. Parsed tool names and arguments are then validated against the schemas supplied by the client using common JSON Schema constraints (types, required/properties, additional properties, enum/const, arrays, and common string/number bounds). This is a deliberately limited validator, not a complete implementation of every JSON Schema keyword. Multi-tool responses are validated as a whole before tool blocks are emitted, so a partially invalid batch is not forwarded. Malformed or schema-invalid output receives a bounded correction attempt. If DOM-derived DSML parsing is invalid, the gateway makes one best-effort fallback by clicking the latest assistant message's Copy control, reading its clipboard text with temporary origin-scoped clipboard permissions, and parsing it with a fresh parser. This fallback runs only after a detected parse failure and does not execute or replay a tool. The Copy action may replace the operating-system clipboard; if no supported Copy control is found or the copied text remains invalid, the normal bounded correction path is used. If recovery fails, the gateway returns an upstream API error rather than disguising the failure as a successful \`end_turn\`.
+The gateway prompts DeepSeek to emit DSML calls using `<｜DSML｜ calls>`, `<｜DSML｜ invoke>`, and `<｜DSML｜ parameter>` blocks. String parameters are read as raw text with `string="true"`; non-string values are parsed as JSON with `string="false"`. The parser accepts DeepSeek V4 `tool_calls` and V4.1 `calls` spellings, and rejects legacy `<TOOL_CALL>` JSON wrappers rather than treating them as tool calls. Parsed tool names and arguments are then validated against the schemas supplied by the client using common JSON Schema constraints (types, required/properties, additional properties, enum/const, arrays, and common string/number bounds). This is a deliberately limited validator, not a complete implementation of every JSON Schema keyword. Multi-tool responses are validated as a whole before tool blocks are emitted, so a partially invalid batch is not forwarded. Malformed or schema-invalid output receives a bounded correction attempt. If DOM-derived DSML parsing is invalid, the gateway makes one best-effort fallback by clicking the latest assistant message's Copy control, reading its clipboard text with temporary origin-scoped clipboard permissions, and parsing it with a fresh parser. This fallback runs only after a detected parse failure and does not execute or replay a tool. The Copy action may replace the operating-system clipboard; if no supported Copy control is found or the copied text remains invalid, the normal bounded correction path is used. If recovery fails, the gateway returns an upstream API error rather than disguising the failure as a successful `end_turn`.
 
 At 41 or more conversation messages, the gateway starts a fresh DeepSeek browser thread and builds a bounded replay instead of continuing to grow the existing browser thread. The replay truncation limit is character-based, not a model-token limit; the latest request and tool schemas are placed near the replay tail to improve their chance of being retained. Oversized individual tool results retain both their beginning and ending, with an explicit truncation marker.
 
-If a Playwright page closes, the gateway attempts to revive the persistent browser context or create a new one on a subsequent initialization. An active turn is not blindly replayed after a browser failure, because repeating a tool request could duplicate side effects. When no generation-completion signal is available, the idle fallback waits twice the configured \`STABLE_MS\` interval; a turn that reaches \`MAX_TURN_MS\` without completion is reported as an error, not as a successful final response.
+If a Playwright page closes, the gateway attempts to revive the persistent browser context or create a new one on a subsequent initialization. An active turn is not blindly replayed after a browser failure, because repeating a tool request could duplicate side effects. When no generation-completion signal is available, the idle fallback waits twice the configured `STABLE_MS` interval; a turn that reaches `MAX_TURN_MS` without completion is reported as an error, not as a successful final response.
 
 ## Anthropic SDK integration test
 
