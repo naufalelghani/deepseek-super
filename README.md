@@ -101,6 +101,18 @@ Only stop processes shown for the project's `deepseek-profile`. Do not terminate
 
 You can keep a separate Chrome profile for the Qwen web app at [https://chat.qwen.ai/](https://chat.qwen.ai/). This profile is independent of the gateway's `deepseek-profile/` and is for manual Qwen browser use only; it does not connect the current gateway to Qwen.
 
+To open a dedicated persistent Chrome session through Playwright and sign in manually, run:
+
+```powershell
+node qwen-login.js
+```
+
+The helper opens Chrome with `qwen-profile/`, waits for you to complete Qwen's sign-in flow in the browser, checks that the page is on the Qwen HTTPS domain and that a chat composer is visible, and saves a separate `qwen-auth.json` storage-state backup. It also reports whether Qwen's documented `token` cookie was detected; that cookie check is diagnostic and is not treated as definitive proof of account authentication. The browser closes after the backup is saved.
+
+The helper accepts `QWEN_PROFILE_DIR` to override the profile directory and `QWEN_LOGIN_TIMEOUT_MS` to change the composer wait timeout (default: 10 minutes). The `qwen-profile/` directory and `qwen-auth.json` contain authentication state; both are ignored by Git and must not be committed or shared.
+
+You can keep a separate Chrome profile for the Qwen web app at [https://chat.qwen.ai/](https://chat.qwen.ai/). This profile is independent of the gateway's `deepseek-profile/` and is for manual Qwen browser use only; it does not connect the current gateway to Qwen.
+
 To open Qwen in regular Chrome with a dedicated `qwen-profile/` directory:
 
 ```powershell
@@ -614,7 +626,8 @@ Official references:
 
 ```text
 deepseek-super/
-├── deepseek-login.js          # Manual Google sign-in helper
+├── deepseek-login.js          # Manual DeepSeek sign-in helper
+├── qwen-login.js              # Manual Qwen sign-in helper
 ├── deepseek-super-server.js   # Backward-compatible entry point
 ├── package.json
 ├── README.md
