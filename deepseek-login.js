@@ -1,12 +1,13 @@
 'use strict';
 
-// Open DeepSeek in a persistent Chrome profile so the user can complete
-// Google OAuth manually. The same profile is used by the gateway server.
+// Open DeepSeek in an Incognito Chrome window using a project-specific user-data directory.
+// Auth is explicitly backed up to a separate ignored JSON file for the gateway to restore.
 
 const fs = require('node:fs');
 const path = require('node:path');
 const readline = require('node:readline/promises');
 const { chromium } = require('playwright');
+const { restoreStorageState, saveStorageState } = require('./src/incognito-auth');
 
 const DEEPSEEK_URL = 'https://chat.deepseek.com/';
 const PROFILE_DIR = process.env.PROFILE_DIR || path.join(__dirname, 'deepseek-profile');
@@ -32,9 +33,11 @@ async function main() {
     context = await chromium.launchPersistentContext(PROFILE_DIR, {
       headless: false,
       channel: 'chrome',
+      args: ['--incognito'],
       viewport: { width: 1280, height: 900 },
     });
 
+    await restoreStorageState(context, STORAGE_STATE_PATH, 'deepseek');
     const page = context.pages()[0] || await context.newPage();
     await page.goto(DEEPSEEK_URL, { waitUntil: 'domcontentloaded' });
 
@@ -66,7 +69,7 @@ async function main() {
     // Wait briefly for cookies/local storage to settle before saving the backup.
     await page.waitForTimeout(1000);
     fs.mkdirSync(path.dirname(STORAGE_STATE_PATH), { recursive: true });
-    await context.storageState({ path: STORAGE_STATE_PATH });
+    await saveStorageState(context, STORAGE_STATE_PATH, 'deepseek');
 
     const profileExists = fs.existsSync(PROFILE_DIR) && fs.statSync(PROFILE_DIR).isDirectory();
     const authFileExists = fs.existsSync(STORAGE_STATE_PATH) &&
@@ -85,8 +88,8 @@ async function main() {
     console.log('Session backup file verified:', STORAGE_STATE_PATH);
 
     console.log('');
-    console.log('Login step completed. Persistent session is stored in:');
-    console.log('  ' + PROFILE_DIR);
+    console.log('Login step completed in Incognito mode. Chrome's temporary session is backed up to:');
+    console.log('  ' + STORAGE_STATE_PATH);
     console.log('The gateway uses this same profile. Closing this browser now so');
     console.log('the server can open the profile without a Chrome profile lock.');
   } finally {
