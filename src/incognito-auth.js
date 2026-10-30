@@ -37,7 +37,9 @@ async function restoreStorageState(context, storageStatePath, label = 'browser')
         try {
           for (const item of saved.localStorage) {
             if (!item || typeof item.name !== 'string') continue;
-            window.localStorage.setItem(item.name, String(item.value ?? ''));
+            if (window.localStorage.getItem(item.name) === null) {
+              window.localStorage.setItem(item.name, String(item.value ?? ''));
+            }
           }
         } catch {
           // Some origins/frames do not expose localStorage; skip those entries.
