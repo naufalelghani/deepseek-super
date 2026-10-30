@@ -1,14 +1,14 @@
 # deepseek-super
 
-A local gateway that exposes an **Anthropic Messages API-compatible** interface on top of the DeepSeek web app at `chat.deepseek.com` using Playwright. The codebase is split into CommonJS modules for prompt construction, tool parsing, browser automation, SSE streaming, and HTTP request handling.
+A local multi-backend gateway that exposes an **Anthropic Messages API-compatible** interface over the DeepSeek and Qwen web apps using Playwright. Select the browser backend at startup with `node server.js --deepseek` or `node server.js --qwen`. The codebase is split into CommonJS modules for prompt construction, tool parsing, browser automation, SSE streaming, and HTTP request handling.
 
-> **Important:** This project automates the DeepSeek website; it is not an official DeepSeek API integration. Website UI changes may require updates to selectors in `src/browser.js`. Use this project in accordance with DeepSeek's terms of service and your account requirements.
+> **Important:** This project automates the signed-in DeepSeek or Qwen website selected at startup; it is not an official API integration for either provider. Website UI changes may require updates to the relevant browser driver. Review the applicable provider terms and use the project only where permitted.
 
 ## Project positioning and policy risks
 
-`deepseek-super` is an experimental compatibility gateway for people who specifically want to use their signed-in DeepSeek web session through Anthropic Messages API-style clients and agent tools. It does not expose DeepSeek's underlying model directly or implement Anthropic's native tool protocol. It translates requests into prompt instructions, automates the website with Playwright, reads the response from the UI, asks DeepSeek for DSML tool-call markup, and maps parsed calls to Anthropic-style responses. Legacy `<TOOL_CALL>` JSON wrappers are deliberately rejected and trigger DSML-format recovery instead of being parsed as tool calls.
+`deepseek-super` is an experimental compatibility gateway for using a signed-in DeepSeek or Qwen web session through Anthropic Messages API-style clients and agent tools. It does not expose either provider's underlying model directly or implement Anthropic's native tool protocol. It translates requests into prompt instructions, automates the selected website with Playwright, reads the response from the UI, requests DSML tool-call markup, and maps parsed calls to Anthropic-style responses. Legacy `<TOOL_CALL>` JSON wrappers are deliberately rejected and trigger DSML-format recovery instead of being parsed as tool calls.
 
-**This approach may conflict with DeepSeek's web-service terms.** The [current DeepSeek Terms of Use](https://cdn.deepseek.com/policies/en-US/deepseek-terms-of-use.html) (last updated March 27, 2026) include restrictions in Section 3.5 concerning copying/capturing service content and using robots, spiders, or other automated setups. This project uses browser automation, so users should review the terms and obtain any needed permission before use or redistribution. This README is a technical disclosure, not legal advice or a determination that a specific use is permitted. CAPTCHA, rate limits, account restrictions, or UI changes may interrupt operation.
+**This approach may conflict with provider web-service terms.** The [DeepSeek Terms of Use](https://cdn.deepseek.com/policies/en-US/deepseek-terms-of-use.html) include restrictions concerning copying/capturing service content and automated setups. This project uses browser automation. Review the applicable DeepSeek or Qwen terms and obtain any needed permission before use or redistribution. This README is a technical disclosure, not legal advice or a determination that a specific use is permitted. CAPTCHA, rate limits, account restrictions, or UI changes may interrupt operation.
 
 For supported, more reliable agent integrations, consider the [official DeepSeek API](https://api-docs.deepseek.com/api/responses), which documents an Anthropic-compatible base URL at `https://api.deepseek.com/anthropic` and integrations with coding-agent clients. This project is not a replacement for that official API and is not intended to promise production reliability or real API-token accounting.
 
@@ -16,7 +16,7 @@ For supported, more reliable agent integrations, consider the [official DeepSeek
 
 - Node.js 22 or later
 - Google Chrome installed
-- A DeepSeek account that can sign in through a browser
+- A DeepSeek account and/or Qwen account that can sign in through a browser
 
 ## Installation, Google login, and startup
 
@@ -208,7 +208,7 @@ Configuration is read from environment variables:
 | `POLL_MS` | `200` | UI polling interval in milliseconds |
 | `STABLE_MS` | `4000` | Completion fallback idle period, used only if a UI completion signal was not observed |
 | `MAX_TURN_MS` | `300000` | Hard maximum duration of a single turn; a timeout is reported as a failure rather than success |
-| `MAX_REPLAY` | `60000` | Maximum replay prompt length in **characters**, not tokens, for DeepSeek and non-Claude model IDs |
+| `MAX_REPLAY` | `60000` | Maximum replay prompt length in **characters**, not tokens, for non-Claude model IDs on either backend |
 
 **Model-specific replay limits:** request IDs beginning with `claude-` use a 150,000-character replay cap. `deepseek-super` continues to use `MAX_REPLAY`, which defaults to 60,000 characters and can still be overridden by its existing environment variable. These are character limits, not model-token limits.
 | `MAX_PENDING_TURNS` | `8` | Maximum active-plus-queued browser turns before new requests are rejected as overloaded |
@@ -217,7 +217,7 @@ Configuration is read from environment variables:
 
 ### SQLite state and request tracing
 
-The gateway stores its session-to-DeepSeek-thread mapping and privacy-conscious request traces in a local SQLite database. The default location is `data/deepseek-super.sqlite3`; override it with `DEEPSEEK_SUPER_DB_PATH`. The database uses WAL mode, a bounded busy timeout, foreign-key checks, a schema version, and retention limits for trace data. Gateway session fingerprints use the original top-level system content, the first original system/developer instruction when compatibility normalization moves those messages, and the complete first user message. Later system/developer messages appended to the request do not change the fingerprint. If a client rewrites the original user message or the stable base instructions during compaction and provides no stable conversation ID, the gateway starts a separately tracked session rather than guessing and potentially merging unrelated tasks.
+The gateway stores its session-to-browser-thread mapping and privacy-conscious request traces in a local SQLite database. DeepSeek defaults to `data/deepseek-super.sqlite3`; Qwen defaults to `data/qwen.sqlite3`. Override the selected path with `DEEPSEEK_SUPER_DB_PATH`. The database uses WAL mode, a bounded busy timeout, foreign-key checks, a schema version, and retention limits for trace data. Gateway session fingerprints use the original top-level system content, the first original system/developer instruction when compatibility normalization moves those messages, and the complete first user message. Later system/developer messages appended to the request do not change the fingerprint. If a client rewrites the original user message or the stable base instructions during compaction and provides no stable conversation ID, the gateway starts a separately tracked session rather than guessing and potentially merging unrelated tasks.
 
 Every Messages request gets a `request_id`, returned in the `X-Gateway-Request-ID` response header and printed in the `[REQ]` / `[response]` terminal logs. The database records prompt lengths before and after compaction, message/tool counts, session and thread generations, thread rotation reasons, stop reason, tool-call count, and how the browser completion was detected. It does not store raw prompts, tool inputs, tool results, or API tokens in trace events. The database does contain DeepSeek conversation URLs required for session resumption, so treat it as private local state.
 
@@ -237,11 +237,11 @@ Stop the gateway before moving or deleting the database. The `data/` directory a
 
 ### Available model names
 
-The authenticated `GET /v1/models` endpoint advertises six request IDs: `deepseek-super`, `claude-mythos-5-1`, `claude-fable-5.1`, `claude-opus-5-5`, `claude-sonnet-5-5`, and `claude-haiku-5-5`. The Claude-prefixed IDs are compatibility aliases and select gateway-defined response profiles; **all six entries still send requests to the signed-in DeepSeek web session. None connects to or provides the actual Anthropic Claude model its ID names.** For backward compatibility, direct API requests using the former dotted Mythos ID `claude-mythos-5.1` still resolve to the canonical `claude-mythos-5-1` response profile.
+The authenticated `GET /v1/models` endpoint returns a backend-specific catalog. DeepSeek mode advertises `deepseek-super` plus five Claude-prefixed response-profile aliases; Qwen mode advertises `qwen-web` plus the same five style aliases. **Claude-prefixed IDs are gateway-defined response profiles, not native Anthropic models.** `qwen-web` uses whichever model is currently selected in the Qwen web UI. For backward compatibility, direct API requests using the former dotted Mythos ID `claude-mythos-5.1` still resolve to `claude-mythos-5-1`.
 
 ### Effort selector compatibility
 
-All six catalog entries advertise `output_config.effort` levels (`low`, `medium`, `high`, `xhigh`, and `max`) so compatible clients can expose the effort selector. The gateway translates the chosen level into response-depth instructions for the DeepSeek web session; it does not provide Claude's native internal reasoning or change DeepSeek's model weights. Requests with an unsupported effort value are rejected as invalid.
+Both backend catalogs advertise `output_config.effort` levels (`low`, `medium`, `high`, `xhigh`, and `max`) so compatible clients can expose the effort selector. The gateway translates the chosen level into response-depth instructions for the selected web session; it does not provide Claude's native internal reasoning or change provider model weights. Requests with an unsupported effort value are rejected as invalid.
 
 ### Authentication is always required
 
@@ -456,11 +456,11 @@ With SSE streaming, tool-use information arrives in **content_block_start** and 
 
 ### Compatibility limitations
 
-The request contract validates `model`, `messages`, `max_tokens`, message roles and content, tool schemas, `tool_choice`, and `stream`. The `/v1/messages/count_tokens` endpoint estimates input length using a local character-based formula; it does not invoke DeepSeek's actual tokenizer.
+The request contract validates `model`, `messages`, `max_tokens`, message roles and content, tool schemas, `tool_choice`, and `stream`. The `/v1/messages/count_tokens` endpoint estimates input length using a local character-based formula; it does not invoke either provider's actual tokenizer.
 
 The gateway's response `usage.input_tokens` and `usage.output_tokens`, and the `/count_tokens` result, are **estimates**, not upstream measurements. Responses include the header `X-Token-Usage-Estimated: true` to make this explicit. The estimate can differ substantially from actual model tokenization, hidden website prompt context, and any provider/router billing counters. Do not rely on these values for billing or precise context-window management.
 
-HTTP compatibility with the Anthropic SDK does not imply full semantic support for Anthropic model features. This gateway automates the DeepSeek website. For example, `max_tokens`, sampling parameters, prompt caching, images/documents, and Anthropic-specific options that are not mapped to the web UI may not behave like the official Anthropic API. Do not rely on undocumented options as supported features.
+HTTP compatibility with the Anthropic SDK does not imply full semantic support for Anthropic model features. This gateway automates the selected DeepSeek or Qwen website. For example, `max_tokens`, sampling parameters, prompt caching, images/documents, and Anthropic-specific options that are not mapped to the web UI may not behave like the official Anthropic API. Do not rely on undocumented options as supported features.
 
 ### DeepSeek-native WebSearch / WebFetch adapter
 
@@ -601,7 +601,7 @@ Playwright + the selected signed-in Chrome profile
         |
         | assistant text is read back from the page
         v
-Parser converts DeepSeek DSML calls to JSON argument objects and Anthropic-style tool_use
+Parser converts DSML calls to JSON argument objects and Anthropic-style tool_use
         |
         v
 Client/agent executes its own tools and sends tool_result back
@@ -609,19 +609,19 @@ Client/agent executes its own tools and sends tool_result back
         +---- the gateway resumes the same DeepSeek chat when possible
 ```
 
-Tool calling is prompt-based rather than a native tool protocol offered by the website. Tool names, schemas, and the JSON format are described in prompts; the gateway parses the resulting text. Model-generated tool arguments are untrusted input and must be validated by the client before any tool is executed. DeepSeek's web UI does not report the same telemetry as a dedicated API, so local token usage and caching fields cannot be treated as provider billing data.
+Tool calling is prompt-based rather than a native tool protocol offered by the website. Tool names, schemas, and the JSON format are described in prompts; the gateway parses the resulting text. Model-generated tool arguments are untrusted input and must be validated by the client before any tool is executed. The selected web UI does not report the same telemetry as a dedicated API, so local token usage and caching fields cannot be treated as provider billing data.
 
-DeepSeek and Qwen use separate default SQLite state files and browser profiles. The session cache key is a SHA-256 fingerprint of the complete top-level system instructions and the first user message. Hashing the complete values avoids avoidable collisions caused by truncating the fingerprint inputs, but the Anthropic Messages request format does not provide a standard, stable conversation ID. As a result, two independent conversations with the same system instructions and identical first user message can still resolve to the same cached DeepSeek chat. This adapter is safest for one active agent conversation per local gateway; do not assume separate clients receive hard session isolation.
+DeepSeek and Qwen use separate default SQLite state files and browser profiles. The session cache key is a SHA-256 fingerprint of the complete top-level system instructions and the first user message. Hashing the complete values avoids avoidable collisions caused by truncating the fingerprint inputs, but the Anthropic Messages request format does not provide a standard, stable conversation ID. As a result, two independent conversations with the same system instructions and identical first user message can still resolve to the same cached DeepSeek chat. This adapter is safest for one active agent conversation per local gateway; do not assume separate clients receive hard session isolation. Qwen starts a fresh web chat per Messages request and replays API history because the inspected page snapshot did not expose a stable thread URL.
 
 The browser is a single shared resource. Requests are serialized through a bounded queue; when the queue is full, the server reports overload instead of allowing an unbounded backlog. If a client disconnects while a turn is running, the gateway best-effort clicks a visible stop/cancel control, stops polling, and releases the queue. This cancellation is best-effort because the website does not expose a documented API for cancelling a generation. Completion detection first uses the UI's observable stop/send controls when detected; `STABLE_MS` is an inactivity fallback only when the explicit signal has not been observed. UI changes can break these selectors, and the `MAX_TURN_MS` deadline is reported as a failure rather than a completed answer.
 
 Initial prompt replay is capped by `MAX_REPLAY` characters. If the cap is exceeded, the gateway compacts oversized external system instructions, older conversation history, and tool results while prioritizing the project policy, available tool schemas, and latest request. It inserts a truncation warning into the prompt and logs the lengths. Some earlier context can still be lost; long agent sessions may therefore need compaction or a fresh session. The cap is character-based, not a token count.
 
-The local API token, Host validation, and CORS allowlist protect the local gateway endpoint. They do not protect or anonymize data submitted to DeepSeek: the browser session and prompts are still processed by the DeepSeek web service under the service's own terms and privacy policy. Do not submit data you are not comfortable sending to that service.
+The local API token, Host validation, and CORS allowlist protect the local gateway endpoint. They do not protect or anonymize data submitted to DeepSeek or Qwen: the selected browser session and prompts are processed by that provider under its own terms and privacy policy. Do not submit data you are not comfortable sending to that service.
 
-## DeepSeek / Anthropic compatibility notes
+## DeepSeek and Qwen / Anthropic compatibility notes
 
-This gateway implements part of the Anthropic Messages API contract so clients such as Claude Code can communicate with the DeepSeek web interface. It does not connect directly to `https://api.deepseek.com/anthropic`: prompts, tool calls, streaming, and token usage are handled by the local adapter and browser automation.
+This gateway implements part of the Anthropic Messages API contract so clients such as Claude Code can communicate with the selected DeepSeek or Qwen web interface. It does not connect directly to `https://api.deepseek.com/anthropic`: prompts, tool calls, streaming, and token usage are handled by the local adapter and browser automation.
 
 For a supported API path, the [official DeepSeek API documentation](https://api-docs.deepseek.com/api/responses) describes an Anthropic-compatible API endpoint and agent integrations. This web-automation project is separate from that official API.
 

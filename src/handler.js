@@ -24,7 +24,7 @@ function validateToolCallsForChoice(toolCalls, tools, force) {
     if (mismatch) {
       return {
         valid: false,
-        error: 'tool_choice requires "' + force.name + '", but DeepSeek returned "' + mismatch.name + '".',
+        error: 'tool_choice requires "' + force.name + '", but the selected backend returned "' + mismatch.name + '".',
       };
     }
   }
@@ -121,7 +121,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
   const isCancelled = () => clientDisconnected || req.aborted || res.destroyed;
   const abortIfCancelled = () => {
     if (!isCancelled()) return;
-    const error = new Error('The client disconnected before the DeepSeek turn completed.');
+    const error = new Error('The client disconnected before the selected backend turn completed.');
     error.name = 'AbortError';
     throw error;
   };
@@ -165,7 +165,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
   const conversationTooLong = isConversationTooLong(messages);
   if (conversationTooLong) {
     console.warn('[long-conv] request_id=' + requestId + ' message_count=' + messages.length +
-      '; starting a fresh DeepSeek thread with a bounded replay so tool use can continue');
+      '; starting a fresh browser thread with a bounded replay so tool use can continue');
   }
 
   const stableSystem = body[ORIGINAL_SYSTEM] === undefined ? system : body[ORIGINAL_SYSTEM];
@@ -332,7 +332,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
         containsToolMarkup(recovery.text);
       if (recovery.toolCalls.length > 0 || recoveryHasToolMarkup || !(recovery.text || '').trim()) {
         throw createToolCallRecoveryError(
-          'DeepSeek continued to emit tool-call output despite a text-only recovery request. No tool was forwarded.',
+          'The selected backend continued to emit tool-call output despite a text-only recovery request. No tool was forwarded.',
           1
         );
       }
@@ -351,7 +351,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
     if (needsRecovery) {
       if (tools.length === 0) {
         throw createToolCallRecoveryError(
-          'DeepSeek emitted a tool call that cannot be used because this request did not declare tools.',
+          'The selected backend emitted a tool call that cannot be used because this request did not declare tools.',
           0
         );
       }
@@ -374,7 +374,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
           'Use the original task, conversation history, available tools, and their schemas.',
           'Correct this issue: ' + recoveryIssue,
           'Rebuild the necessary tool call(s) from scratch. All arguments must be valid JSON objects and satisfy the declared schemas.',
-          'Output only one DeepSeek DSML calls block, with no prose or Markdown outside it.',
+          'Output only one gateway DSML calls block, with no prose or Markdown outside it.',
           'Use one invoke block per tool, and one parameter block per argument. For string values use string="true" and raw text; for non-string values use string="false" and valid JSON.',
           'Valid formatting example only; this is not an instruction to execute pwd:',
           '<｜DSML｜ calls><｜DSML｜ invoke name="Bash"><｜DSML｜ parameter name="command" string="true">pwd</｜DSML｜ parameter></｜DSML｜ invoke></｜DSML｜ calls>',
@@ -428,7 +428,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
       if (!recovered) {
         console.error('[retry] exhausted; returning an explicit gateway error instead of a false end_turn');
         throw createToolCallRecoveryError(
-          'DeepSeek could not produce a valid tool call after ' + maxRetries +
+          'The selected backend could not produce a valid tool call after ' + maxRetries +
           ' recovery attempts. Last validation issue: ' + recoveryIssue,
           maxRetries
         );
@@ -499,7 +499,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
       const hasInvalidMarkup = continued.invalidToolCall || containsToolMarkup(answer);
       if (hasInvalidMarkup) {
         throw createToolCallRecoveryError(
-          'DeepSeek returned malformed tool-call markup after receiving internal web-tool results.',
+          'The selected backend returned malformed tool-call markup after receiving internal web-tool results.',
           0
         );
       }
@@ -516,7 +516,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
 
     if (force.mode !== 'auto' && force.mode !== 'none' && toolCalls.length === 0) {
       throw createToolCallRecoveryError(
-        'DeepSeek did not return the tool call required by tool_choice=' + force.mode + '.',
+        'The selected backend did not return the tool call required by tool_choice=' + force.mode + '.',
         0
       );
     }

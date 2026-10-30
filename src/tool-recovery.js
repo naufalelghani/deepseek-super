@@ -1,7 +1,7 @@
 'use strict';
 
 function createToolCallRecoveryError(message, attempts) {
-  const error = new Error(message || 'DeepSeek did not return a valid tool call.');
+  const error = new Error(message || 'The selected backend did not return a valid tool call.');
   error.statusCode = 502;
   error.type = 'api_error';
   error.code = 'TOOL_CALL_RECOVERY_FAILED';

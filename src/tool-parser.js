@@ -252,7 +252,7 @@
 
      const legacyRegex = /<\s*TOOL_CALL\s*>[\s\S]*?(?:<\s*\/\s*TOOL_CALL\s*>|$)/gi;
      let cleaned = text.replace(legacyRegex, () => {
-         errors.push('Legacy <TOOL_CALL> JSON is disabled; use DeepSeek DSML calls/invoke/parameter tags.');
+         errors.push('Legacy <TOOL_CALL> JSON is disabled; use DSML calls/invoke/parameter tags.');
          return '';
      });
      cleaned = cleaned.replace(/<\s*\/\s*TOOL_CALL\s*>/gi, '');
@@ -349,7 +349,7 @@
                          this.sawUnsupportedToolMarkup = true;
                          this.parseErrors.push({
                              chars: this.toolBuf.length,
-                             reason: 'Legacy <TOOL_CALL> JSON is disabled; use DeepSeek DSML calls/invoke/parameter tags.',
+                             reason: 'Legacy <TOOL_CALL> JSON is disabled; use DSML calls/invoke/parameter tags.',
                          });
                      }
                      this.toolBuf = '';
@@ -387,7 +387,7 @@
                  this.sawUnsupportedToolMarkup = true;
                  this.parseErrors.push({
                      chars: payload.length,
-                     reason: 'Legacy <TOOL_CALL> JSON is disabled; use DeepSeek DSML calls/invoke/parameter tags.',
+                     reason: 'Legacy <TOOL_CALL> JSON is disabled; use DSML calls/invoke/parameter tags.',
                  });
              }
              this.incompleteToolBlock = !isClosed;
