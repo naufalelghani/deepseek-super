@@ -20,6 +20,35 @@ async function withBrowser(t, fn) {
     }
 }
 
+test('finds the unlabeled DeepSeek Copy action in the assistant toolbar', async (t) => {
+    await withBrowser(t, async (browser) => {
+        const page = await browser.newPage();
+        await page.setContent([
+            '<div data-virtual-list-item-key="answer-1">',
+            '<div class="ds-message"><div class="ds-markdown ds-assistant-message-main-content"><p>Answer</p></div></div>',
+            '<div class="ds-flex" style="align-items:center">',
+            '<div class="ds-flex">',
+            '<div role="button" tabindex="0" class="ds-button ds-button--iconLabelTertiary" data-action="copy"><svg><path d="copy-icon"/></svg></div>',
+            '<div role="button" tabindex="0" class="ds-button ds-button--iconLabelTertiary" data-action="regenerate"><svg><path d="regenerate-icon"/></svg></div>',
+            '<div role="button" tabindex="0" class="ds-button ds-button--iconLabelTertiary" data-action="share"><svg><path d="share-icon"/></svg></div>',
+            '</div><div style="flex:1 1 0%"></div>',
+            '</div></div>'
+        ].join(''));
+
+        const assistantItem = page.locator(
+            '[data-virtual-list-item-key]:has(.ds-assistant-message-main-content)'
+        ).last();
+        const copyButton = assistantItem.locator(
+            ':scope > .ds-message + .ds-flex > .ds-flex > [role="button"].ds-button'
+        ).first();
+
+        assert.equal(await copyButton.count(), 1);
+        assert.equal(await copyButton.getAttribute('data-action'), 'copy');
+        assert.equal(await copyButton.getAttribute('aria-label'), null);
+        assert.equal(await copyButton.getAttribute('title'), null);
+    });
+});
+
 test('preserves Markdown formatting and table structure from the rendered DOM', async (t) => {
     await withBrowser(t, async (browser) => {
         const page = await browser.newPage();
