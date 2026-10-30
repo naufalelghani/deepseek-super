@@ -97,6 +97,53 @@ $profileProcesses | ForEach-Object {
 
 Only stop processes shown for the project's `deepseek-profile`. Do not terminate unrelated Chrome processes. After the profile is no longer in use, run `node deepseek-login.js` or `npm start` as needed.
 
+### Separate Qwen Chrome profile (manual browser use)
+
+You can keep a separate Chrome profile for the Qwen web app at [https://chat.qwen.ai/](https://chat.qwen.ai/). This profile is independent of the gateway's `deepseek-profile/` and is for manual Qwen browser use only; it does not connect the current gateway to Qwen.
+
+To open Qwen in regular Chrome with a dedicated `qwen-profile/` directory:
+
+```powershell
+$profile = "C:\Users\USER\Documents\deepseek-chat\deepseek-super\qwen-profile"
+
+$candidates = @(
+    "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+    "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+    "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+)
+
+$chrome = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+if (-not $chrome) {
+    throw "Google Chrome executable tidak ditemukan."
+}
+
+Start-Process -FilePath $chrome -ArgumentList "--user-data-dir=`"$profile`" https://chat.qwen.ai/"
+```
+
+Sign in to Qwen manually in the Chrome window. Close every Chrome window using `qwen-profile/` before starting another browser instance with that same profile.
+
+If Chrome reports that the profile is already in use, list and stop only processes whose command line references this Qwen profile:
+
+```powershell
+$profile = "C:\Users\USER\Documents\deepseek-chat\deepseek-super\qwen-profile"
+
+$qwenProcesses = Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" |
+    Where-Object {
+        $_.CommandLine -and
+        $_.CommandLine.Contains($profile) -and
+        $_.CommandLine.Contains("--user-data-dir")
+    }
+
+$qwenProcesses | Select-Object ProcessId, ParentProcessId, CommandLine
+
+$qwenProcesses | ForEach-Object {
+    Stop-Process -Id $_.ProcessId -Force
+}
+```
+
+Review the process list before stopping anything. Only stop processes shown for `qwen-profile/`; do not terminate unrelated Chrome processes. The Qwen profile can be opened again with the first command after it is no longer in use.
+
 ### 2. Start the gateway
 
 After the login helper exits and Chrome has closed, start the server:
