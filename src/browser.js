@@ -3,8 +3,8 @@
 const { chromium } = require('playwright');
 const { readStateInPage } = require('./browser-dom');
 const { PROFILE_DIR, POLL_MS, STABLE_MS, MAX_TURN_MS, MAX_PENDING_TURNS } = require('./config');
-const { StreamParser, extractToolCallsFromText } = require('./tool-parser');
-const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, isIdleCompletionCandidate } = require('./turn-state');
+const { StreamParser, extractToolCallsFromText, parseToolCallsFromText } = require('./tool-parser');
+const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, isIdleCompletionCandidate, isComposerRestoredCompletionCandidate } = require('./turn-state');
 
  let ctx = null;
  let page = null;
@@ -55,9 +55,10 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              const newContext = await chromium.launchPersistentContext(PROFILE_DIR, {
                  headless: false,
                  channel: 'chrome',
+                // Keep Chrome's sandbox enabled; Playwright otherwise adds --no-sandbox,
+                // which weakens browser isolation and triggers Chrome's warning banner.
+                chromiumSandbox: true,
                  viewport: { width: 1280, height: 900 },
-                 args: ['--disable-blink-features=AutomationControlled'],
-                 ignoreDefaultArgs: ['--enable-automation'],
              });
 
              try {
@@ -146,6 +147,135 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
  async function readState(finalSnapshot = false) {
      return page.evaluate(readStateInPage, { final: finalSnapshot });
  }
+
+ async function readLatestAssistantTextViaCopy(expectedText = '') {
+     if (!page || page.isClosed()) return null;
+
+     const copySelector = [
+         'button[aria-label="copy" i]',
+         'button[title="copy" i]',
+         '[role="button"][aria-label="copy" i]',
+         '[role="button"][title="copy" i]',
+         'button[aria-label*="copy message" i]',
+         'button[title*="copy message" i]',
+         '[role="button"][aria-label*="copy message" i]',
+         'button[aria-label*="copy response" i]',
+         'button[title*="copy response" i]',
+         '[role="button"][aria-label*="copy response" i]',
+         'button[aria-label="复制"]',
+         'button[title="复制"]',
+         '[role="button"][aria-label="复制"]',
+         '[role="button"][title="复制"]',
+         '[data-testid*="copy-message" i]',
+         '[data-testid*="copy-response" i]'
+     ].join(',');
+
+     const context = page.context();
+     let permissionsGranted = false;
+     let previousClipboard = '';
+     let previousClipboardCaptured = false;
+     let copyAttempted = false;
+     try {
+         const clipboardSupported = await page.evaluate(() =>
+             Boolean(navigator.clipboard && typeof navigator.clipboard.readText === 'function'));
+         if (!clipboardSupported) {
+             console.warn('[tool-parser] clipboard fallback unavailable: Clipboard API is not supported by this page.');
+             return null;
+         }
+
+         // Grant clipboard access only for the DeepSeek origin and only while
+         // performing this recovery attempt. Never log clipboard contents.
+         await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+             origin: 'https://chat.deepseek.com'
+         });
+         permissionsGranted = true;
+         const readClipboard = () => page.evaluate(async () => navigator.clipboard.readText());
+         try {
+             previousClipboard = await readClipboard();
+             previousClipboardCaptured = true;
+         } catch (error) {
+             console.warn('[tool-parser] clipboard fallback skipped: could not preserve the existing clipboard.');
+             return null;
+         }
+
+         const assistantItem = page.locator(
+             '[data-virtual-list-item-key]:has(.ds-assistant-message-main-content)'
+         ).last();
+         if (await assistantItem.count() === 0) {
+             console.warn('[tool-parser] clipboard fallback unavailable: latest assistant message was not found.');
+             return null;
+         }
+
+         // DeepSeek may only reveal message actions on hover.
+         await assistantItem.hover({ timeout: 1500 }).catch(() => {});
+
+         // Current DeepSeek UI uses an unlabeled div[role="button"] for Copy.
+         // In the assistant row, it is the first action button after the message.
+         // Scope this selector to that row so we never click regenerate/vote/share.
+         const structuralCopyButton = assistantItem.locator(
+             ':scope > .ds-message + .ds-flex > .ds-flex > [role="button"].ds-button'
+         ).first();
+         if (await structuralCopyButton.count() > 0 &&
+             await structuralCopyButton.isVisible().catch(() => false)) {
+             copyAttempted = true;
+             await structuralCopyButton.click({ timeout: 2500 });
+             const deadline = Date.now() + 1200;
+             let copiedText = '';
+             do {
+                 copiedText = await readClipboard().catch(() => '');
+                 if (copiedText.trim() &&
+                     (copiedText !== previousClipboard || copiedText === expectedText)) {
+                     return copiedText;
+                 }
+                 await page.waitForTimeout(75);
+             } while (Date.now() < deadline);
+
+             console.warn('[tool-parser] structural Copy button did not produce new text; ignoring stale clipboard contents.');
+         }
+
+         // Retain accessible-label fallbacks for other DeepSeek UI variants.
+         const buttons = assistantItem.locator(copySelector);
+         const count = await buttons.count();
+         for (let i = count - 1; i >= 0; i--) {
+             const button = buttons.nth(i);
+             if (!(await button.isVisible().catch(() => false))) continue;
+
+             copyAttempted = true;
+             await button.click({ timeout: 2500 });
+             const deadline = Date.now() + 1200;
+             let copiedText = '';
+             do {
+                 copiedText = await readClipboard().catch(() => '');
+                 if (copiedText.trim() &&
+                     (copiedText !== previousClipboard || copiedText === expectedText)) {
+                     return copiedText;
+                 }
+                 await page.waitForTimeout(75);
+             } while (Date.now() < deadline);
+
+             console.warn('[tool-parser] clipboard fallback did not produce new text; ignoring stale clipboard contents.');
+             return null;
+         }
+
+         console.warn('[tool-parser] clipboard fallback unavailable: no structural or labeled assistant Copy button matched.');
+         return null;
+     } catch (error) {
+         console.warn('[tool-parser] clipboard fallback failed: ' + (error.message || String(error)));
+         return null;
+     } finally {
+         if (permissionsGranted && previousClipboardCaptured && copyAttempted) {
+             try {
+                 await page.evaluate(async (text) => navigator.clipboard.writeText(text), previousClipboard);
+             } catch (error) {
+                 console.warn('[tool-parser] could not restore the pre-existing clipboard contents.');
+             }
+         }
+         if (permissionsGranted) {
+             try { await context.clearPermissions(); } catch (error) {}
+         }
+     }
+ }
+
 
  async function clickSend(isCancelled = () => false) {
      const timeoutAt = Date.now() + 15000;
@@ -288,8 +418,10 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      let sawNewMessage = false;
      let sawResponseContent = false;
      let sawGeneratingSignal = false;
+     let sawComposerUnavailableSignal = false;
      let completionSignalStreak = 0;
      let usedStableFallback = false;
+     let completionSource = 'unknown';
      let timedOut = false;
      let thinkOpened = false;
      let textOpened = false;
@@ -315,6 +447,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              throw new Error('Could not read the DeepSeek UI state: ' + (error.message || String(error)));
          }
          if (st.isGenerating) sawGeneratingSignal = true;
+         if (st.composerReady === false) sawComposerUnavailableSignal = true;
          lastState = st;
 
          if (!sawNewMessage) {
@@ -366,9 +499,19 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              const idleMs = Date.now() - lastChange;
              const explicitCompletion = sawGeneratingSignal && isResponseComplete(st, sawGeneratingSignal);
              const inferredCompletion = isIdleCompletionCandidate(st, sawGeneratingSignal, idleMs, STABLE_MS);
-             if (explicitCompletion || inferredCompletion) {
+             // DeepSeek may temporarily remove the composer while generating. Its
+             // restoration plus a stable answer is a useful completion signal even
+             // when the empty input keeps the Send button disabled.
+             const composerRestoredCompletion = isComposerRestoredCompletionCandidate(
+                 st, sawComposerUnavailableSignal, idleMs, STABLE_MS
+             );
+             if (explicitCompletion || inferredCompletion || composerRestoredCompletion) {
                  completionSignalStreak++;
-                 if (completionSignalStreak >= 3) break;
+                 if (completionSignalStreak >= 3) {
+                     completionSource = explicitCompletion ? 'ui_explicit' :
+                         composerRestoredCompletion ? 'ui_composer_restored' : 'ui_idle_inferred';
+                     break;
+                 }
              } else {
                  completionSignalStreak = 0;
              }
@@ -377,7 +520,20 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              // interval before falling back. This reduces false completion during
              // short pauses between DeepSeek output chunks.
              if (shouldUseStableFallback(st, sawGeneratingSignal, idleMs, STABLE_MS)) {
+                 console.warn('[turn-completion-debug]', JSON.stringify({
+                     sawGeneratingSignal,
+                     isGenerating: st.isGenerating,
+                     sendButtonEnabled: st.sendButtonEnabled,
+                     completionSignalAvailable: st.completionSignalAvailable,
+                     uiState: st.completionDebug || null,
+                     sawComposerUnavailableSignal,
+                     composerReady: st.composerReady === true,
+                     idleMs,
+                     stableMs: STABLE_MS,
+                     answerChars: (st.answer || '').length
+                 }));
                  usedStableFallback = true;
+                 completionSource = 'stable_fallback';
                  break;
              }
          }
@@ -394,6 +550,15 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      if (usedStableFallback) {
          console.warn('[turn-completion] explicit stop/send completion signal was not observed; used STABLE_MS fallback');
      }
+     console.info('[turn-completion-result]', JSON.stringify({
+         source: completionSource,
+         sawGeneratingSignal,
+         sawComposerUnavailableSignal,
+         composerReady: Boolean(lastState && lastState.composerReady === true),
+         idleMs: Date.now() - lastChange,
+         stableMs: STABLE_MS,
+         answerChars: (lastState && lastState.answer ? lastState.answer : '').length
+     }));
 
      // Final DOM snapshot closes the trailing Markdown block and captures web sources.
      let fin = lastState;
@@ -403,7 +568,23 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      } catch (error) {
          console.warn('[markdown] final DOM snapshot failed; using last observed snapshot: ' + (error.message || String(error)));
      }
-     const finalAnswer = fin.answerMarkdown || fin.answer || '';
+     let finalAnswer = fin.answerMarkdown || fin.answer || '';
+     if (bufferText && fin.answerIsProtocol && fin.answerHasRichMarkdown) {
+         const copiedSource = await readLatestAssistantTextViaCopy(finalAnswer);
+         const hasToolProtocol = typeof copiedSource === 'string' &&
+             /<\s*\/?\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls|invoke|parameter)\b/i.test(copiedSource);
+         if (hasToolProtocol) {
+             finalAnswer = copiedSource;
+             console.info('[markdown] using assistant Copy source for mixed DSML/Markdown; chars=' + finalAnswer.length);
+         } else {
+             // The DOM serializer may collapse whitespace inside raw tool arguments.
+             // Fail closed rather than risk writing silently corrupted files.
+             throw new Error(
+                 'Could not obtain the original DeepSeek response for a mixed DSML/Markdown tool call. ' +
+                 'The tool call was not forwarded because file content may lose indentation.'
+             );
+         }
+     }
      if (bufferText) {
          // Do not rewrite tool-call protocol output; the parser handles the full payload.
          if (finalAnswer) parser.feed(finalAnswer);
@@ -442,9 +623,33 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
      }
      // A partially valid batch is still invalid: forwarding only its valid subset
      // would silently omit requested actions and could leave the client out of sync.
-     const invalidToolCall = (parser.sawToolMarkup &&
+     let invalidToolCall = (parser.sawToolMarkup &&
          (finalTools.length === 0 || parser.parseErrors.length > 0)) ||
          (sawDsmlMarkup && (finalTools.length === 0 || parser.parseErrors.length > 0 || extractionErrors.length > 0));
+
+     // DOM remains the primary source. Only when its DSML parse is invalid do
+     // we click Copy on the latest assistant message and try parsing that text
+     // with a fresh parser, preventing state from the failed parse from leaking.
+     if (invalidToolCall) {
+         console.warn('[tool-parser] DOM parsing failed; attempting assistant Copy fallback.');
+         const copiedText = await readLatestAssistantTextViaCopy(finalAnswer);
+         if (copiedText) {
+             const copied = parseToolCallsFromText(copiedText);
+             if (!copied.invalidToolCall && copied.calls.length > 0) {
+                 finalTools = copied.calls;
+                 finalText = copied.text;
+                 extractionErrors = [];
+                 invalidToolCall = false;
+                 console.info('[tool-parser] recovered via assistant Copy; tool_calls=' + finalTools.length +
+                     ' copied_chars=' + copiedText.length);
+             } else {
+                 console.warn('[tool-parser] assistant Copy fallback did not produce a complete valid DSML parse; ' +
+                     'tool_calls=' + copied.calls.length +
+                     ' parse_errors=' + copied.parseErrors.length +
+                     ' extraction_errors=' + copied.extractionErrors.length);
+             }
+         }
+     }
 
      // Close any live thinking/text block, but defer buffered text and every tool
      // block to the handler. It must validate the complete tool batch before emitting
@@ -490,7 +695,7 @@ const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, is
              ' visible_text_urls=' + textURLCount +
              ' answer_chars=' + finalText.length);
      }
-     return { text: finalText, thinking: emittedThink, toolCalls: finalTools, invalidToolCall, sourceLinks: includeLinks ? uiAnswerLinks : [] };
+     return { text: finalText, thinking: emittedThink, toolCalls: finalTools, invalidToolCall, sourceLinks: includeLinks ? uiAnswerLinks : [], completionSource };
  }
 
 /**

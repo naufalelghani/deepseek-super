@@ -1,5 +1,7 @@
 'use strict';
 
+const ORIGINAL_SYSTEM = Symbol('deepseek-super.originalSystem');
+
 const { approxTokens } = require('./config');
 const { EFFORT_LEVELS } = require('./effort');
 
@@ -116,10 +118,19 @@ function normalizeAnthropicMessagesRequest(body) {
     return { body, normalizedInstructionMessages: 0 };
   }
 
+  const originalSystem = body.system === undefined ? '' : body.system;
+  const stableSystemBlocks = [];
   const systemBlocks = [];
   const messages = [];
   let normalizedInstructionMessages = 0;
+  let capturedFirstInstruction = false;
 
+  const appendTextBlocks = (target, value) => {
+    if (typeof value === 'string') target.push({ type: 'text', text: value });
+    else if (Array.isArray(value)) target.push(...value);
+  };
+
+  appendTextBlocks(stableSystemBlocks, originalSystem);
   if (typeof body.system === 'string') {
     systemBlocks.push({ type: 'text', text: body.system });
   } else if (Array.isArray(body.system)) {
@@ -131,6 +142,12 @@ function normalizeAnthropicMessagesRequest(body) {
         (message.role === 'system' || message.role === 'developer') &&
         validContent(message.content)) {
       normalizedInstructionMessages++;
+      if (!capturedFirstInstruction) {
+        // Retain the first original instruction as a stable project/task discriminator.
+        // Later system/developer messages can grow on every Claude Code request.
+        appendTextBlocks(stableSystemBlocks, message.content);
+        capturedFirstInstruction = true;
+      }
       if (typeof message.content === 'string') {
         systemBlocks.push({ type: 'text', text: message.content });
       } else {
@@ -145,8 +162,16 @@ function normalizeAnthropicMessagesRequest(body) {
     return { body, normalizedInstructionMessages: 0 };
   }
 
+  const normalizedBody = { ...body, system: systemBlocks, messages };
+  Object.defineProperty(normalizedBody, ORIGINAL_SYSTEM, {
+    value: stableSystemBlocks,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  });
+
   return {
-    body: { ...body, system: systemBlocks, messages },
+    body: normalizedBody,
     normalizedInstructionMessages,
   };
 }
@@ -181,4 +206,5 @@ module.exports = {
   validateMessagesRequest,
   estimateInputTokens,
   estimateOutputTokens,
+  ORIGINAL_SYSTEM,
 };

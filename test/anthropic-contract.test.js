@@ -2,9 +2,11 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { sessionKey } = require('../src/content');
 const {
   validateMessagesRequest,
   normalizeAnthropicMessagesRequest,
+  ORIGINAL_SYSTEM,
   estimateInputTokens,
   estimateOutputTokens,
 } = require('../src/anthropic-contract');
@@ -14,6 +16,38 @@ const minimal = {
   max_tokens: 256,
   messages: [{ role: 'user', content: 'Hello' }],
 };
+
+test('instruction normalization preserves a stable session fingerprint as developer messages grow', () => {
+  const originalSystem = 'stable base system';
+  const originalUser = { role: 'user', content: 'inspect the project' };
+  const first = normalizeAnthropicMessagesRequest({
+    system: originalSystem,
+    messages: [
+      { role: 'developer', content: 'stable project instructions' },
+      originalUser,
+    ],
+  });
+  const later = normalizeAnthropicMessagesRequest({
+    system: originalSystem,
+    messages: [
+      { role: 'developer', content: 'stable project instructions' },
+      { role: 'developer', content: 'turn-specific instructions that were appended later' },
+      originalUser,
+    ],
+  });
+
+  assert.deepEqual(first.body[ORIGINAL_SYSTEM], [
+    { type: 'text', text: originalSystem },
+    { type: 'text', text: 'stable project instructions' },
+  ]);
+  assert.equal(Object.getOwnPropertyDescriptor(first.body, ORIGINAL_SYSTEM).enumerable, false);
+  assert.equal(first.normalizedInstructionMessages, 1);
+  assert.equal(later.normalizedInstructionMessages, 2);
+  assert.equal(
+    sessionKey(first.body[ORIGINAL_SYSTEM], first.body.messages),
+    sessionKey(later.body[ORIGINAL_SYSTEM], later.body.messages)
+  );
+});
 
 test('accepts a standard Anthropic Messages request', () => {
   assert.equal(validateMessagesRequest(minimal), null);

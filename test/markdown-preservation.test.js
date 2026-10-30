@@ -20,6 +20,35 @@ async function withBrowser(t, fn) {
     }
 }
 
+test('finds the unlabeled DeepSeek Copy action in the assistant toolbar', async (t) => {
+    await withBrowser(t, async (browser) => {
+        const page = await browser.newPage();
+        await page.setContent([
+            '<div data-virtual-list-item-key="answer-1">',
+            '<div class="ds-message"><div class="ds-markdown ds-assistant-message-main-content"><p>Answer</p></div></div>',
+            '<div class="ds-flex" style="align-items:center">',
+            '<div class="ds-flex">',
+            '<div role="button" tabindex="0" class="ds-button ds-button--iconLabelTertiary" data-action="copy"><svg><path d="copy-icon"/></svg></div>',
+            '<div role="button" tabindex="0" class="ds-button ds-button--iconLabelTertiary" data-action="regenerate"><svg><path d="regenerate-icon"/></svg></div>',
+            '<div role="button" tabindex="0" class="ds-button ds-button--iconLabelTertiary" data-action="share"><svg><path d="share-icon"/></svg></div>',
+            '</div><div style="flex:1 1 0%"></div>',
+            '</div></div>'
+        ].join(''));
+
+        const assistantItem = page.locator(
+            '[data-virtual-list-item-key]:has(.ds-assistant-message-main-content)'
+        ).last();
+        const copyButton = assistantItem.locator(
+            ':scope > .ds-message + .ds-flex > .ds-flex > [role="button"].ds-button'
+        ).first();
+
+        assert.equal(await copyButton.count(), 1);
+        assert.equal(await copyButton.getAttribute('data-action'), 'copy');
+        assert.equal(await copyButton.getAttribute('aria-label'), null);
+        assert.equal(await copyButton.getAttribute('title'), null);
+    });
+});
+
 test('preserves Markdown formatting and table structure from the rendered DOM', async (t) => {
     await withBrowser(t, async (browser) => {
         const page = await browser.newPage();
@@ -66,6 +95,41 @@ test('streams complete blocks only, keeping the stable Markdown prefix append-on
         const after = await page.evaluate(readStateInPage, { final: false });
         assert.ok(after.answerMarkdownStable.startsWith(before.answerMarkdownStable));
         assert.match(after.answerMarkdownStable, /\| Name \| Value \|/);
+    });
+});
+
+test('preserves Markdown tables inside mixed DSML Write tool-call output', async (t) => {
+    await withBrowser(t, async (browser) => {
+        const page = await browser.newPage();
+        const opening = '<｜DSML｜ calls><｜DSML｜ invoke name="Write">' +
+            '<｜DSML｜ parameter name="file_path" string="true">plan.md</｜DSML｜ parameter>' +
+            '<｜DSML｜ parameter name="content" string="true"># Plan: Web AI Chat Streaming\n\n';
+        const closing = '\n</｜DSML｜ parameter></｜DSML｜ invoke></｜DSML｜ calls>';
+        const escapeHTML = (value) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        await page.setContent([
+            '<div data-virtual-list-item-key="answer-1"><div class="ds-assistant-message-main-content">',
+            '<div class="ds-markdown"><p>' + escapeHTML(opening + 'Daftar isi') + '</p>',
+            '<table><thead><tr><th>No</th><th>Bagian</th><th>Isi utama</th></tr></thead><tbody>',
+            '<tr><td>1</td><td>Ringkasan eksekutif</td><td>Keputusan stack</td></tr>',
+            '<tr><td>2</td><td>Analisa pengguna</td><td>Segmen, jobs to be done</td></tr>',
+            '</tbody></table><p>' + escapeHTML(closing) + '</p></div></div></div>'
+        ].join(''));
+
+        const state = await page.evaluate(readStateInPage, { final: true });
+        assert.equal(state.answerIsProtocol, true);
+        assert.equal(state.answerHasRichMarkdown, true);
+        assert.match(state.answerMarkdown, /<｜DSML｜ invoke name="Write">/);
+        assert.match(state.answerMarkdown, /\| No \| Bagian \| Isi utama \|/);
+        assert.match(state.answerMarkdown, /\| --- \| --- \| --- \|/);
+        assert.match(state.answerMarkdown, /\| 1 \| Ringkasan eksekutif \| Keputusan stack \|/);
+
+        const { parseToolCallsFromText } = require('../src/tool-parser');
+        const parsed = parseToolCallsFromText(state.answerMarkdown);
+        assert.equal(parsed.invalidToolCall, false);
+        assert.equal(parsed.calls.length, 1);
+        assert.equal(parsed.calls[0].name, 'Write');
+        assert.match(parsed.calls[0].input.content, /\| No \| Bagian \| Isi utama \|/);
+        assert.match(parsed.calls[0].input.content, /\| 2 \| Analisa pengguna \| Segmen, jobs to be done \|/);
     });
 });
 

@@ -14,7 +14,7 @@ For supported, more reliable agent integrations, consider the [official DeepSeek
 
 ## Requirements
 
-- Node.js 18 or later
+- Node.js 22 or later
 - Google Chrome installed
 - A DeepSeek account that can sign in through a browser
 
@@ -50,6 +50,112 @@ Both are listed in `.gitignore` because they contain authentication data. **Neve
 
 If the profile is already signed in, you do not need to authenticate again: make sure the chat page is ready and press Enter in the terminal. If the session has expired, rerun `node deepseek-login.js` and sign in manually. After you press Enter, the chat-composer check has a default timeout of 10 minutes; change it with the `DEEPSEEK_LOGIN_TIMEOUT_MS` environment variable if needed.
 
+### Windows PowerShell: open or release the persistent Chrome profile
+
+The gateway, login helper, and manual Chrome session must not use `deepseek-profile/` at the same time. Stop `npm start` and close any Chrome window using this profile before opening it manually.
+
+To open the project's persistent profile in regular Chrome for a manual DeepSeek login:
+
+```powershell
+$profile = "C:\Users\USER\Documents\deepseek-chat\deepseek-super\deepseek-profile"
+
+$candidates = @(
+    "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+    "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+    "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+)
+
+$chrome = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+if (-not $chrome) {
+    throw "Google Chrome executable tidak ditemukan."
+}
+
+Start-Process -FilePath $chrome -ArgumentList "--user-data-dir=`"$profile`" https://chat.deepseek.com/"
+```
+
+Complete the login manually in the Chrome window. When finished, close every Chrome window using this profile before running `node deepseek-login.js` or `npm start`.
+
+If Playwright reports **"Opening in existing browser session"**, the profile may still be held by a background Chrome process. The following commands list only Chrome processes whose command line references this project's profile, then stop those matching processes. Review the listed processes before stopping them:
+
+```powershell
+$profile = "C:\Users\USER\Documents\deepseek-chat\deepseek-super\deepseek-profile"
+
+$profileProcesses = Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" |
+    Where-Object {
+        $_.CommandLine -and
+        $_.CommandLine.Contains($profile) -and
+        $_.CommandLine.Contains("--user-data-dir")
+    }
+
+$profileProcesses | Select-Object ProcessId, ParentProcessId, CommandLine
+
+$profileProcesses | ForEach-Object {
+    Stop-Process -Id $_.ProcessId -Force
+}
+```
+
+Only stop processes shown for the project's `deepseek-profile`. Do not terminate unrelated Chrome processes. After the profile is no longer in use, run `node deepseek-login.js` or `npm start` as needed.
+
+### Separate Qwen Chrome profile (manual browser use)
+
+You can keep a separate Chrome profile for the Qwen web app at [https://chat.qwen.ai/](https://chat.qwen.ai/). This profile is independent of the gateway's `deepseek-profile/` and is for manual Qwen browser use only; it does not connect the current gateway to Qwen.
+
+To open a dedicated persistent Chrome session through Playwright and sign in manually, run:
+
+```powershell
+node qwen-login.js
+```
+
+The helper opens Chrome with `qwen-profile/`, waits for you to complete Qwen's sign-in flow in the browser, checks that the page is on the Qwen HTTPS domain and that a chat composer is visible, and saves a separate `qwen-auth.json` storage-state backup. It also reports whether Qwen's documented `token` cookie was detected; that cookie check is diagnostic and is not treated as definitive proof of account authentication. The browser closes after the backup is saved.
+
+The helper accepts `QWEN_PROFILE_DIR` to override the profile directory and `QWEN_LOGIN_TIMEOUT_MS` to change the composer wait timeout (default: 10 minutes). The `qwen-profile/` directory and `qwen-auth.json` contain authentication state; both are ignored by Git and must not be committed or shared.
+
+You can keep a separate Chrome profile for the Qwen web app at [https://chat.qwen.ai/](https://chat.qwen.ai/). This profile is independent of the gateway's `deepseek-profile/` and is for manual Qwen browser use only; it does not connect the current gateway to Qwen.
+
+To open Qwen in regular Chrome with a dedicated `qwen-profile/` directory:
+
+```powershell
+$profile = "C:\Users\USER\Documents\deepseek-chat\deepseek-super\qwen-profile"
+
+$candidates = @(
+    "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+    "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+    "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+)
+
+$chrome = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+if (-not $chrome) {
+    throw "Google Chrome executable tidak ditemukan."
+}
+
+Start-Process -FilePath $chrome -ArgumentList "--user-data-dir=`"$profile`" https://chat.qwen.ai/"
+```
+
+Sign in to Qwen manually in the Chrome window. Close every Chrome window using `qwen-profile/` before starting another browser instance with that same profile.
+
+If Chrome reports that the profile is already in use, list and stop only processes whose command line references this Qwen profile:
+
+```powershell
+$profile = "C:\Users\USER\Documents\deepseek-chat\deepseek-super\qwen-profile"
+
+$qwenProcesses = Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" |
+    Where-Object {
+        $_.CommandLine -and
+        $_.CommandLine.Contains($profile) -and
+        $_.CommandLine.Contains("--user-data-dir")
+    }
+
+$qwenProcesses | Select-Object ProcessId, ParentProcessId, CommandLine
+
+$qwenProcesses | ForEach-Object {
+    Stop-Process -Id $_.ProcessId -Force
+}
+```
+
+Review the process list before stopping anything. Only stop processes shown for `qwen-profile/`; do not terminate unrelated Chrome processes. The Qwen profile can be opened again with the first command after it is no longer in use.
+
 ### 2. Start the gateway
 
 After the login helper exits and Chrome has closed, start the server:
@@ -69,23 +175,46 @@ Configuration is read from environment variables:
 | Variable | Default | Description |
 |---|---:|---|
 | `PORT` | `8787` | Local HTTP server port |
-| `MODEL_NAME` | `deepseek-super` | Fallback response model label when a request omits `model`; `/v1/models` always lists both aliases |
+| `MODEL_NAME` | `deepseek-super` | Fallback response model label when a request omits `model`; `/v1/models` lists the six configured model IDs |
 | `PROFILE_DIR` | `./deepseek-profile` | Persistent Chrome profile directory |
 | `DEEPSEEK_SUPER_TOKEN` | Unset | Optional explicit token override; if unset, a random token is created and stored in `.deepseek-super-token` |
 | `POLL_MS` | `200` | UI polling interval in milliseconds |
 | `STABLE_MS` | `4000` | Completion fallback idle period, used only if a UI completion signal was not observed |
 | `MAX_TURN_MS` | `300000` | Hard maximum duration of a single turn; a timeout is reported as a failure rather than success |
-| `MAX_REPLAY` | `60000` | Maximum replay prompt length in **characters**, not tokens |
+| `MAX_REPLAY` | `60000` | Maximum replay prompt length in **characters**, not tokens, for DeepSeek and non-Claude model IDs |
+
+**Model-specific replay limits:** request IDs beginning with `claude-` use a 150,000-character replay cap. `deepseek-super` continues to use `MAX_REPLAY`, which defaults to 60,000 characters and can still be overridden by its existing environment variable. These are character limits, not model-token limits.
 | `MAX_PENDING_TURNS` | `8` | Maximum active-plus-queued browser turns before new requests are rejected as overloaded |
+| `DEEPSEEK_SUPER_DB_PATH` | `./data/deepseek-super.sqlite3` | Path to the local SQLite database used for persistent sessions and request traces |
 | `CORS_ALLOWED_ORIGINS` | Empty | Optional comma-separated list of exact extra browser origins allowed to access the local gateway |
+
+### SQLite state and request tracing
+
+The gateway stores its session-to-DeepSeek-thread mapping and privacy-conscious request traces in a local SQLite database. The default location is `data/deepseek-super.sqlite3`; override it with `DEEPSEEK_SUPER_DB_PATH`. The database uses WAL mode, a bounded busy timeout, foreign-key checks, a schema version, and retention limits for trace data. Gateway session fingerprints use the original top-level system content, the first original system/developer instruction when compatibility normalization moves those messages, and the complete first user message. Later system/developer messages appended to the request do not change the fingerprint. If a client rewrites the original user message or the stable base instructions during compaction and provides no stable conversation ID, the gateway starts a separately tracked session rather than guessing and potentially merging unrelated tasks.
+
+Every Messages request gets a `request_id`, returned in the `X-Gateway-Request-ID` response header and printed in the `[REQ]` / `[response]` terminal logs. The database records prompt lengths before and after compaction, message/tool counts, session and thread generations, thread rotation reasons, stop reason, tool-call count, and how the browser completion was detected. It does not store raw prompts, tool inputs, tool results, or API tokens in trace events. The database does contain DeepSeek conversation URLs required for session resumption, so treat it as private local state.
+
+Inspect the latest requests:
+
+```bash
+npm run trace
+```
+
+Inspect one request and its ordered events:
+
+```bash
+npm run trace -- req_...
+```
+
+Stop the gateway before moving or deleting the database. The `data/` directory and SQLite database/WAL files are ignored by Git. For a fresh local trace history, stop the server and delete `data/deepseek-super.sqlite3` along with its `-wal` and `-shm` companions if present.
 
 ### Available model names
 
-The authenticated `GET /v1/models` endpoint advertises two Claude Desktop-compatible IDs: `claude-sonnet-5-5` (display name **Deepseek Super**) and `claude-opus-5-5` (display name **Opus 5.5**). These IDs and family labels are UI compatibility aliases used so Claude Desktop can recognize model effort controls; **both entries still send requests to the signed-in DeepSeek web session. Neither ID connects to or provides the actual Anthropic Claude model it names.** The gateway continues to accept `deepseek-super` as a model ID for direct API clients, even though it is not advertised in the Claude Desktop discovery catalog.
+The authenticated `GET /v1/models` endpoint advertises six request IDs: `deepseek-super`, `claude-mythos-5-1`, `claude-fable-5.1`, `claude-opus-5-5`, `claude-sonnet-5-5`, and `claude-haiku-5-5`. The Claude-prefixed IDs are compatibility aliases and select gateway-defined response profiles; **all six entries still send requests to the signed-in DeepSeek web session. None connects to or provides the actual Anthropic Claude model its ID names.** For backward compatibility, direct API requests using the former dotted Mythos ID `claude-mythos-5.1` still resolve to the canonical `claude-mythos-5-1` response profile.
 
 ### Effort selector compatibility
 
-Both catalog entries advertise `output_config.effort` levels (`low`, `medium`, `high`, `xhigh`, and `max`) so compatible clients can expose the effort selector. The gateway translates the chosen level into response-depth instructions for the DeepSeek web session; it does not provide Claude's native internal reasoning or change DeepSeek's model weights. Requests with an unsupported effort value are rejected as invalid.
+All six catalog entries advertise `output_config.effort` levels (`low`, `medium`, `high`, `xhigh`, and `max`) so compatible clients can expose the effort selector. The gateway translates the chosen level into response-depth instructions for the DeepSeek web session; it does not provide Claude's native internal reasoning or change DeepSeek's model weights. Requests with an unsupported effort value are rejected as invalid.
 
 ### Authentication is always required
 
@@ -329,7 +458,7 @@ Unit tests cover argument validation, URL safety, focused search/fetch turns, so
 
 ### Tool-call and browser recovery
 
-The gateway prompts DeepSeek to emit DSML calls using `<｜DSML｜ calls>`, `<｜DSML｜ invoke>`, and `<｜DSML｜ parameter>` blocks. String parameters are read as raw text with `string="true"`; non-string values are parsed as JSON with `string="false"`. The parser accepts DeepSeek V4 `tool_calls` and V4.1 `calls` spellings, and rejects legacy `<TOOL_CALL>` JSON wrappers rather than treating them as tool calls. Parsed tool names and arguments are then validated against the schemas supplied by the client using common JSON Schema constraints (types, required/properties, additional properties, enum/const, arrays, and common string/number bounds). This is a deliberately limited validator, not a complete implementation of every JSON Schema keyword. Multi-tool responses are validated as a whole before tool blocks are emitted, so a partially invalid batch is not forwarded. Malformed or schema-invalid output receives a bounded correction attempt; if recovery fails, the gateway returns an upstream API error rather than disguising the failure as a successful \`end_turn\`.
+The gateway prompts DeepSeek to emit DSML calls using `<｜DSML｜ calls>`, `<｜DSML｜ invoke>`, and `<｜DSML｜ parameter>` blocks. String parameters are read as raw text with `string="true"`; non-string values are parsed as JSON with `string="false"`. The parser accepts DeepSeek V4 `tool_calls` and V4.1 `calls` spellings, and rejects legacy `<TOOL_CALL>` JSON wrappers rather than treating them as tool calls. Parsed tool names and arguments are then validated against the schemas supplied by the client using common JSON Schema constraints (types, required/properties, additional properties, enum/const, arrays, and common string/number bounds). This is a deliberately limited validator, not a complete implementation of every JSON Schema keyword. Multi-tool responses are validated as a whole before tool blocks are emitted, so a partially invalid batch is not forwarded. Malformed or schema-invalid output receives a bounded correction attempt. If DOM-derived DSML parsing is invalid, the gateway makes one best-effort fallback by clicking the latest assistant message's Copy control, reading its clipboard text with temporary origin-scoped clipboard permissions, and parsing it with a fresh parser. This fallback runs only after a detected parse failure and does not execute or replay a tool. The Copy action may replace the operating-system clipboard; if no supported Copy control is found or the copied text remains invalid, the normal bounded correction path is used. If recovery fails, the gateway returns an upstream API error rather than disguising the failure as a successful \`end_turn\`.
 
 At 41 or more conversation messages, the gateway starts a fresh DeepSeek browser thread and builds a bounded replay instead of continuing to grow the existing browser thread. The replay truncation limit is character-based, not a model-token limit; the latest request and tool schemas are placed near the replay tail to improve their chance of being retained. Oversized individual tool results retain both their beginning and ending, with an explicit truncation marker.
 
@@ -408,6 +537,10 @@ Remove-Item Env:ANTHROPIC_MODEL
 
 The external route is optional and is not the CI test. Keep API keys in local environment variables and never commit them to a public repository.
 
+## Model catalog and response profiles
+
+The `/v1/models` catalog exposes six request IDs: `deepseek-super`, `claude-mythos-5-1`, `claude-fable-5.1`, `claude-opus-5-5`, `claude-sonnet-5-5`, and `claude-haiku-5-5`. Each ID selects a separate response-style profile in `src/model-profiles.js`; profiles guide behavior and working style but do not change the underlying model or grant provider-native capabilities. Effort settings remain an independent layer. The Mythos preset prioritizes authorized defensive security analysis and careful remediation; the Fable preset is flexible across demanding reasoning, long-horizon agent work, research, data, documents, and creative tasks when appropriate. These are gateway-defined presets inspired by public model guidance, not a representation that the gateway invokes native Claude models. The prompt retains BYV attribution but does not disclose internal project or browser-automation details to the model.
+
 ## Endpoints
 
 - `GET /v1/models`
@@ -453,7 +586,7 @@ The session cache key is a SHA-256 fingerprint of the complete top-level system 
 
 The browser is a single shared resource. Requests are serialized through a bounded queue; when the queue is full, the server reports overload instead of allowing an unbounded backlog. If a client disconnects while a turn is running, the gateway best-effort clicks a visible stop/cancel control, stops polling, and releases the queue. This cancellation is best-effort because the website does not expose a documented API for cancelling a generation. Completion detection first uses the UI's observable stop/send controls when detected; `STABLE_MS` is an inactivity fallback only when the explicit signal has not been observed. UI changes can break these selectors, and the `MAX_TURN_MS` deadline is reported as a failure rather than a completed answer.
 
-Initial prompt replay is capped by `MAX_REPLAY` characters. If the cap is exceeded, the gateway preserves the prompt head and tail, inserts a clear truncation warning into the prompt, and logs the lengths. Some middle context is still lost; long agent sessions may therefore need compaction or a fresh session. The cap is character-based, not a token count.
+Initial prompt replay is capped by `MAX_REPLAY` characters. If the cap is exceeded, the gateway compacts oversized external system instructions, older conversation history, and tool results while prioritizing the project policy, available tool schemas, and latest request. It inserts a truncation warning into the prompt and logs the lengths. Some earlier context can still be lost; long agent sessions may therefore need compaction or a fresh session. The cap is character-based, not a token count.
 
 The local API token, Host validation, and CORS allowlist protect the local gateway endpoint. They do not protect or anonymize data submitted to DeepSeek: the browser session and prompts are still processed by the DeepSeek web service under the service's own terms and privacy policy. Do not submit data you are not comfortable sending to that service.
 
@@ -493,7 +626,8 @@ Official references:
 
 ```text
 deepseek-super/
-├── deepseek-login.js          # Manual Google sign-in helper
+├── deepseek-login.js          # Manual DeepSeek sign-in helper
+├── qwen-login.js              # Manual Qwen sign-in helper
 ├── deepseek-super-server.js   # Backward-compatible entry point
 ├── package.json
 ├── README.md
@@ -528,6 +662,10 @@ server.listen(config.PORT, '127.0.0.1');
 ```
 
 For normal shutdown when using `createServer()` directly, close the HTTP server and call `shutdownBrowser()` from `deepseek-super/src/browser` to close the Chrome context as well. For regular CLI usage, run `npm start` so the built-in shutdown handlers are enabled.
+
+## Deferred fixes and known issues
+
+Items recorded in [docs/known-issues.md](docs/known-issues.md) are intentionally deferred and labeled **DEFERRED - FIX ONLY IF REQUESTED**. Do not resume or implement those fixes unless the user explicitly requests a specific item.
 
 ## Troubleshooting tool calls
 

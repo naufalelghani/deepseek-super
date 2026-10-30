@@ -39,6 +39,12 @@ function readStateInPage(options = {}) {
             ].join(' ')).join(' ')
     ].join(' ') : '';
     const primaryIsStop = /stop|cancel|停止|取消/i.test(primaryLabel);
+    const composerTextarea = document.querySelector('textarea[placeholder="Message DeepSeek"]');
+    const composerTextareaVisible = isVisible(composerTextarea);
+    const primaryButtonVisible = isVisible(primaryButton);
+    // Composer readiness is separate from Send enabled state: after a response,
+    // the empty textarea can correctly leave the Send button disabled.
+    const composerReady = Boolean(composerTextareaVisible && primaryButtonVisible && !primaryIsStop);
     const isGenerating = stopButtonVisible || primaryIsStop;
     const sendButtonEnabled = Boolean(primaryButton && !primaryIsStop &&
         !primaryButton.classList.contains('ds-button--disabled') &&
@@ -46,6 +52,21 @@ function readStateInPage(options = {}) {
         primaryButton.getAttribute('aria-disabled') !== 'true');
     const completionSignalAvailable = Boolean(primaryButton &&
         (stopCandidates.length > 0 || primaryIsStop));
+    // Expose UI-state diagnostics for fallback logging without changing detection.
+    const completionDebug = {
+        primaryButtonFound: Boolean(primaryButton),
+        primaryLabel: primaryLabel.replace(/\s+/g, ' ').trim().slice(0, 120),
+        primaryIsStop,
+        primaryDisabledClass: Boolean(primaryButton && primaryButton.classList.contains('ds-button--disabled')),
+        primaryDisabledAttr: Boolean(primaryButton && primaryButton.hasAttribute('disabled')),
+        primaryAriaDisabled: primaryButton ? primaryButton.getAttribute('aria-disabled') : null,
+        stopCandidateCount: stopCandidates.length,
+        stopButtonVisible,
+        textareaFound: Boolean(composerTextarea),
+        textareaVisible: composerTextareaVisible,
+        primaryButtonVisible,
+        composerReady
+    };
 
     const thinkElement = last ? last.querySelector('.ds-think-content .ds-markdown') : null;
     const answerElement = last ? last.querySelector('.ds-assistant-message-main-content') : null;
@@ -62,17 +83,24 @@ function readStateInPage(options = {}) {
         : null;
 
     function serializeMarkdown(root, isFinal) {
-        if (!root) return { markdown: '', stableMarkdown: '', protocolOutput: false };
+        if (!root) return { markdown: '', stableMarkdown: '', protocolOutput: false, hasRichMarkdown: false };
         const rawText = root.innerText || root.textContent || '';
 
-        // Keep tool protocols unchanged; fences or delimiter edits can break parsing.
+        // Keep pure tool-protocol output byte-for-byte stable. When protocol markup
+        // shares a rendered response with rich Markdown (especially HTML tables),
+        // serialize the DOM instead: innerText flattens cells and loses Markdown pipes.
         const protocolPattern = /<\s*\/?\s*[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls|invoke|parameter)\b/i;
         const legacyToolPattern = /<\s*\/?\s*TOOL_CALL\b/i;
-        if (protocolPattern.test(rawText) || legacyToolPattern.test(rawText)) {
+        const hasProtocolOutput = protocolPattern.test(rawText) || legacyToolPattern.test(rawText);
+        const hasRichMarkdown = Boolean(root.querySelector(
+            'table,h1,h2,h3,h4,h5,h6,ul,ol,pre,blockquote,hr,strong,b,em,i,del,s,strike,code,a[href],img[src],sub,sup,.katex-display'
+        ));
+        if (hasProtocolOutput && !hasRichMarkdown) {
             return {
                 markdown: rawText,
                 stableMarkdown: isFinal ? rawText : rawText.slice(0, Math.max(0, rawText.length - 64)),
-                protocolOutput: true
+                protocolOutput: true,
+                hasRichMarkdown
             };
         }
 
@@ -222,13 +250,14 @@ function readStateInPage(options = {}) {
 
         const units = collectUnits(root);
         const markdown = units.join('\n\n').trim() || rawText.trim();
-        if (isFinal) return { markdown, stableMarkdown: markdown, protocolOutput: false };
+        if (isFinal) return { markdown, stableMarkdown: markdown, protocolOutput: hasProtocolOutput, hasRichMarkdown };
         // Hold the active trailing block; earlier block serialization is append-only.
         const stableUnits = units.slice(0, -1);
         return {
             markdown,
             stableMarkdown: stableUnits.length ? stableUnits.join('\n\n') + '\n\n' : '',
-            protocolOutput: false
+            protocolOutput: hasProtocolOutput,
+            hasRichMarkdown
         };
     }
 
@@ -242,9 +271,12 @@ function readStateInPage(options = {}) {
         answerMarkdown: result.markdown,
         answerMarkdownStable: result.stableMarkdown,
         answerIsProtocol: result.protocolOutput,
+        answerHasRichMarkdown: result.hasRichMarkdown,
         isGenerating,
         sendButtonEnabled,
-        completionSignalAvailable
+        composerReady,
+        completionSignalAvailable,
+        completionDebug
     };
 }
 

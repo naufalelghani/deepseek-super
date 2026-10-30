@@ -1,7 +1,8 @@
 'use strict';
 
 const { MODEL_NAME, MAX_REPLAY, sha, uuid } = require('./config');
-const { blocksOf, sessionKey, renderMessage, truncateReplay } = require('./content');
+const { getStateStore } = require('./state-store');
+const { blocksOf, sessionKey, renderMessage, truncateReplay, getMaxReplayForModel } = require('./content');
 const { buildFullPrompt, buildResumePrompt, parseToolChoice, applyForcedTool } = require('./prompts');
 const {
   DEEPSEEK_WEB_TOOLS,
@@ -12,6 +13,7 @@ const {
 } = require('./deepseek-web-tools');
 const { createToolCallRecoveryError } = require('./tool-recovery');
 const { effortPrompt } = require('./effort');
+const { modelProfilePrompt } = require('./model-profiles');
 const { validateToolCalls } = require('./tool-validation');
 
 function validateToolCallsForChoice(toolCalls, tools, force) {
@@ -30,7 +32,7 @@ function validateToolCallsForChoice(toolCalls, tools, force) {
 }
 
 const { ensurePage: defaultEnsurePage, ensureTogglesOn: defaultEnsureTogglesOn, resumeUrl: defaultResumeUrl, gotoNewChat: defaultGotoNewChat, runTurn: defaultRunTurn, runIsolatedTurn: defaultRunIsolatedTurn, currentUrl: defaultCurrentUrl, locked: defaultLocked } = require('./browser');
-const { getSession: defaultGetSession, setSession: defaultSetSession } = require('./session-store');
+const { getSession: defaultGetSession, ensureSession: defaultEnsureSession, setSession: defaultSetSession } = require('./session-store');
 const { StreamSink } = require('./sse-sink');
 const { jsonError } = require('./http-utils');
 
@@ -38,7 +40,33 @@ function containsToolMarkup(value) {
   return typeof value === 'string' &&
     /<\s*(?:TOOL_CALL\b|[｜|]{1,2}\s*DSML\s*[｜|]{1,2}\s*(?:tool_calls|calls|invoke|parameter)\b)/i.test(value);
 }
-const { estimateInputTokens, estimateOutputTokens } = require('./anthropic-contract');
+const { estimateInputTokens, estimateOutputTokens, ORIGINAL_SYSTEM } = require('./anthropic-contract');
+
+let traceStoreWarningLogged = false;
+
+function traceStore(method, ...args) {
+  try {
+    return getStateStore()[method](...args);
+  } catch (error) {
+    if (!traceStoreWarningLogged) {
+      traceStoreWarningLogged = true;
+      console.warn('[trace-store] SQLite tracing unavailable: ' +
+        (error && error.message ? error.message : String(error)));
+    }
+    return null;
+  }
+}
+
+function traceEvent(type, requestId, session, details = {}, level = 'info') {
+  return traceStore('recordEvent', {
+    type,
+    requestId,
+    sessionId: session && session.sessionId,
+    threadId: session && session.threadId,
+    details,
+    level,
+  });
+}
 
 function detectToolLoop(messages, threshold = 3) {
   if (threshold < 1) return false;
@@ -63,10 +91,14 @@ function isConversationTooLong(messages) {
 // Reuse the saved DeepSeek thread for every continuation, including tool_result
 // turns. A tool result is a continuation of the same assistant turn, not a new chat.
 function shouldResumeSession(cached, messages, forceFresh = false) {
-  return Boolean(!forceFresh && cached && Array.isArray(messages) && messages.length > 1);
+  return Boolean(!forceFresh && cached && typeof cached.url === 'string' && cached.url &&
+    Array.isArray(messages) && messages.length > 1);
 }
 
 async function handleMessages(req, res, body, dependencies = {}) {
+  const requestId = req.gatewayRequestId || uuid('req');
+  const messageId = uuid('msg');
+  req.gatewayRequestId = requestId;
   const ensurePage = dependencies.ensurePage || defaultEnsurePage;
   const ensureTogglesOn = dependencies.ensureTogglesOn || defaultEnsureTogglesOn;
   const resumeUrl = dependencies.resumeUrl || defaultResumeUrl;
@@ -94,7 +126,8 @@ async function handleMessages(req, res, body, dependencies = {}) {
     throw error;
   };
 
-  console.error('[REQ] model=' + (body.model || '?') +
+  console.error('[REQ] request_id=' + requestId + ' message_id=' + messageId +
+    ' model=' + (body.model || '?') +
     ' tools=' + (Array.isArray(body.tools) ? body.tools.length : 0) +
     ' msgs=' + (Array.isArray(body.messages) ? body.messages.length : 0));
 
@@ -103,10 +136,16 @@ async function handleMessages(req, res, body, dependencies = {}) {
   const clientTools = Array.isArray(body.tools) ? body.tools : [];
   const wantStream = body.stream === true;
   const model = body.model || MODEL_NAME;
+  const maxReplay = getMaxReplayForModel(model, MAX_REPLAY);
 
   if (messages.length === 0) {
     return jsonError(res, 400, 'invalid_request_error', 'The messages array must not be empty.');
   }
+
+  traceStore('recordRequestStart', {
+    requestId, messageId, model, stream: wantStream,
+    messageCount: messages.length, clientToolCount: clientTools.length,
+  });
 
   const last = messages[messages.length - 1];
   const lastHasToolResult = blocksOf(last.content).some((block) => block.type === 'tool_result');
@@ -117,25 +156,60 @@ async function handleMessages(req, res, body, dependencies = {}) {
     force = { mode: 'none' };
   }
 
-  // Keep client-enforced tool_choice and loop-recovery semantics intact.
-  // DeepSeek-backed web tools are internal orchestration tools for auto selection only.
-  const tools = force.mode === 'auto'
+  // Gateway-native web tools belong to the deepseek-super profile only.
+  // Claude compatibility profiles use the caller's tools (for example Claude Code's
+  // own WebSearch/WebFetch tools) without injecting DeepSeek-specific alternatives.
+  const tools = force.mode === 'auto' && model === MODEL_NAME
     ? clientTools.concat(DEEPSEEK_WEB_TOOLS)
     : clientTools;
   const conversationTooLong = isConversationTooLong(messages);
   if (conversationTooLong) {
-    console.warn('[long-conv] message_count=' + messages.length +
+    console.warn('[long-conv] request_id=' + requestId + ' message_count=' + messages.length +
       '; starting a fresh DeepSeek thread with a bounded replay so tool use can continue');
   }
 
-  const key = sessionKey(system, messages);
-  if (isCancelled()) return;
-  await ensurePage();
-  if (isCancelled()) return;
+  const stableSystem = body[ORIGINAL_SYSTEM] === undefined ? system : body[ORIGINAL_SYSTEM];
+  const key = sessionKey(stableSystem, messages);
+  let sessionInfo = traceStore('ensureSession', key) || defaultEnsureSession(key);
+  if (sessionInfo) {
+    traceStore('linkRequestToSession', requestId, sessionInfo, { resumed: false });
+    if (sessionInfo.created) {
+      traceEvent('session.created', requestId, sessionInfo, {
+        message_count: messages.length,
+        possible_compaction_or_new_turn: messages.length === 1,
+      });
+    }
+  }
+  if (isCancelled()) {
+    traceStore('finishRequest', { requestId, status: 'cancelled', sessionId: sessionInfo && sessionInfo.sessionId });
+    return;
+  }
+  try {
+    await ensurePage();
+  } catch (error) {
+    traceStore('finishRequest', {
+      requestId,
+      status: error && error.name === 'AbortError' ? 'cancelled' : 'error',
+      errorCode: error && (error.type || error.name) || 'error',
+      sessionId: sessionInfo && sessionInfo.sessionId,
+      threadId: sessionInfo && sessionInfo.threadId,
+    });
+    throw error;
+  }
+  if (isCancelled()) {
+    traceStore('finishRequest', { requestId, status: 'cancelled', sessionId: sessionInfo && sessionInfo.sessionId });
+    return;
+  }
 
   let answer, thinking, toolCalls;
-  const sink = wantStream ? new StreamSink(res, model, estimateInputTokens(body)) : null;
+  let activeSession = sessionInfo || null;
+  let initialThreadId = sessionInfo && sessionInfo.threadId || null;
+  let resumed = false;
+  let rotationReason = null;
+  let completionSource = 'unknown';
+  const sink = wantStream ? new StreamSink(res, model, estimateInputTokens(body), messageId) : null;
 
+  try {
   await locked(async () => {
     abortIfCancelled();
     await ensurePage();
@@ -145,44 +219,69 @@ async function handleMessages(req, res, body, dependencies = {}) {
 
     // Resolve the latest cached URL inside the browser lock. A preceding
     // queued request may have created or updated this conversation's URL.
-    const cached = getSession(key);
+    const cached = getSession(key) || sessionInfo;
+    activeSession = cached || activeSession;
+    initialThreadId = cached && cached.threadId || null;
+    traceStore('linkRequestToSession', requestId, cached, { resumed: false });
     abortIfCancelled();
 
-    let resumed = false;
+    resumed = false;
     if (shouldResumeSession(cached, messages, conversationTooLong)) {
       try {
         resumed = await resumeUrl(cached.url);
       } catch (error) {
-        console.warn('[session] failed to resume cached conversation:', error.message || String(error));
+        console.warn('[session] request_id=' + requestId + ' failed to resume cached conversation:', error.message || String(error));
       }
       if (resumed) {
-        console.log('[session] resumed cached conversation; tool_result=' + lastHasToolResult);
+        console.log('[session] request_id=' + requestId + ' resumed cached conversation; tool_result=' + lastHasToolResult);
+        traceEvent('thread.resumed', requestId, cached, {
+          message_count: messages.length,
+          thread_generation: cached.generation,
+          tool_result_turn: lastHasToolResult,
+        });
       }
     }
 
+    rotationReason = resumed ? null : conversationTooLong ? 'message_limit'
+      : cached && cached.url ? 'resume_failed' : 'initial_thread';
+
     let untruncatedPrompt;
     if (resumed) {
-      untruncatedPrompt = buildResumePrompt(system, messages, tools, lastHasToolResult);
+      untruncatedPrompt = buildResumePrompt(system, messages, tools, lastHasToolResult, maxReplay);
     } else {
-      if (cached) {
+      if (cached && cached.url) {
         console.warn(conversationTooLong
           ? '[session] conversation exceeded the replay threshold; creating a fresh thread'
           : '[session] cached conversation unavailable; creating a new conversation');
       }
+      traceEvent(cached && cached.url ? 'thread.rotation_requested' : 'thread.creation_requested',
+        requestId, cached, { reason: rotationReason, message_count: messages.length },
+        cached && cached.url ? 'warn' : 'info');
       await gotoNewChat();
-      untruncatedPrompt = buildFullPrompt(system, messages, tools);
+      untruncatedPrompt = buildFullPrompt(system, messages, tools, maxReplay);
     }
 
-    if (untruncatedPrompt.length > MAX_REPLAY) {
-      console.warn('[prompt-truncate] input_chars=' + untruncatedPrompt.length +
-        ' cap_chars=' + MAX_REPLAY +
-        ' omitted_chars=' + (untruncatedPrompt.length - MAX_REPLAY) +
+    if (untruncatedPrompt.length > maxReplay) {
+      console.warn('[prompt-truncate] request_id=' + requestId + ' input_chars=' + untruncatedPrompt.length +
+        ' cap_chars=' + maxReplay +
+        ' omitted_chars=' + (untruncatedPrompt.length - maxReplay) +
         '; the replay includes an explicit warning marker');
     }
-    let prompt = truncateReplay(untruncatedPrompt);
+    let prompt = truncateReplay(untruncatedPrompt, maxReplay);
+    const replayPromptChars = prompt.length;
     prompt = applyForcedTool(prompt, force);
+    const profileInstruction = modelProfilePrompt(model);
+    if (profileInstruction) prompt += '\n\n' + profileInstruction;
     const effortInstruction = effortPrompt(body.output_config && body.output_config.effort);
     if (effortInstruction) prompt += '\n\n' + effortInstruction;
+    traceStore('recordPromptMetrics', requestId, {
+      inputPromptChars: untruncatedPrompt.length,
+      maxReplayChars: maxReplay,
+      replayPromptChars,
+      finalPromptChars: prompt.length,
+      omittedPromptChars: Math.max(0, untruncatedPrompt.length - replayPromptChars),
+      truncated: untruncatedPrompt.length > maxReplay,
+    });
     abortIfCancelled();
 
     const dummySink = {
@@ -198,6 +297,13 @@ async function handleMessages(req, res, body, dependencies = {}) {
     const bufferResponse = useBuffer || force.mode === 'none';
     const out = await runTurn(prompt, sink || dummySink, bufferResponse, isCancelled);
     abortIfCancelled();
+    completionSource = out.completionSource || 'unknown';
+    traceEvent('model.turn_completed', requestId, activeSession, {
+      phase: 'primary', completion_source: completionSource,
+      response_chars: (out.text || '').length,
+      tool_call_count: Array.isArray(out.toolCalls) ? out.toolCalls.length : 0,
+      invalid_tool_call: Boolean(out.invalidToolCall),
+    });
     answer = out.text;
     thinking = out.thinking;
     toolCalls = out.toolCalls;
@@ -215,6 +321,13 @@ async function handleMessages(req, res, body, dependencies = {}) {
       ].join('\n');
       const recovery = await runTurn(textOnlyPrompt, dummySink, true, isCancelled);
       abortIfCancelled();
+      completionSource = recovery.completionSource || completionSource;
+      traceEvent('model.turn_completed', requestId, activeSession, {
+        phase: 'text_only_recovery', completion_source: completionSource,
+        response_chars: (recovery.text || '').length,
+        tool_call_count: Array.isArray(recovery.toolCalls) ? recovery.toolCalls.length : 0,
+        invalid_tool_call: Boolean(recovery.invalidToolCall),
+      });
       const recoveryHasToolMarkup = recovery.invalidToolCall ||
         containsToolMarkup(recovery.text);
       if (recovery.toolCalls.length > 0 || recoveryHasToolMarkup || !(recovery.text || '').trim()) {
@@ -244,6 +357,10 @@ async function handleMessages(req, res, body, dependencies = {}) {
       }
 
       const maxRetries = 2;
+      traceEvent('tool_call.recovery_requested', requestId, activeSession, {
+        attempts_allowed: maxRetries,
+        reason_kind: out.invalidToolCall ? 'parse_error' : 'schema_validation',
+      }, 'warn');
       let recovered = false;
       let recoveryIssue = validation.error ||
         'The previous DSML tool-call markup was malformed or incomplete.';
@@ -270,6 +387,14 @@ async function handleMessages(req, res, body, dependencies = {}) {
         // Keep retry output private until the whole batch passes validation.
         const retry = await runTurn(retryPrompt, dummySink, useBuffer, isCancelled);
         abortIfCancelled();
+        completionSource = retry.completionSource || completionSource;
+        traceEvent('model.turn_completed', requestId, activeSession, {
+          phase: 'tool_call_recovery', attempt,
+          completion_source: completionSource,
+          response_chars: (retry.text || '').length,
+          tool_call_count: Array.isArray(retry.toolCalls) ? retry.toolCalls.length : 0,
+          invalid_tool_call: Boolean(retry.invalidToolCall),
+        });
         answer = retry.text;
         thinking = retry.thinking;
         toolCalls = retry.toolCalls;
@@ -286,13 +411,18 @@ async function handleMessages(req, res, body, dependencies = {}) {
 
         if (toolCalls.length > 0 && validation.valid && !retry.invalidToolCall) {
           recovered = true;
-          console.log('[retry] recovered on attempt ' + attempt +
+          console.log('[retry] request_id=' + requestId + ' recovered on attempt ' + attempt +
             ' — schema-valid tool calls=' + toolCalls.length);
+          traceEvent('tool_call.recovered', requestId, activeSession, {
+            attempt,
+            tool_call_count: toolCalls.length,
+          });
           break;
         }
 
         recoveryIssue = validation.error || 'The retry did not return a valid tool call.';
-        console.warn('[retry] attempt ' + attempt + ' did not produce schema-valid tool calls');
+        console.warn('[retry] request_id=' + requestId + ' attempt ' + attempt + ' did not produce schema-valid tool calls');
+        traceEvent('tool_call.recovery_attempt_failed', requestId, activeSession, { attempt }, 'warn');
       }
 
       if (!recovered) {
@@ -355,6 +485,13 @@ async function handleMessages(req, res, body, dependencies = {}) {
       abortIfCancelled();
       const continued = await runTurn(continuationPrompt, dummySink, true, isCancelled);
       abortIfCancelled();
+      completionSource = continued.completionSource || completionSource;
+      traceEvent('model.turn_completed', requestId, activeSession, {
+        phase: 'internal_web_continuation', completion_source: completionSource,
+        response_chars: (continued.text || '').length,
+        tool_call_count: Array.isArray(continued.toolCalls) ? continued.toolCalls.length : 0,
+        invalid_tool_call: Boolean(continued.invalidToolCall),
+      });
       answer = continued.text;
       thinking = continued.thinking;
       toolCalls = continued.toolCalls;
@@ -404,13 +541,57 @@ async function handleMessages(req, res, body, dependencies = {}) {
 
     abortIfCancelled();
     const url = await currentUrl();
-    if (url) setSession(key, url);
+    if (url) {
+      const updatedSession = setSession(key, url, {
+        rotationReason,
+        messageCount: messages.length,
+      });
+      if (updatedSession) {
+        activeSession = updatedSession;
+        traceStore('linkRequestToSession', requestId, updatedSession, { resumed, rotationReason });
+        if (updatedSession.threadId && updatedSession.threadId !== initialThreadId) {
+          traceEvent(initialThreadId ? 'thread.rotated' : 'thread.created', requestId, updatedSession, {
+            previous_thread_id: initialThreadId,
+            thread_generation: updatedSession.generation,
+            reason: rotationReason || 'thread_changed',
+            message_count: messages.length,
+          });
+        }
+      }
+    }
   });
+  } catch (error) {
+    traceStore('finishRequest', {
+      requestId,
+      status: error && error.name === 'AbortError' ? 'cancelled' : 'error',
+      completionSource,
+      errorCode: error && (error.type || error.name) || 'error',
+      sessionId: activeSession && activeSession.sessionId,
+      threadId: activeSession && activeSession.threadId,
+    });
+    throw error;
+  }
 
-  if (isCancelled()) return;
+  if (isCancelled()) {
+    traceStore('finishRequest', {
+      requestId, status: 'cancelled', completionSource,
+      sessionId: activeSession && activeSession.sessionId,
+      threadId: activeSession && activeSession.threadId,
+    });
+    return;
+  }
 
   const stopReason = toolCalls.length ? 'tool_use' : 'end_turn';
-  console.log('[response] stop_reason=' + stopReason + ' tool_calls=' + toolCalls.length + ' stream=' + wantStream);
+  traceStore('finishRequest', {
+    requestId,
+    status: 'completed',
+    stopReason,
+    toolCallCount: toolCalls.length,
+    completionSource,
+    sessionId: activeSession && activeSession.sessionId,
+    threadId: activeSession && activeSession.threadId,
+  });
+  console.log('[response] request_id=' + requestId + ' stop_reason=' + stopReason + ' tool_calls=' + toolCalls.length + ' stream=' + wantStream);
   if (wantStream) {
     sink.finish(stopReason);
     return res.end();
@@ -427,7 +608,7 @@ async function handleMessages(req, res, body, dependencies = {}) {
   if (content.length === 0) content.push({ type: 'text', text: '' });
 
   const payload = {
-    id: uuid('msg'),
+    id: messageId,
     type: 'message',
     role: 'assistant',
     model,

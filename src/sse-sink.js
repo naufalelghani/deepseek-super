@@ -3,14 +3,14 @@
 const { uuid } = require('./config');
 
  class StreamSink {
-     constructor(res, model, inTokens) {
+     constructor(res, model, inTokens, messageId) {
          this.res = res;
          this.model = model;
          this.index = -1;
          this.open = null;
          this.inTokens = inTokens;
          this.outChars = 0;
-         this.msgId = uuid('msg');
+         this.msgId = messageId || uuid('msg');
          this.send('message_start', {
              type: 'message_start',
              message: {

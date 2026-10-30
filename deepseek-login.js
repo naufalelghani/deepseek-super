@@ -33,8 +33,6 @@ async function main() {
       headless: false,
       channel: 'chrome',
       viewport: { width: 1280, height: 900 },
-      args: ['--disable-blink-features=AutomationControlled'],
-      ignoreDefaultArgs: ['--enable-automation'],
     });
 
     const page = context.pages()[0] || await context.newPage();

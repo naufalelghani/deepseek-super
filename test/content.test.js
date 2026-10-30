@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { blocksOf, flattenContent, renderMessage, sessionKey, truncateReplay, truncateTextPreservingEnds } = require('../src/content');
 const { approxTokens, MAX_REPLAY } = require('../src/config');
+const { CLAUDE_MAX_REPLAY, getMaxReplayForModel } = require('../src/content');
 
 test('blocksOf normalizes strings and handles empty content', () => {
   assert.deepEqual(blocksOf('hello'), [{ type: 'text', text: 'hello' }]);
@@ -17,10 +18,10 @@ test('flattenContent and renderMessage preserve supported textual content', () =
   assert.match(renderMessage({ content: [{ type: 'image' }] }), /image unsupported/);
 });
 
-test('sessionKey is stable for the same leading system and user messages', () => {
+test('sessionKey remains stable for matching inputs and separates different system contexts', () => {
   const messages = [{ role: 'user', content: 'hello' }, { role: 'assistant', content: 'hi' }];
   assert.equal(sessionKey('system', messages), sessionKey('system', messages));
-  assert.notEqual(sessionKey('system', messages), sessionKey('different', messages));
+  assert.notEqual(sessionKey('system', messages), sessionKey('different project system', messages));
 });
 
 test('truncateReplay caps very long replay prompts and token estimate is positive', () => {
@@ -39,6 +40,93 @@ test('sessionKey hashes the full first user message instead of a truncated prefi
   assert.notEqual(sessionKey('', a), sessionKey('', b));
 });
 
+test('oversized tool catalogs are compacted without dropping individual tool schemas or latest task', () => {
+  const policy = [
+    '### ASSISTANT IDENTITY',
+    'IDENTITY_POLICY_SENTINEL',
+    '### CONVERSATION LANGUAGE',
+    'Respond in the language the user is currently using.',
+    '### WRITING STYLE AND HUMANIZER',
+    'EM DASH BAN: Never insert U+2014.',
+  ].join('\n');
+  const tools = '\n\n### TOOLS\n' + Array.from({ length: 40 }, (_, index) =>
+    '- Tool_' + String(index).padStart(2, '0') + '(command*: string): ' +
+    ('verbose tool description '.repeat(110))
+  ).join('\n');
+  const latest = '\n\n### LATEST USER MESSAGE\nLATEST_TASK_SENTINEL: audit the gateway.';
+  const replay = truncateReplay(policy + tools + latest);
+
+  assert.ok(replay.length <= MAX_REPLAY);
+  assert.match(replay, /IDENTITY_POLICY_SENTINEL/);
+  assert.match(replay, /EM DASH BAN/);
+  assert.match(replay, /Tool_00\(command\*: string\)/);
+  assert.match(replay, /Tool_39\(command\*: string\)/);
+  assert.match(replay, /LATEST_TASK_SENTINEL/);
+  assert.match(replay, /WARNING: conversation replay was truncated/);
+});
+
+test('oversized structured prompts preserve project policy, tool schemas, and the latest request', () => {
+  const system = '### SYSTEM\nSYSTEM_HEAD_MARKER\n' +
+    'system context '.repeat(MAX_REPLAY) +
+    '\nSYSTEM_TAIL_MARKER';
+  const policy = [
+    '### ASSISTANT IDENTITY',
+    'IDENTITY_POLICY_MARKER',
+    '### CONVERSATION LANGUAGE',
+    'Respond in the language the user is currently using.',
+    '### WRITING STYLE AND HUMANIZER',
+    'EM DASH BAN: Never insert U+2014.',
+  ].join('\n');
+  const history = '\n\n### CONVERSATION HISTORY\nHISTORY_HEAD_MARKER\n' +
+    'old conversation '.repeat(MAX_REPLAY) +
+    'HISTORY_TAIL_MARKER';
+  const tools = '\n\n### TOOLS\nTOOL_SCHEMA_SENTINEL: Bash(command*: string)';
+  const latest = '\n\n### LATEST USER MESSAGE\nLATEST_REQUEST_SENTINEL: inspect src/handler.js';
+  const replay = truncateReplay(system + '\n\n' + policy + history + tools + latest);
+
+  assert.ok(replay.length <= MAX_REPLAY);
+  assert.match(replay, /SYSTEM_HEAD_MARKER/);
+  assert.match(replay, /SYSTEM_TAIL_MARKER/);
+  assert.match(replay, /EM DASH BAN/);
+  assert.match(replay, /TOOL_SCHEMA_SENTINEL/);
+  assert.match(replay, /LATEST_REQUEST_SENTINEL/);
+  assert.match(replay, /WARNING: conversation replay was truncated/);
+});
+
+test('oversized latest tool results retain both ends, next-step tool schema, and continuation instructions', () => {
+  const system = '### SYSTEM\n' + 'large-system '.repeat(MAX_REPLAY * 2);
+  const policy = [
+    '### ASSISTANT IDENTITY',
+    'policy',
+    '### CONVERSATION LANGUAGE',
+    'Respond in the language the user is currently using.',
+    '### WRITING STYLE AND HUMANIZER',
+    'EM DASH BAN: Never insert U+2014.',
+  ].join('\n');
+  const result = 'RESULT_BEGIN_MARKER\n' +
+    'long tool output '.repeat(MAX_REPLAY) +
+    '\nRESULT_END_MARKER';
+  const tail = [
+    '=== SITUATION ===',
+    'Continue the task using the latest result.',
+    '=== LATEST TOOL RESULTS ===',
+    result,
+    '=== TOOLS AVAILABLE FOR THE NEXT STEP ===',
+    'NEXT_STEP_TOOL_SCHEMA: Read(file_path*: string)',
+    '=== INSTRUCTIONS AFTER TOOL RESULTS ===',
+    'If the task is not complete, call the next required tool.',
+  ].join('\n');
+  const replay = truncateReplay(system + '\n\n' + policy + '\n\n' + tail);
+
+  assert.ok(replay.length <= MAX_REPLAY);
+  assert.match(replay, /EM DASH BAN/);
+  assert.match(replay, /RESULT_BEGIN_MARKER/);
+  assert.match(replay, /RESULT_END_MARKER/);
+  assert.match(replay, /NEXT_STEP_TOOL_SCHEMA/);
+  assert.match(replay, /If the task is not complete, call the next required tool/);
+  assert.match(replay, /WARNING: conversation replay was truncated/);
+});
+
 
 test('truncateTextPreservingEnds retains the beginning and ending of oversized content', () => {
   const text = 'BEGIN_MARKER_' + 'x'.repeat(10000) + '_END_MARKER';
@@ -47,4 +135,27 @@ test('truncateTextPreservingEnds retains the beginning and ending of oversized c
   assert.match(truncated, /^BEGIN_MARKER/);
   assert.match(truncated, /_END_MARKER$/);
   assert.match(truncated, /content truncated/);
+});
+
+
+test('replay cap is model-specific: Claude profiles get 150k and DeepSeek keeps its configured limit', () => {
+  const claudeModels = [
+    'claude-mythos-5-1',
+    'claude-fable-5.1',
+    'claude-opus-5-5',
+    'claude-sonnet-5-5',
+    'claude-haiku-5-5',
+  ];
+  for (const model of claudeModels) {
+    assert.equal(getMaxReplayForModel(model, MAX_REPLAY), CLAUDE_MAX_REPLAY, model);
+  }
+  assert.equal(CLAUDE_MAX_REPLAY, 150000);
+  assert.equal(getMaxReplayForModel('deepseek-super', MAX_REPLAY), MAX_REPLAY);
+
+  const prompt = 'p'.repeat(120000);
+  const claudeReplay = truncateReplay(prompt, getMaxReplayForModel('claude-mythos-5-1', MAX_REPLAY));
+  const deepseekReplay = truncateReplay(prompt, getMaxReplayForModel('deepseek-super', MAX_REPLAY));
+  assert.equal(claudeReplay.length, prompt.length, '120k characters fit within the Claude limit');
+  assert.ok(deepseekReplay.length <= MAX_REPLAY, 'DeepSeek remains bounded by MAX_REPLAY');
+  assert.match(deepseekReplay, /WARNING: conversation replay was truncated/);
 });

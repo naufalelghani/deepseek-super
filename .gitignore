@@ -7,3 +7,10 @@ coverage/
 deepseek-auth.json
 .deepseek-super-token
 .deepseek-super-token.*.tmp
+
+data/
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+qwen-profile/
+qwen-auth.json

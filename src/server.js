@@ -1,13 +1,16 @@
 'use strict';
 
 const http = require('node:http');
+const { uuid } = require('./config');
 const { effortCapabilities } = require('./effort');
-// Public virtual models shown to API clients. Both aliases currently use the DeepSeek web session.
+// Virtual catalog IDs are client-facing profiles; requests are handled by this gateway.
 const AVAILABLE_MODELS = [
-  // Claude Desktop's gateway discovery filters out opaque non-Claude IDs.
-  // These are UI compatibility IDs only; both are handled by the DeepSeek web backend.
-  { id: 'claude-sonnet-5-5', display_name: 'Deepseek Super', line: 'sonnet' },
+  { id: 'deepseek-super', display_name: 'Deepseek Super', line: 'sonnet' },
+  { id: 'claude-mythos-5-1', display_name: 'Mythos 5.1', line: 'opus' },
+  { id: 'claude-fable-5.1', display_name: 'Fable 5.1', line: 'sonnet' },
   { id: 'claude-opus-5-5', display_name: 'Opus 5.5', line: 'opus' },
+  { id: 'claude-sonnet-5-5', display_name: 'Sonnet 5.5', line: 'sonnet' },
+  { id: 'claude-haiku-5-5', display_name: 'Haiku 5.5', line: 'haiku' },
 ];
 const { handleMessages } = require('./handler');
 const {
@@ -53,6 +56,7 @@ function createServer() {
     if (origin) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Expose-Headers', 'X-Gateway-Request-ID, X-Token-Usage-Estimated');
     }
 
     if (req.method === 'OPTIONS') {
@@ -137,6 +141,9 @@ function createServer() {
       }
 
       const wantStream = body.stream === true;
+      const requestId = uuid('req');
+      req.gatewayRequestId = requestId;
+      res.setHeader('X-Gateway-Request-ID', requestId);
       res.setHeader('X-Token-Usage-Estimated', 'true');
       if (wantStream) {
         res.writeHead(200, {

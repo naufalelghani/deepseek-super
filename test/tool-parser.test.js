@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { StreamParser, tryParseJSON, extractToolCallsFromText } = require('../src/tool-parser');
+const { StreamParser, tryParseJSON, extractToolCallsFromText, parseToolCallsFromText } = require('../src/tool-parser');
 
 test('tryParseJSON parses valid JSON and repairs common invalid backslashes', () => {
   assert.deepEqual(tryParseJSON('{"tool":"Bash","arguments":{"command":"pwd"}}'), { tool: 'Bash', arguments: { command: 'pwd' } });
@@ -168,4 +168,73 @@ test('incomplete DSML wrappers retain parseable invokes for bounded recovery', (
 
   assert.equal(parser.incompleteToolBlock, true);
   assert.deepEqual(parser.toolCalls(), [{ name: 'Bash', input: { command: 'pwd' } }]);
+});
+
+
+test('StreamParser tolerates an invoke closing tag with its name omitted', () => {
+  const parser = new StreamParser(() => {});
+  parser.feed('<｜DSML｜ calls><｜DSML｜ invoke name="Bash">' +
+    '<｜DSML｜ parameter name="command" string="true">pwd</｜DSML｜ parameter>' +
+    '</｜DSML｜></｜DSML｜ calls>');
+  parser.finish();
+
+  assert.deepEqual(parser.toolCalls(), [{ name: 'Bash', input: { command: 'pwd' } }]);
+  assert.equal(parser.parseErrors.length, 0);
+});
+
+test('stripDsmlTags removes an otherwise nameless DSML tag', () => {
+  const { stripDsmlTags } = require('../src/tool-parser');
+  assert.equal(stripDsmlTags('before </｜DSML｜> after'), 'before  after');
+  assert.equal(stripDsmlTags('before <｜DSML｜> after'), 'before  after');
+});
+
+
+test('DSML Write content preserves Python indentation and blank lines exactly', () => {
+  const content = [
+    'while i < len(lines):',
+    '    ln = lines[i]',
+    '',
+    '    if in_code:',
+    "        if re.match(r'^\\d+\\.\\d+\\s', ln):",
+    "            out.append('```')",
+    "            out.append('')",
+    '            in_code = False',
+    '        else:',
+    '            out.append(ln)',
+    '        i += 1',
+    '        continue',
+  ].join('\n');
+  const payload = '<｜DSML｜ calls><｜DSML｜ invoke name="Write">' +
+    '<｜DSML｜ parameter name="file_path" string="true">fmt.py</｜DSML｜ parameter>' +
+    '<｜DSML｜ parameter name="content" string="true">' + content + '</｜DSML｜ parameter>' +
+    '</｜DSML｜ invoke></｜DSML｜ calls>';
+  const result = parseToolCallsFromText(payload);
+
+  assert.equal(result.invalidToolCall, false);
+  assert.equal(result.calls.length, 1);
+  assert.equal(result.calls[0].name, 'Write');
+  assert.equal(result.calls[0].input.content, content);
+});
+
+test('parseToolCallsFromText recovers a valid copied DSML response', () => {
+  const copied = 'Preparing files. <｜DSML｜ calls>' +
+    '<｜DSML｜ invoke name="Bash"><｜DSML｜ parameter name="command" string="true">pwd</｜DSML｜ parameter></｜DSML｜ invoke>' +
+    '</｜DSML｜ calls>';
+  const result = parseToolCallsFromText(copied);
+
+  assert.deepEqual(result.calls, [{ name: 'Bash', input: { command: 'pwd' } }]);
+  assert.equal(result.invalidToolCall, false);
+  assert.equal(result.text, 'Preparing files.');
+  assert.deepEqual(result.extractionErrors, []);
+});
+
+test('parseToolCallsFromText marks malformed copied DSML as invalid', () => {
+  const copied = '<｜DSML｜ calls><｜DSML｜ invoke name="Bash">' +
+    '<｜DSML｜ parameter name="command" string="false">not-json</｜DSML｜ parameter>' +
+    '</｜DSML｜ invoke></｜DSML｜ calls>';
+  const result = parseToolCallsFromText(copied);
+
+  assert.deepEqual(result.calls, []);
+  assert.equal(result.invalidToolCall, true);
+  assert.ok(result.parseErrors.length > 0);
 });

@@ -45,7 +45,7 @@ function makeDependencies(runTurn, options = {}) {
 
 function makeBody(options = {}) {
   return {
-    model: 'deepseek-super',
+    model: options.model || 'deepseek-super',
     max_tokens: 256,
     stream: options.stream === true,
     tool_choice: options.tool_choice || 'auto',
@@ -107,6 +107,45 @@ test('handler executes DeepSeekWebSearch internally and resumes the model with t
   assert.equal(message.content.some((block) => block.type === 'tool_use'), false);
   assert.match(message.content.find((block) => block.type === 'text').text, /example\.com\/releases/);
   assert.ok(promptCalls[0].includes('DeepSeekWebSearch'), 'the first model prompt includes the internal tool schema');
+});
+
+test('Claude compatibility profiles do not receive gateway-native web tools', async () => {
+  const response = new FakeResponse();
+  const toggleStates = [];
+  let promptText = '';
+  const clientTools = [{
+    name: 'WebSearch',
+    description: 'Search the web using the client-provided integration.',
+    input_schema: {
+      type: 'object',
+      properties: { query: { type: 'string' } },
+      required: ['query'],
+    },
+  }];
+  const runTurn = async (prompt) => {
+    promptText = prompt;
+    return {
+      text: 'I can use the client-provided tools when needed.',
+      thinking: '',
+      toolCalls: [],
+      invalidToolCall: false,
+    };
+  };
+
+  await handleMessages(makeRequest(), response, makeBody({
+    model: 'claude-mythos-5-1',
+    tools: clientTools,
+  }), makeDependencies(runTurn, {
+    ensureTogglesOn: async (toolsProvided) => toggleStates.push(toolsProvided),
+  }));
+
+  const message = JSON.parse(response.output);
+  assert.deepEqual(toggleStates, [true]);
+  assert.match(promptText, /WebSearch/, 'the caller-provided web search tool must remain available');
+  assert.doesNotMatch(promptText, /DeepSeekWebSearch|DeepSeekWebFetch/,
+    'gateway-native web tools must not be injected into Claude compatibility profiles');
+  assert.equal(message.stop_reason, 'end_turn');
+  assert.match(message.content.find((block) => block.type === 'text').text, /client-provided tools/);
 });
 
 test('handler consumes internal web calls but returns client-owned calls in a mixed batch', async () => {
