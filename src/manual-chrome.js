@@ -32,7 +32,7 @@ function listChromeProcessesUsingProfile(profileDir) {
     const script = [
       '$profile = ' + psQuote(absoluteProfile),
       '$ids = @(Get-CimInstance Win32_Process |',
-      '  Where-Object { $_.Name -eq ''chrome.exe'' -and $_.CommandLine -and $_.CommandLine.IndexOf($profile, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and $_.CommandLine.Contains(''--user-data-dir'') } |',
+      "  Where-Object { $_.Name -eq 'chrome.exe' -and $_.CommandLine -and $_.CommandLine.IndexOf($profile, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and $_.CommandLine.Contains('--user-data-dir') } |",
       '  ForEach-Object { $_.ProcessId })',
       'if ($ids.Count -gt 0) { ConvertTo-Json -InputObject $ids -Compress }',
     ].join('; ');
