@@ -569,6 +569,8 @@ deepseek-super/
 │   ├── anthropic-sdk-smoke.cjs # Anthropic SDK integration test
 │   └── claude-code-smoke.cjs   # Claude Code CLI integration test
 ├── src/
+│   ├── manual-chrome.js       # Opens/checks a regular Chrome profile for manual OAuth
+│   ├── session-auth.js         # Saves/restores local Playwright session backups
 │   ├── index.js               # Public API and lifecycle
 │   ├── config.js              # Environment variables and defaults
 │   ├── content.js             # Message-block normalization and session keys
