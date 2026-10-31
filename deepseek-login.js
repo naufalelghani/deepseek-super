@@ -1,13 +1,14 @@
 'use strict';
 
-// Open DeepSeek in an Incognito Chrome window using a project-specific user-data directory.
-// Auth is explicitly backed up to a separate ignored JSON file for the gateway to restore.
+// Launch a normal Chrome window directly for manual Google OAuth.
+// Playwright is used only after the user closes Chrome, to verify and back up the session.
 
 const fs = require('node:fs');
 const path = require('node:path');
 const readline = require('node:readline/promises');
 const { chromium } = require('playwright');
-const { restoreStorageState, saveStorageState } = require('./src/incognito-auth');
+const { openManualChrome, assertProfileAvailable } = require('./src/manual-chrome');
+const { saveStorageState } = require('./src/session-auth');
 
 const DEEPSEEK_URL = 'https://chat.deepseek.com/';
 const PROFILE_DIR = process.env.PROFILE_DIR || path.join(__dirname, 'deepseek-profile');
@@ -21,80 +22,68 @@ async function main() {
   let context;
 
   try {
-    console.log('DeepSeek web login (manual Google OAuth)');
-    console.log('Profile:', PROFILE_DIR);
-    console.log('A Chrome window will open. Complete login yourself in that window.');
-
-    // Create the project-specific Chrome user-data directory explicitly.
-    // Incognito cookies are temporary; reusable auth is stored separately in the ignored snapshot.
+    console.log('DeepSeek manual Google login (regular Chrome; no Incognito)');
+    console.log('Project profile:', PROFILE_DIR);
     fs.mkdirSync(PROFILE_DIR, { recursive: true });
 
-    context = await chromium.launchPersistentContext(PROFILE_DIR, {
-      headless: false,
-      channel: 'chrome',
-      args: [
-        '--incognito',
-        '--disable-blink-features=AutomationControlled',
-      ],
-      ignoreDefaultArgs: ['--enable-automation'],
-      viewport: { width: 1280, height: 900 },
-    });
-
-    await restoreStorageState(context, STORAGE_STATE_PATH, 'deepseek');
-    const page = context.pages()[0] || await context.newPage();
-    await page.goto(DEEPSEEK_URL, { waitUntil: 'domcontentloaded' });
-
-    // This helper intentionally leaves OAuth entirely to the human. Ask for
-    // explicit confirmation instead of assuming a visible composer means login succeeded.
+    const chromePath = await openManualChrome(PROFILE_DIR, DEEPSEEK_URL);
+    console.log('Opened Chrome directly (not through Playwright):', chromePath);
     console.log('');
-    console.log('Complete these steps manually in the Chrome window:');
-    console.log('  1. Click Log in / Sign in on DeepSeek (skip if already signed in).');
+    console.log('Complete these steps in the Chrome window:');
+    console.log('  1. Click Log in / Sign in on DeepSeek.');
     console.log('  2. Choose Sign in with Google.');
     console.log('  3. Complete Google sign-in, consent, CAPTCHA, or 2FA yourself.');
-    console.log('  4. Confirm the DeepSeek chat composer is visible and usable.');
+    console.log('  4. Confirm that the DeepSeek chat composer is visible and usable.');
+    console.log('  5. CLOSE every Chrome window using this project profile.');
     console.log('');
-    console.log('Do not enter Google credentials in this terminal; use the browser only.');
+    console.log('Only after Chrome is fully closed, return here and press Enter.');
 
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     try {
-      await rl.question('When DeepSeek is ready, press Enter here to save the session and close Chrome...');
+      await rl.question('Press Enter after closing the project Chrome window...');
     } finally {
       rl.close();
     }
 
-    // Match the composer selector used by src/browser.js.
-    const chatInput = page.locator('textarea[placeholder="Message DeepSeek"]');
-    await chatInput.waitFor({
-      state: 'visible',
-      timeout: LOGIN_TIMEOUT_MS,
+    // Do not attempt to launch a second browser on a profile still held by Chrome.
+    assertProfileAvailable(PROFILE_DIR);
+
+    // Google OAuth is already complete. Playwright now only verifies the saved
+    // regular Chrome session and exports a local backup for recovery.
+    context = await chromium.launchPersistentContext(PROFILE_DIR, {
+      headless: false,
+      channel: 'chrome',
+      viewport: { width: 1280, height: 900 },
     });
 
-    // Wait briefly for cookies/local storage to settle before saving the backup.
-    await page.waitForTimeout(1000);
-    fs.mkdirSync(path.dirname(STORAGE_STATE_PATH), { recursive: true });
-    await saveStorageState(context, STORAGE_STATE_PATH, 'deepseek');
+    try {
+      const page = context.pages()[0] || await context.newPage();
+      await page.goto(DEEPSEEK_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-    const profileExists = fs.existsSync(PROFILE_DIR) && fs.statSync(PROFILE_DIR).isDirectory();
-    const authFileExists = fs.existsSync(STORAGE_STATE_PATH) &&
-      fs.statSync(STORAGE_STATE_PATH).isFile() &&
-      fs.statSync(STORAGE_STATE_PATH).size > 0;
+      const chatInput = page.locator('textarea[placeholder="Message DeepSeek"]');
+      await chatInput.waitFor({ state: 'visible', timeout: LOGIN_TIMEOUT_MS });
+      await page.waitForTimeout(1000);
+      await saveStorageState(context, STORAGE_STATE_PATH, 'deepseek');
 
-    if (!profileExists) {
-      throw new Error('The project user-data directory was not created: ' + PROFILE_DIR);
+      const authFileExists = fs.existsSync(STORAGE_STATE_PATH) &&
+        fs.statSync(STORAGE_STATE_PATH).isFile() &&
+        fs.statSync(STORAGE_STATE_PATH).size > 0;
+      if (!authFileExists) {
+        throw new Error('The DeepSeek session backup was not created: ' + STORAGE_STATE_PATH);
+      }
+
+      console.log('');
+      console.log('DeepSeek login verified.');
+      console.log('Project Chrome profile:', PROFILE_DIR);
+      console.log('Session backup:', STORAGE_STATE_PATH);
+      console.log('Close this verification window when done. The gateway uses the same regular Chrome profile.');
+    } catch (error) {
+      throw new Error(
+        'The saved Chrome profile did not open an authenticated DeepSeek chat. ' +
+        'Check that manual Google login completed successfully. ' +
+        (error.message || String(error))
+      );
     }
-    if (!authFileExists) {
-      throw new Error('The session backup was not created: ' + STORAGE_STATE_PATH);
-    }
-
-    console.log('Session backup saved locally:', STORAGE_STATE_PATH);
-    console.log('Project Incognito user-data directory verified:', PROFILE_DIR);
-    console.log('Session backup file verified:', STORAGE_STATE_PATH);
-
-    console.log('');
-    console.log("Login step completed in Incognito mode. Chrome's temporary session is backed up to:");
-    console.log('  ' + STORAGE_STATE_PATH);
-    console.log('The gateway restores this snapshot into its own Incognito session. Closing this browser');
-    console.log('now releases the project user-data directory for the server.');
   } finally {
     if (context) {
       await context.close().catch(() => {});
@@ -105,7 +94,7 @@ async function main() {
 main().catch((error) => {
   console.error('');
   console.error('DeepSeek login setup failed:', error.message || error);
-  console.error('Check that Google login completed and the chat composer appeared.');
+  console.error('Make sure all manual Chrome windows using deepseek-profile are closed before verification.');
   console.error('You can increase the timeout with DEEPSEEK_LOGIN_TIMEOUT_MS.');
   process.exitCode = 1;
 });
