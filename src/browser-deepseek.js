@@ -58,7 +58,11 @@ const AUTH_STATE_PATH = path.join(__dirname, '..', 'deepseek-auth.json');
              const newContext = await chromium.launchPersistentContext(PROFILE_DIR, {
                  headless: false,
                  channel: 'chrome',
-                 args: ['--incognito'],
+                 args: [
+                     '--incognito',
+                     '--disable-blink-features=AutomationControlled',
+                 ],
+                 ignoreDefaultArgs: ['--enable-automation'],
                 // Keep Chrome's sandbox enabled; Playwright otherwise adds --no-sandbox,
                 // which weakens browser isolation and triggers Chrome's warning banner.
                 chromiumSandbox: true,
