@@ -6,7 +6,7 @@ const { readStateInPage } = require('./browser-dom');
 const { PROFILE_DIR, POLL_MS, STABLE_MS, MAX_TURN_MS, MAX_PENDING_TURNS } = require('./config');
 const { StreamParser, extractToolCallsFromText, parseToolCallsFromText } = require('./tool-parser');
 const { hasNewAssistantResponse, isResponseComplete, shouldUseStableFallback, isIdleCompletionCandidate, isComposerRestoredCompletionCandidate } = require('./turn-state');
-const { restoreStorageState, saveStorageState } = require('./incognito-auth');
+const { restoreStorageState, saveStorageState } = require('./session-auth');
 const AUTH_STATE_PATH = path.join(__dirname, '..', 'deepseek-auth.json');
 
  let ctx = null;
@@ -58,11 +58,6 @@ const AUTH_STATE_PATH = path.join(__dirname, '..', 'deepseek-auth.json');
              const newContext = await chromium.launchPersistentContext(PROFILE_DIR, {
                  headless: false,
                  channel: 'chrome',
-                 args: [
-                     '--incognito',
-                     '--disable-blink-features=AutomationControlled',
-                 ],
-                 ignoreDefaultArgs: ['--enable-automation'],
                 // Keep Chrome's sandbox enabled; Playwright otherwise adds --no-sandbox,
                 // which weakens browser isolation and triggers Chrome's warning banner.
                 chromiumSandbox: true,
