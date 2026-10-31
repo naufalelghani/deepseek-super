@@ -11,7 +11,7 @@ const {
 } = require('./config');
 const { readQwenStateInPage } = require('./browser-qwen-dom');
 const { parseToolCallsFromText } = require('./tool-parser');
-const { restoreStorageState, saveStorageState } = require('./incognito-auth');
+const { restoreStorageState, saveStorageState } = require('./session-auth');
 const AUTH_STATE_PATH = path.join(__dirname, '..', 'qwen-auth.json');
 
 const QWEN_URL = 'https://chat.qwen.ai/';
@@ -73,11 +73,6 @@ async function ensurePage() {
       const newContext = await chromium.launchPersistentContext(PROFILE_DIR, {
         headless: false,
         channel: 'chrome',
-        args: [
-          '--incognito',
-          '--disable-blink-features=AutomationControlled',
-        ],
-        ignoreDefaultArgs: ['--enable-automation'],
         viewport: { width: 1280, height: 900 },
       });
 
