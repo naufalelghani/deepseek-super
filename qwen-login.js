@@ -65,7 +65,11 @@ async function main() {
     context = await chromium.launchPersistentContext(PROFILE_DIR, {
       headless: false,
       channel: 'chrome',
-      args: ['--incognito'],
+      args: [
+        '--incognito',
+        '--disable-blink-features=AutomationControlled',
+      ],
+      ignoreDefaultArgs: ['--enable-automation'],
       viewport: { width: 1280, height: 900 },
     });
 
