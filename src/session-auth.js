@@ -7,8 +7,8 @@ const path = require('node:path');
  * Restore the reusable cookie and localStorage subset of a Playwright
  * storage-state snapshot into a fresh persistent browser context.
  *
- * The browser's persistent browser profile itself remains temporary. The auth snapshot
- * is a separate, sensitive local file and must never be committed or shared.
+ * The Chrome user-data directory is the primary persistent session store.
+ * This separate snapshot is a sensitive local recovery file and must never be committed or shared.
  */
 async function restoreStorageState(context, storageStatePath, label = 'browser') {
   if (!fs.existsSync(storageStatePath)) return false;
